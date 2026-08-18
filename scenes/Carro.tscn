@@ -19,14 +19,27 @@ scale = Vector2(2, 2)
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("RectangleShape2D_carro")
 
-[node name="RayFrente" type="RayCast2D" parent="."]
-target_position = Vector2(150, 0)
+[node name="RayFrenteCentro" type="RayCast2D" parent="."]
+target_position = Vector2(90, 0)
 collision_mask = 2
+hit_from_inside = true
+
+[node name="RayFrenteEsq" type="RayCast2D" parent="."]
+target_position = Vector2(90, -28)
+collision_mask = 2
+hit_from_inside = true
+
+[node name="RayFrenteDir" type="RayCast2D" parent="."]
+target_position = Vector2(90, 28)
+collision_mask = 2
+hit_from_inside = true
 
 [node name="RayEsquerda" type="RayCast2D" parent="."]
-target_position = Vector2(110, -60)
+target_position = Vector2(50, -80)
 collision_mask = 2
+hit_from_inside = true
 
 [node name="RayDireita" type="RayCast2D" parent="."]
-target_position = Vector2(110, 60)
+target_position = Vector2(50, 80)
 collision_mask = 2
+hit_from_inside = true
