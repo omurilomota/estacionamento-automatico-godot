@@ -18,7 +18,7 @@ polygon = PackedVector2Array(-45, -60, 45, -60, 45, 60, -45, 60)
 polygon = PackedVector2Array(-45, -60, 45, -60, 45, 60, -45, 60)
 color = Color(0, 0, 0, 0)
 stroke_width = 4.0
-stroke_color = Color(0.25, 0.9, 0.35)
+stroke_color = Color(0.25, 0.9, 0.35, 1)
 
 [node name="Area" type="CollisionShape2D" parent="."]
 shape = SubResource("RectangleShape2D_vaga")

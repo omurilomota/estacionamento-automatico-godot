@@ -22,7 +22,7 @@ script = ExtResource("1_mundo")
 
 [node name="Chao" type="Polygon2D" parent="."]
 position = Vector2(640, 360)
-color = Color(0.1, 0.1, 0.1)
+color = Color(0.1, 0.1, 0.1, 1)
 polygon = PackedVector2Array(-640, -360, 640, -360, 640, 360, -640, 360)
 
 [node name="Faixas" type="Node2D" parent="."]
@@ -33,22 +33,22 @@ collision_layer = 2
 
 [node name="VisualTopo" type="Polygon2D" parent="Paredes"]
 position = Vector2(640, -20)
-color = Color(0.27, 0.27, 0.27)
+color = Color(0.27, 0.27, 0.27, 1)
 polygon = PackedVector2Array(-680, -20, 680, -20, 680, 20, -680, 20)
 
 [node name="VisualBase" type="Polygon2D" parent="Paredes"]
 position = Vector2(640, 740)
-color = Color(0.27, 0.27, 0.27)
+color = Color(0.27, 0.27, 0.27, 1)
 polygon = PackedVector2Array(-680, -20, 680, -20, 680, 20, -680, 20)
 
 [node name="VisualEsquerda" type="Polygon2D" parent="Paredes"]
 position = Vector2(-20, 360)
-color = Color(0.27, 0.27, 0.27)
+color = Color(0.27, 0.27, 0.27, 1)
 polygon = PackedVector2Array(-20, -680, 20, -680, 20, 680, -20, 680)
 
 [node name="VisualDireita" type="Polygon2D" parent="Paredes"]
 position = Vector2(1300, 360)
-color = Color(0.27, 0.27, 0.27)
+color = Color(0.27, 0.27, 0.27, 1)
 polygon = PackedVector2Array(-20, -680, 20, -680, 20, 680, -20, 680)
 
 [node name="ColisaoTopo" type="CollisionShape2D" parent="Paredes"]
