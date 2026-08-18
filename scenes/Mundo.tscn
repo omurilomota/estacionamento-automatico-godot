@@ -1,0 +1,183 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/Mundo.gd" id="1_mundo"]
+[ext_resource type="PackedScene" path="res://scenes/Carro.tscn" id="2_carro"]
+[ext_resource type="PackedScene" path="res://scenes/Vaga.tscn" id="3_vaga"]
+[ext_resource type="Texture2D" path="res://assets/sprites/sedan_vermelho.png" id="4_sedan"]
+[ext_resource type="Texture2D" path="res://assets/sprites/suv_branco.png" id="5_suv"]
+[ext_resource type="Texture2D" path="res://assets/sprites/musclecar_amarelo.png" id="6_musclecar"]
+[ext_resource type="Texture2D" path="res://assets/sprites/taxi.png" id="7_taxi"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_parede_h"]
+size = Vector2(1360, 40)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_parede_v"]
+size = Vector2(40, 1360)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_obstaculo"]
+size = Vector2(62, 108)
+
+[node name="Mundo" type="Node2D"]
+script = ExtResource("1_mundo")
+
+[node name="Chao" type="Polygon2D" parent="."]
+position = Vector2(640, 360)
+color = Color(0.1, 0.1, 0.1)
+polygon = PackedVector2Array(-640, -360, 640, -360, 640, 360, -640, 360)
+
+[node name="Faixas" type="Node2D" parent="."]
+visible = false
+
+[node name="Paredes" type="StaticBody2D" parent="."]
+collision_layer = 2
+
+[node name="VisualTopo" type="Polygon2D" parent="Paredes"]
+position = Vector2(640, -20)
+color = Color(0.27, 0.27, 0.27)
+polygon = PackedVector2Array(-680, -20, 680, -20, 680, 20, -680, 20)
+
+[node name="VisualBase" type="Polygon2D" parent="Paredes"]
+position = Vector2(640, 740)
+color = Color(0.27, 0.27, 0.27)
+polygon = PackedVector2Array(-680, -20, 680, -20, 680, 20, -680, 20)
+
+[node name="VisualEsquerda" type="Polygon2D" parent="Paredes"]
+position = Vector2(-20, 360)
+color = Color(0.27, 0.27, 0.27)
+polygon = PackedVector2Array(-20, -680, 20, -680, 20, 680, -20, 680)
+
+[node name="VisualDireita" type="Polygon2D" parent="Paredes"]
+position = Vector2(1300, 360)
+color = Color(0.27, 0.27, 0.27)
+polygon = PackedVector2Array(-20, -680, 20, -680, 20, 680, -20, 680)
+
+[node name="ColisaoTopo" type="CollisionShape2D" parent="Paredes"]
+position = Vector2(640, -20)
+shape = SubResource("RectangleShape2D_parede_h")
+
+[node name="ColisaoBase" type="CollisionShape2D" parent="Paredes"]
+position = Vector2(640, 740)
+shape = SubResource("RectangleShape2D_parede_h")
+
+[node name="ColisaoEsquerda" type="CollisionShape2D" parent="Paredes"]
+position = Vector2(-20, 360)
+shape = SubResource("RectangleShape2D_parede_v")
+
+[node name="ColisaoDireita" type="CollisionShape2D" parent="Paredes"]
+position = Vector2(1300, 360)
+shape = SubResource("RectangleShape2D_parede_v")
+
+[node name="Obstaculos" type="Node2D" parent="."]
+
+[node name="SedanVermelho" type="StaticBody2D" parent="Obstaculos"]
+position = Vector2(560, 470)
+rotation = 0.6
+collision_layer = 2
+
+[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/SedanVermelho"]
+texture = ExtResource("4_sedan")
+scale = Vector2(1.6, 1.6)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/SedanVermelho"]
+shape = SubResource("RectangleShape2D_obstaculo")
+
+[node name="SuvBranco" type="StaticBody2D" parent="Obstaculos"]
+position = Vector2(760, 300)
+rotation = -0.9
+collision_layer = 2
+
+[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/SuvBranco"]
+texture = ExtResource("5_suv")
+scale = Vector2(1.6, 1.6)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/SuvBranco"]
+shape = SubResource("RectangleShape2D_obstaculo")
+
+[node name="MusclecarAmarelo" type="StaticBody2D" parent="Obstaculos"]
+position = Vector2(430, 230)
+rotation = 0.3
+collision_layer = 2
+
+[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/MusclecarAmarelo"]
+texture = ExtResource("6_musclecar")
+scale = Vector2(1.6, 1.6)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/MusclecarAmarelo"]
+shape = SubResource("RectangleShape2D_obstaculo")
+
+[node name="Taxi" type="StaticBody2D" parent="Obstaculos"]
+position = Vector2(900, 420)
+rotation = 2.0
+collision_layer = 2
+
+[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/Taxi"]
+texture = ExtResource("7_taxi")
+scale = Vector2(1.6, 1.6)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/Taxi"]
+shape = SubResource("RectangleShape2D_obstaculo")
+
+[node name="Waypoints" type="Node2D" parent="."]
+
+[node name="W1" type="Marker2D" parent="Waypoints"]
+position = Vector2(400, 500)
+
+[node name="W2" type="Marker2D" parent="Waypoints"]
+position = Vector2(620, 400)
+
+[node name="W3" type="Marker2D" parent="Waypoints"]
+position = Vector2(900, 520)
+
+[node name="W4" type="Marker2D" parent="Waypoints"]
+position = Vector2(1170, 640)
+
+[node name="W5" type="Marker2D" parent="Waypoints"]
+position = Vector2(1100, 545)
+
+[node name="Carro" parent="." instance=ExtResource("2_carro")]
+position = Vector2(140, 560)
+
+[node name="Vagas" type="Node2D" parent="."]
+
+[node name="Vaga1" parent="Vagas" instance=ExtResource("3_vaga")]
+position = Vector2(1100, 160)
+rotacao_alvo = -1.5708
+
+[node name="Vaga2" parent="Vagas" instance=ExtResource("3_vaga")]
+position = Vector2(1100, 350)
+rotacao_alvo = -1.5708
+
+[node name="Vaga3" parent="Vagas" instance=ExtResource("3_vaga")]
+position = Vector2(1100, 540)
+rotacao_alvo = -1.5708
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Control" type="Control" parent="UI"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Fundo" type="ColorRect" parent="UI/Control"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 360.0
+offset_bottom = 104.0
+color = Color(0, 0, 0, 0.55)
+
+[node name="StatusLabel" type="Label" parent="UI/Control"]
+offset_left = 28.0
+offset_top = 22.0
+offset_right = 620.0
+offset_bottom = 58.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 26
+text = "STATUS: Buscando vaga"
+
+[node name="SensorLabel" type="Label" parent="UI/Control"]
+offset_left = 28.0
+offset_top = 64.0
+offset_right = 620.0
+offset_bottom = 96.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "SENSOR: Livre"

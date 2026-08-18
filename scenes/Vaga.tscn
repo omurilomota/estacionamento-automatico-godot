@@ -1,0 +1,24 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/Vaga.gd" id="1_script"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_vaga"]
+size = Vector2(90, 120)
+
+[node name="Vaga" type="Area2D"]
+collision_layer = 4
+collision_mask = 1
+script = ExtResource("1_script")
+
+[node name="Fundo" type="Polygon2D" parent="."]
+color = Color(0.25, 0.9, 0.35, 0.15)
+polygon = PackedVector2Array(-45, -60, 45, -60, 45, 60, -45, 60)
+
+[node name="Contorno" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(-45, -60, 45, -60, 45, 60, -45, 60)
+color = Color(0, 0, 0, 0)
+stroke_width = 4.0
+stroke_color = Color(0.25, 0.9, 0.35)
+
+[node name="Area" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_vaga")

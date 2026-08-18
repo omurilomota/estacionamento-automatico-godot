@@ -1,0 +1,32 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/Carro.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/sprites/carro.png" id="2_sprite"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_carro"]
+size = Vector2(80, 70)
+
+[node name="Carro" type="CharacterBody2D"]
+collision_layer = 1
+collision_mask = 2
+script = ExtResource("1_script")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_sprite")
+rotation = 1.5708
+scale = Vector2(2, 2)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_carro")
+
+[node name="RayFrente" type="RayCast2D" parent="."]
+target_position = Vector2(150, 0)
+collision_mask = 2
+
+[node name="RayEsquerda" type="RayCast2D" parent="."]
+target_position = Vector2(110, -60)
+collision_mask = 2
+
+[node name="RayDireita" type="RayCast2D" parent="."]
+target_position = Vector2(110, 60)
+collision_mask = 2
