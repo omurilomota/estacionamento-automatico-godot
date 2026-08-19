@@ -13,7 +13,7 @@ signal pedir_nova_vaga
 enum Estado { BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO }
 
 # Velocidades (baixas = dirigindo com cuidado, como uma pessoa)
-@export var velocidade_maxima: float = 150.0
+@export var velocidade_maxima: float = 120.0
 @export var velocidade_desvio: float = 90.0
 @export var velocidade_alinhamento: float = 55.0
 
@@ -37,6 +37,14 @@ enum Estado { BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO }
 @export var distancia_antecipacao: float = 220.0
 @export var velocidade_antecipacao: float = 80.0
 @export var folga_beco: float = 50.0
+
+# --- NAVEGAÇÃO GLOBAL (o "GPS"): planejamento A* sobre o mapa de ocupação.
+# auto_navegacao = false mantém o modo manual (waypoints definidos na cena).
+@export var auto_navegacao: bool = true
+@export var distancia_lookahead: float = 80.0
+@export var vaga_prioritaria: NodePath
+@export var planejador_path: NodePath = NodePath("../Planejador")
+@export var vagas_path: NodePath = NodePath("../Vagas")
 
 @export var tolerancia_chegada: float = 24.0
 @export var tolerancia_alinhamento: float = 0.03
@@ -70,12 +78,19 @@ const ESTRATEGIAS := {
 @onready var ray_frente_longo: RayCast2D = $RayFrenteLongo
 @onready var ray_frente_longo_esq: RayCast2D = $RayFrenteLongoEsq
 @onready var ray_frente_longo_dir: RayCast2D = $RayFrenteLongoDir
+@onready var planejador: Node2D = get_node_or_null(planejador_path)
+@onready var container_vagas: Node2D = get_node_or_null(vagas_path)
 
 var estado: Estado = Estado.BUSCANDO
 var waypoints: Array[Vector2] = []
 var indice_waypoint: int = 0
 var rotacao_alvo: float = 0.0
 var posicao_alvo: Vector2 = Vector2.ZERO
+
+# Navegação global: a vaga escolhida e o "GPS" para chegar nela.
+var _vaga_alvo: Node2D = null
+var _plano_pendente: bool = false
+var _sem_vagas: bool = false
 
 # Direção e velocidade atuais (acumuladas com rampa, não "teleportam")
 var estercamento: float = 0.0
@@ -103,6 +118,79 @@ func definir_waypoints(pontos: Array) -> void:
 		waypoints.append(ponto)
 	indice_waypoint = 0
 	_resetar_tentativa()
+
+
+func _ready() -> void:
+	pedir_nova_vaga.connect(_ao_pedir_nova_vaga_interna)
+
+
+# Inicia a navegação GLOBAL: constrói o mapa de ocupação e calcula a rota
+# A* até a melhor vaga. O cálculo é adiado para o primeiro frame de física,
+# garantindo que todos os obstáculos já estejam registrados no mundo.
+func iniciar_navegacao() -> void:
+	auto_navegacao = true
+	_sem_vagas = false
+	_plano_pendente = true
+
+
+func _planejar_rota() -> void:
+	if planejador == null or container_vagas == null:
+		return
+	var escolha: Dictionary = _escolher_vaga()
+	if escolha.is_empty() or escolha["vaga"] == null:
+		_sem_vagas = true
+		pedir_nova_vaga.emit()
+		return
+	_sem_vagas = false
+	_vaga_alvo = escolha["vaga"]
+	_aplicar_rota(escolha["rota"])
+	tentativa_mudou.emit(0, "Rota A* para a vaga")
+
+
+func _escolher_vaga() -> Dictionary:
+	# Vaga prioritária (marcada na cena) e livre ganha sempre.
+	if not vaga_prioritaria.is_empty():
+		var prioritaria := get_node_or_null(vaga_prioritaria)
+		if prioritaria != null and not prioritaria.ocupada:
+			var rota_p := planejador.achar_rota(global_position, prioritaria.global_position)
+			if rota_p.size() >= 2:
+				return {"vaga": prioritaria, "rota": rota_p}
+	# Senão: a vaga livre ALCANÇÁVEL mais próxima (menor rota).
+	var melhor: Dictionary = {}
+	var melhor_custo: float = INF
+	for vaga in container_vagas.get_children():
+		if vaga.ocupada:
+			continue
+		var rota := planejador.achar_rota(global_position, vaga.global_position)
+		if rota.size() < 2:
+			continue
+		var custo := _comprimento_rota(rota)
+		if custo < melhor_custo:
+			melhor_custo = custo
+			melhor = {"vaga": vaga, "rota": rota}
+	return melhor
+
+
+func _comprimento_rota(rota: Array) -> float:
+	var total: float = 0.0
+	for i in range(1, rota.size()):
+		total += (rota[i - 1] as Vector2).distance_to(rota[i] as Vector2)
+	return total
+
+
+func _aplicar_rota(rota: Array) -> void:
+	waypoints.clear()
+	for ponto in rota:
+		waypoints.append(ponto)
+	indice_waypoint = 0
+	_resetar_tentativa()
+	if planejador != null:
+		planejador.mostrar_rota(rota)
+
+
+func _ao_pedir_nova_vaga_interna() -> void:
+	if auto_navegacao and not _sem_vagas:
+		_plano_pendente = true
 
 
 func entrar_estado_alinhando(rotacao_da_vaga: float, posicao_da_vaga: Vector2) -> void:
@@ -143,6 +231,12 @@ func descricao_sensor() -> String:
 
 
 func _physics_process(delta: float) -> void:
+	# A rota é planejada no PRIMEIRO frame de física (garante que os
+	# obstáculos já estão registrados no mundo antes de "enxergá-los").
+	if _plano_pendente:
+		_plano_pendente = false
+		_planejar_rota()
+
 	# O RayCast só recalcula durante o passo de física do OUTRO frame.
 	# force_raycast_update() manda calcular AGORA, sem atraso de leitura.
 	_atualizar_sensores()
@@ -182,9 +276,11 @@ func _aplicar_movimento(delta: float) -> void:
 	# 2) Modelo de bicicleta: a rotação muda conforme o volante e a velocidade.
 	#    tan() faz o arco ficar fechado quando o volante está muito virado.
 	rotation += velocidade_atual / entre_eixos * tan(estercamento) * delta
-	# 3) PROIBIDO BATER: indo pra frente, se o sensor está a menos de
-	#    distancia_seguranca, a velocidade alvo vira zero (para de vez).
-	if velocidade_desejada > 0.0 and distancia_frente() < distancia_seguranca:
+	# 3) PROIBIDO BATER: indo pra frente, se o CENTRO do caminho está a menos
+	#    de distancia_seguranca, a velocidade alvo vira zero (para de vez).
+	#    (Usa o raio central, não o leque: só um canto raspando não trava o
+	#    carro numa curva — ele segue virando até o caminho ficar livre.)
+	if velocidade_desejada > 0.0 and distancia_centro() < distancia_seguranca:
 		velocidade_desejada = 0.0
 	# 4) Rampa de aceleração/frenagem: a velocidade muda aos poucos.
 	#    Freia mais forte do que acelera (igual motorista de verdade).
@@ -223,6 +319,14 @@ func _processar_buscando(delta: float) -> void:
 		estercamento_alvo = 0.0
 		velocidade_desejada = 0.0
 		_aplicar_movimento(delta)
+		return
+
+	# --- NAVEGAÇÃO GLOBAL (GPS): segue a rota A* com pure pursuit. --------
+	# O carro não mira no waypoint exato: mira num ponto à FRENTE do caminho,
+	# o que faz as curvas saírem suaves (como um motorista real). Se travar,
+	# replaneja a rota do ponto atual em vez de "tentar na sorte".
+	if auto_navegacao and _vaga_alvo != null:
+		_processar_rota(delta)
 		return
 
 	_atualizar_progresso(delta)
@@ -268,6 +372,86 @@ func _processar_buscando(delta: float) -> void:
 	# Chegou perto o suficiente do waypoint? Avança para o próximo.
 	if global_position.distance_to(alvo) < tolerancia_chegada:
 		_chegou_no_waypoint()
+
+
+# --- NAVEGAÇÃO GLOBAL: seguir a rota (pure pursuit) -----------------------
+
+func _processar_rota(delta: float) -> void:
+	_atualizar_progresso(delta)
+	if _detectar_travamento():
+		_replanejar_ou_recuperar()
+		return
+
+	# Ponto à frente do caminho: é nele que o volante aponta (curva suave).
+	var alvo := _ponto_lookahead(distancia_lookahead)
+	var erro: float = angle_difference(rotation, global_position.direction_to(alvo).angle())
+	estercamento_alvo = clampf(erro * 2.0, -max_estercamento, max_estercamento)
+	# Motorista real freia em curva: quanto mais virado o volante, mais devagar.
+	var fator_curva: float = 1.0 - minf(absf(erro) / max_estercamento, 1.0) * 0.5
+	velocidade_desejada = _velocidade_por_sensor() * fator_curva
+
+	_aplicar_movimento(delta)
+	_avancar_indice_rota()
+
+
+func _ponto_lookahead(distancia: float) -> Vector2:
+	if waypoints.size() < 2:
+		return waypoints[0] if not waypoints.is_empty() else global_position
+	# 1) Acha o ponto mais próximo do carro na polilinha da rota.
+	var melhor_seg: int = 0
+	var melhor_p: Vector2 = waypoints[0]
+	var melhor_d: float = INF
+	for i in range(waypoints.size() - 1):
+		var p := Geometry2D.get_closest_point_to_segment(global_position, waypoints[i], waypoints[i + 1])
+		var d: float = global_position.distance_squared_to(p)
+		if d < melhor_d:
+			melhor_d = d
+			melhor_seg = i
+			melhor_p = p
+	# 2) Anda `distancia` para frente ao longo da rota a partir dali.
+	var acum: float = melhor_p.distance_to(waypoints[melhor_seg + 1])
+	if acum >= distancia:
+		return melhor_p.lerp(waypoints[melhor_seg + 1], distancia / maxf(acum, 0.001))
+	var fim: Vector2 = waypoints[melhor_seg + 1]
+	for j in range(melhor_seg + 1, waypoints.size() - 1):
+		var prox: Vector2 = waypoints[j + 1]
+		var seg: float = fim.distance_to(prox)
+		if acum + seg >= distancia:
+			return fim.lerp(prox, (distancia - acum) / maxf(seg, 0.001))
+		acum += seg
+		fim = prox
+	return waypoints[waypoints.size() - 1]
+
+
+func _avancar_indice_rota() -> void:
+	if indice_waypoint >= waypoints.size() - 1:
+		return
+	var atual := waypoints[indice_waypoint]
+	var dist_atual: float = global_position.distance_to(atual)
+	var dist_proximo: float = global_position.distance_to(waypoints[indice_waypoint + 1])
+	# Passou do vértice (está mais perto do próximo) ou chegou bem perto.
+	if dist_atual < tolerancia_chegada or (dist_proximo < dist_atual and dist_atual < distancia_lookahead * 1.5):
+		indice_waypoint += 1
+		_resetar_tentativa()
+
+
+func _replanejar_ou_recuperar() -> void:
+	if planejador == null:
+		_iniciar_recuperacao()
+		return
+	var alvo: Vector2
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
+		alvo = _vaga_alvo.global_position
+	elif not waypoints.is_empty():
+		alvo = waypoints[waypoints.size() - 1]
+	else:
+		alvo = global_position
+	var rota := planejador.achar_rota(global_position, alvo)
+	if rota.size() >= 2:
+		_aplicar_rota(rota)
+		tentativa_mudou.emit(0, "Replanejou rota (A*)")
+	else:
+		_iniciar_recuperacao()
 
 
 func _processar_desviando(delta: float) -> void:

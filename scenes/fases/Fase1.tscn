@@ -1,9 +1,10 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/FaseBase.gd" id="1_base"]
 [ext_resource type="Texture2D" path="res://assets/mapas/fase1.png" id="2_mapa"]
 [ext_resource type="PackedScene" path="res://scenes/Carro.tscn" id="3_carro"]
 [ext_resource type="Script" path="res://scripts/Minimapa.gd" id="4_minimapa"]
+[ext_resource type="Script" path="res://scripts/Planejador.gd" id="5_planejador"]
 
 [node name="Fase1" type="Node2D"]
 script = ExtResource("1_base")
@@ -23,6 +24,9 @@ zoom_camera = 0.8
 
 [node name="Carro" parent="." instance=ExtResource("3_carro")]
 position = Vector2(-835, 1010)
+
+[node name="Planejador" type="Node2D" parent="."]
+script = ExtResource("5_planejador")
 
 [node name="Camera" type="Camera2D" parent="."]
 

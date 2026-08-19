@@ -28,6 +28,7 @@ const NOMES_ESTADO := {
 @onready var carro: Node2D = $Carro
 @onready var vagas: Node2D = $Vagas
 @onready var waypoints: Node2D = $Waypoints
+@onready var planejador: Node2D = $Planejador
 @onready var camera: Camera2D = $Camera
 @onready var minimapa: Control = $UI/Control/Minimapa
 @onready var label_status: Label = $UI/Control/StatusLabel
@@ -48,10 +49,19 @@ func _ready() -> void:
 	minimapa.mundo_centro = Vector2.ZERO
 	minimapa.mundo_tamanho = Vector2(largura_mundo, altura_mundo)
 
+	# O planejador global cobre o mapa inteiro (grade de ocupação + A*).
+	planejador.origem = Vector2(-largura_mundo / 2.0, -altura_mundo / 2.0)
+	planejador.tamanho = Vector2(largura_mundo, altura_mundo)
+
 	var pontos: Array = []
 	for wp in waypoints.get_children():
 		pontos.append(wp.global_position)
-	carro.definir_waypoints(pontos)
+	if carro.auto_navegacao:
+		# Modo inteligente: o próprio carro escolhe a vaga e planeja a rota (A*).
+		carro.iniciar_navegacao()
+	else:
+		# Modo manual: usa os waypoints definidos na cena pelo professor.
+		carro.definir_waypoints(pontos)
 	carro.estado_mudou.connect(_ao_mudar_estado)
 	carro.tentativa_mudou.connect(_ao_mudar_tentativa)
 	carro.pedir_nova_vaga.connect(_ao_pedir_nova_vaga)
@@ -153,7 +163,10 @@ func _ao_mudar_tentativa(tentativas: int, estrategia: String) -> void:
 
 
 func _ao_pedir_nova_vaga() -> void:
-	# O carro esgotou as tentativas no último waypoint: escolhe a primeira vaga livre.
+	# No modo automático o próprio carro escolhe outra vaga (Planejador).
+	if carro.auto_navegacao:
+		return
+	# Modo manual: escolhe a primeira vaga livre.
 	for vaga in vagas.get_children():
 		if not vaga.ocupada:
 			label_tentativa.text = "TENTATIVA: 0 — Procurando outra vaga"

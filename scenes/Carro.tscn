@@ -4,7 +4,7 @@
 [ext_resource type="Texture2D" path="res://assets/sprites/carro.png" id="2_sprite"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_carro"]
-size = Vector2(80, 70)
+size = Vector2(88, 74)
 
 [node name="Carro" type="CharacterBody2D"]
 collision_layer = 1

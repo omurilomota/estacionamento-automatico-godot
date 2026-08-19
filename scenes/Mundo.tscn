@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://scripts/Mundo.gd" id="1_mundo"]
 [ext_resource type="PackedScene" path="res://scenes/Carro.tscn" id="2_carro"]
@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" path="res://assets/sprites/musclecar_amarelo.png" id="6_musclecar"]
 [ext_resource type="Texture2D" path="res://assets/sprites/taxi.png" id="7_taxi"]
 [ext_resource type="Script" path="res://scripts/Minimapa.gd" id="8_minimapa"]
+[ext_resource type="Script" path="res://scripts/Planejador.gd" id="9_planejador"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_parede_h"]
 size = Vector2(1360, 40)
@@ -166,6 +167,11 @@ rotacao_alvo = -1.5708
 [node name="Vaga3" parent="Vagas" instance=ExtResource("3_vaga")]
 position = Vector2(1100, 540)
 rotacao_alvo = -1.5708
+
+[node name="Planejador" type="Node2D" parent="."]
+script = ExtResource("9_planejador")
+origem = Vector2(0, 0)
+tamanho = Vector2(1280, 720)
 
 [node name="UI" type="CanvasLayer" parent="."]
 
