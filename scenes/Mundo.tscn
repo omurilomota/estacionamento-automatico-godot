@@ -82,8 +82,8 @@ scale = Vector2(1.6, 1.6)
 shape = SubResource("RectangleShape2D_obstaculo")
 
 [node name="SuvBranco" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(760, 300)
-rotation = -0.9
+position = Vector2(920, 520)
+rotation = 1.5708
 collision_layer = 2
 
 [node name="Sprite2D" type="Sprite2D" parent="Obstaculos/SuvBranco"]
@@ -106,8 +106,8 @@ scale = Vector2(1.6, 1.6)
 shape = SubResource("RectangleShape2D_obstaculo")
 
 [node name="Taxi" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(900, 420)
-rotation = 2.0
+position = Vector2(820, 430)
+rotation = 0.0
 collision_layer = 2
 
 [node name="Sprite2D" type="Sprite2D" parent="Obstaculos/Taxi"]
@@ -115,6 +115,18 @@ texture = ExtResource("7_taxi")
 scale = Vector2(1.6, 1.6)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/Taxi"]
+shape = SubResource("RectangleShape2D_obstaculo")
+
+[node name="SedanVermelho2" type="StaticBody2D" parent="Obstaculos"]
+position = Vector2(820, 630)
+rotation = 0.0
+collision_layer = 2
+
+[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/SedanVermelho2"]
+texture = ExtResource("4_sedan")
+scale = Vector2(1.6, 1.6)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/SedanVermelho2"]
 shape = SubResource("RectangleShape2D_obstaculo")
 
 [node name="Waypoints" type="Node2D" parent="."]
@@ -126,12 +138,15 @@ position = Vector2(400, 500)
 position = Vector2(620, 400)
 
 [node name="W3" type="Marker2D" parent="Waypoints"]
-position = Vector2(900, 520)
+position = Vector2(700, 510)
 
 [node name="W4" type="Marker2D" parent="Waypoints"]
-position = Vector2(1170, 640)
+position = Vector2(860, 520)
 
 [node name="W5" type="Marker2D" parent="Waypoints"]
+position = Vector2(1170, 640)
+
+[node name="W6" type="Marker2D" parent="Waypoints"]
 position = Vector2(1100, 545)
 
 [node name="Carro" parent="." instance=ExtResource("2_carro")]
@@ -160,8 +175,8 @@ anchor_bottom = 1.0
 [node name="Fundo" type="ColorRect" parent="UI/Control"]
 offset_left = 12.0
 offset_top = 12.0
-offset_right = 360.0
-offset_bottom = 104.0
+offset_right = 460.0
+offset_bottom = 140.0
 color = Color(0, 0, 0, 0.55)
 
 [node name="StatusLabel" type="Label" parent="UI/Control"]
@@ -181,3 +196,12 @@ offset_bottom = 96.0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 20
 text = "SENSOR: Livre"
+
+[node name="TentativaLabel" type="Label" parent="UI/Control"]
+offset_left = 28.0
+offset_top = 100.0
+offset_right = 620.0
+offset_bottom = 132.0
+theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
+theme_override_font_sizes/font_size = 20
+text = "TENTATIVA: 0"
