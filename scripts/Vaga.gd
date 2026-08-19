@@ -19,6 +19,6 @@ func _ao_corpo_entrar(corpo: Node2D) -> void:
 		return
 	if corpo.has_method("entrar_estado_alinhando"):
 		ocupada = true
-		contorno.stroke_color = cor_ocupada
+		contorno.default_color = cor_ocupada
 		fundo.color = Color(cor_ocupada, 0.15)
 		corpo.entrar_estado_alinhando(rotacao_alvo, global_position)
