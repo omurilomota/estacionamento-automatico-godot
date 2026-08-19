@@ -118,6 +118,31 @@ func achar_rota(origem_ponto: Vector2, destino_ponto: Vector2) -> Array:
 	return _decimar(caminho)
 
 
+# Ponto de partida ALEATÓRIO: uma célula livre qualquer (não colide com
+# obstáculos — a grade já é inflada) e fora dos retângulos proibidos
+# (ex.: as vagas, para o carro nunca nascer em cima de uma vaga).
+func achar_posicao_livre(retangulos_proibidos: Array[Rect2] = []) -> Vector2:
+	if not _grade_pronta:
+		construir()
+	var livres: Array[Vector2i] = []
+	for y in range(_n_cel_y()):
+		for x in range(_n_cel_x()):
+			var cel := Vector2i(x, y)
+			if _grade.is_point_solid(cel):
+				continue
+			var centro: Vector2 = _centro_de(cel)
+			var bloqueado := false
+			for r in retangulos_proibidos:
+				if r.has_point(centro):
+					bloqueado = true
+					break
+			if not bloqueado:
+				livres.append(cel)
+	if livres.is_empty():
+		return Vector2.INF
+	return _centro_de(livres[randi() % livres.size()])
+
+
 # A rota que o carro está seguindo (desenhada na tela).
 func definir_rota(rota: Array) -> void:
 	_rota_desenhar.clear()

@@ -22,6 +22,8 @@ const NOMES_ESTADO := {
 @export var mapa: Texture2D
 @export var escala_mapa: float = 1.5
 @export var zoom_camera: float = 0.8
+# Sorteia uma posição de partida para o carro (nunca em cima de uma vaga).
+@export var posicao_aleatoria: bool = true
 
 @onready var sprite_mapa: Sprite2D = $Mapa
 @onready var paredes: Node2D = $Paredes
@@ -38,6 +40,8 @@ const NOMES_ESTADO := {
 # Tamanho do mundo em pixels (centrado na origem).
 var largura_mundo: float = 1280.0
 var altura_mundo: float = 720.0
+
+var _posicionar_pendente: bool = true
 
 
 func _ready() -> void:
@@ -68,6 +72,31 @@ func _ready() -> void:
 	label_status.text = "STATUS: " + NOMES_ESTADO.get(carro.nome_estado(), carro.nome_estado())
 	label_sensor.text = "SENSOR: " + carro.descricao_sensor()
 	label_tentativa.text = "TENTATIVA: 0"
+
+
+func _physics_process(_delta: float) -> void:
+	# Sorteia a posição no PRIMEIRO frame de física (obstáculos já estão no
+	# mundo). Como o pai processa ANTES do filho, o carro nasce na posição
+	# sorteada e só então o Planejador traça a rota a partir dali.
+	if _posicionar_pendente:
+		_posicionar_pendente = false
+		if posicao_aleatoria:
+			_posicionar_carro_aleatorio()
+
+
+func _posicionar_carro_aleatorio() -> void:
+	if not planejador.grade_pronta():
+		planejador.construir()
+	# Proíbe nascer dentro (ou encostado) em qualquer vaga.
+	var proibidos: Array[Rect2] = []
+	for vaga in vagas.get_children():
+		var forma: RectangleShape2D = vaga.get_node("Area").shape
+		proibidos.append(Rect2(vaga.global_position - forma.size * 0.5, forma.size).grow(50.0))
+	var posicao: Vector2 = planejador.achar_posicao_livre(proibidos)
+	if posicao == Vector2.INF:
+		return
+	carro.global_position = posicao
+	carro.rotation = 0.0
 
 
 func _process(_delta: float) -> void:

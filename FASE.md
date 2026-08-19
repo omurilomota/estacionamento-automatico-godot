@@ -6,10 +6,26 @@ Cada mapa de `estacionamento/` virou uma **situação-teste** (fase). O carro j�
 
 | Tecla | Ação |
 |---|---|
-| `1` / `2` / `3` | Troca de fase |
-| `R` | Reinicia a fase atual |
+| `1` / `2` / `3` | Troca de fase (funciona na demo E nas fases) |
+| `R` | Reinicia a cena atual |
 
 Para rodar uma fase direto no editor: menu **Play** ▶ ou **F5** roda a cena principal (`Mundo.tscn`). Para abrir uma fase específica, dê dois cliques na cena (`scenes/fases/FaseN.tscn`) e aperte **F6** (rodar cena atual).
+
+> **Para VER a imagem do estacionamento:** as 3 fases já têm o mapa real carregado
+> (`Mapa` → `mapa` = `assets/mapas/faseN.png`). Rodando a demo (F5), aperte
+> **1**, **2** ou **3** para abrir cada uma. O `FaseBase.gd` posiciona a imagem,
+> cria as paredes, ajusta a câmera e o minimapa automaticamente (tamanho =
+> `largura da imagem × escala_mapa`).
+>
+> Para usar **uma imagem sua**: coloque o arquivo em `assets/mapas/`, abra a
+> cena da fase e no nó raiz (`FaseBase`) arraste a imagem para `mapa`
+> (ajuste `escala_mapa`/`zoom_camera` no Inspector).
+
+## Posição de partida do carro
+
+- `posicao_aleatoria` (export no nó raiz): ligado por padrão — o carro nasce
+  em uma **célula livre sorteada** (nunca em cima de obstáculo nem de vaga).
+- Desligue (`false`) para usar a posição que você deixar no nó `Carro` da cena.
 
 ## O que cada fase já tem
 
