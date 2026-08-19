@@ -91,6 +91,8 @@ var posicao_alvo: Vector2 = Vector2.ZERO
 var _vaga_alvo: Node2D = null
 var _plano_pendente: bool = false
 var _sem_vagas: bool = false
+var _posicao_anterior: Vector2 = Vector2.ZERO
+var _deslocamento_total: float = 0.0
 
 # Direção e velocidade atuais (acumuladas com rampa, não "teleportam")
 var estercamento: float = 0.0
@@ -121,6 +123,7 @@ func definir_waypoints(pontos: Array) -> void:
 
 
 func _ready() -> void:
+	_posicao_anterior = global_position
 	pedir_nova_vaga.connect(_ao_pedir_nova_vaga_interna)
 
 
@@ -377,21 +380,44 @@ func _processar_buscando(delta: float) -> void:
 # --- NAVEGAÇÃO GLOBAL: seguir a rota (pure pursuit) -----------------------
 
 func _processar_rota(delta: float) -> void:
+	_deslocamento_total += global_position.distance_to(_posicao_anterior)
+	_posicao_anterior = global_position
 	_atualizar_progresso(delta)
-	if _detectar_travamento():
+	if _detectar_travamento_rota():
 		_replanejar_ou_recuperar()
+		return
+
+	# Chegou no fim da rota (boca da vaga): aproxima devagar e SEM girar
+	# em volta do ponto final (nada de ficar "rodando" no lugar).
+	var fim_rota: Vector2 = waypoints[waypoints.size() - 1]
+	if indice_waypoint >= waypoints.size() - 1 and global_position.distance_to(fim_rota) < tolerancia_chegada * 2.5:
+		var erro_fim: float = angle_difference(rotation, global_position.direction_to(fim_rota).angle())
+		estercamento_alvo = clampf(erro_fim * 1.2, -max_estercamento, max_estercamento)
+		velocidade_desejada = velocidade_alinhamento * 0.5
+		_aplicar_movimento(delta)
 		return
 
 	# Ponto à frente do caminho: é nele que o volante aponta (curva suave).
 	var alvo := _ponto_lookahead(distancia_lookahead)
 	var erro: float = angle_difference(rotation, global_position.direction_to(alvo).angle())
-	estercamento_alvo = clampf(erro * 2.0, -max_estercamento, max_estercamento)
+	# Volante GENTIL: corrige aos poucos. Numa fresta larga, quase não vira.
+	estercamento_alvo = clampf(erro * 1.5, -max_estercamento, max_estercamento)
 	# Motorista real freia em curva: quanto mais virado o volante, mais devagar.
 	var fator_curva: float = 1.0 - minf(absf(erro) / max_estercamento, 1.0) * 0.5
 	velocidade_desejada = _velocidade_por_sensor() * fator_curva
 
 	_aplicar_movimento(delta)
 	_avancar_indice_rota()
+
+
+func _detectar_travamento_rota() -> bool:
+	# Na rota planejada (já sem obstáculos no caminho), "preso" é NÃO SAIR
+	# DO LUGAR. Andar devagar raspando num obstáculo é cuidado, não trava —
+	# isso acabava gerando manobra de três tempos à toa dentro das frestas.
+	if not waypoints.is_empty() and indice_waypoint == waypoints.size() - 1 \
+		and global_position.distance_to(waypoints[waypoints.size() - 1]) < tolerancia_chegada * 3.0:
+		return false
+	return tempo_no_waypoint > limite_tempo_preso and _deslocamento_total < limite_progresso * 1.5
 
 
 func _ponto_lookahead(distancia: float) -> Vector2:
@@ -652,6 +678,7 @@ func _resetar_tentativa() -> void:
 	distancia_inicio_waypoint = global_position.distance_to(waypoints[indice_waypoint]) if indice_waypoint < waypoints.size() else INF
 	contador_oscilacao = 0
 	tempo_ignorar_sensor = 0.0
+	_deslocamento_total = 0.0
 
 
 # --- LÓGICA DOS SENSORES (o "radar") -------------------------------------

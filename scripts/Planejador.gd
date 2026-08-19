@@ -126,22 +126,36 @@ func definir_rota(rota: Array) -> void:
 	queue_redraw()
 
 
-# Tira os pontos intermediários em linha reta: sobra só o "mapa" da rota
-# (vértices), que o carro segue de forma suave. Menos pontos = menos travamentos.
+# Simplifica a rota com Ramer-Douglas-Peucker: tira os "degraus" do grid e
+# os micro-desvios que só fariam o carro virar à toa. Sobra uma polilinha
+# com poucos vértices, que o pure pursuit segue de forma suave e reta nas
+# frestas largas (onde daria para ir sem raspar).
 func _decimar(caminho: PackedVector2Array) -> Array:
 	if caminho.size() < 3:
 		return Array(caminho)
-	var pontos: Array = [caminho[0]]
-	var direcao: Vector2 = Vector2.ZERO
-	for i in range(1, caminho.size()):
-		var novo: Vector2 = caminho[i] - pontos[pontos.size() - 1]
-		if novo.length() < 0.01:
-			continue
-		novo = novo.normalized()
-		if direcao == Vector2.ZERO or direcao.dot(novo) < 0.98:
-			pontos.append(caminho[i])
-			direcao = novo
-	return pontos
+	return _rdp(caminho, 0, caminho.size() - 1, 12.0)
+
+
+func _rdp(caminho: PackedVector2Array, inicio: int, fim: int, tolerancia: float) -> Array:
+	if inicio >= fim:
+		return [caminho[inicio]]
+	var ponto_inicio: Vector2 = caminho[inicio]
+	var ponto_fim: Vector2 = caminho[fim]
+	var mais_longe: float = 0.0
+	var indice_longe: int = -1
+	for i in range(inicio + 1, fim):
+		var dist := Geometry2D.get_distance_to_segment(caminho[i], ponto_inicio, ponto_fim)
+		if dist > mais_longe:
+			mais_longe = dist
+			indice_longe = i
+	if mais_longe <= tolerancia:
+		return [ponto_inicio, ponto_fim]
+	var esquerda: Array = _rdp(caminho, inicio, indice_longe, tolerancia)
+	var direita: Array = _rdp(caminho, indice_longe, fim, tolerancia)
+	esquerda.pop_back()
+	for p in direita:
+		esquerda.append(p)
+	return esquerda
 
 
 func _draw() -> void:
