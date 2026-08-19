@@ -1,0 +1,66 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/FaseBase.gd" id="1_base"]
+[ext_resource type="Texture2D" path="res://assets/mapas/fase2.svg" id="2_mapa"]
+[ext_resource type="PackedScene" path="res://scenes/Carro.tscn" id="3_carro"]
+
+[node name="Fase2" type="Node2D"]
+script = ExtResource("1_base")
+mapa = ExtResource("2_mapa")
+escala_mapa = 3.0
+zoom_camera = 0.8
+
+[node name="Mapa" type="Sprite2D" parent="."]
+
+[node name="Obstaculos" type="Node2D" parent="."]
+
+[node name="Paredes" type="Node2D" parent="."]
+
+[node name="Waypoints" type="Node2D" parent="."]
+
+[node name="Vagas" type="Node2D" parent="."]
+
+[node name="Carro" parent="." instance=ExtResource("3_carro")]
+position = Vector2(-835, 1010)
+
+[node name="Camera" type="Camera2D" parent="."]
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Control" type="Control" parent="UI"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Fundo" type="ColorRect" parent="UI/Control"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 460.0
+offset_bottom = 140.0
+color = Color(0, 0, 0, 0.55)
+
+[node name="StatusLabel" type="Label" parent="UI/Control"]
+offset_left = 28.0
+offset_top = 22.0
+offset_right = 620.0
+offset_bottom = 58.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 26
+text = "STATUS: Buscando vaga"
+
+[node name="SensorLabel" type="Label" parent="UI/Control"]
+offset_left = 28.0
+offset_top = 64.0
+offset_right = 620.0
+offset_bottom = 96.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "SENSOR: Livre"
+
+[node name="TentativaLabel" type="Label" parent="UI/Control"]
+offset_left = 28.0
+offset_top = 100.0
+offset_right = 620.0
+offset_bottom = 132.0
+theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
+theme_override_font_sizes/font_size = 20
+text = "TENTATIVA: 0"
