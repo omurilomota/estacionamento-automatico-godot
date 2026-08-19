@@ -119,7 +119,7 @@ func achar_rota(origem_ponto: Vector2, destino_ponto: Vector2) -> Array:
 
 
 # A rota que o carro está seguindo (desenhada na tela).
-func mostrar_rota(rota: Array) -> void:
+func definir_rota(rota: Array) -> void:
 	_rota_desenhar.clear()
 	for ponto in rota:
 		_rota_desenhar.append(ponto)

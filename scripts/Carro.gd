@@ -152,7 +152,7 @@ func _escolher_vaga() -> Dictionary:
 	if not vaga_prioritaria.is_empty():
 		var prioritaria := get_node_or_null(vaga_prioritaria)
 		if prioritaria != null and not prioritaria.ocupada:
-			var rota_p := planejador.achar_rota(global_position, prioritaria.global_position)
+			var rota_p: Array = planejador.achar_rota(global_position, prioritaria.global_position)
 			if rota_p.size() >= 2:
 				return {"vaga": prioritaria, "rota": rota_p}
 	# Senão: a vaga livre ALCANÇÁVEL mais próxima (menor rota).
@@ -161,7 +161,7 @@ func _escolher_vaga() -> Dictionary:
 	for vaga in container_vagas.get_children():
 		if vaga.ocupada:
 			continue
-		var rota := planejador.achar_rota(global_position, vaga.global_position)
+		var rota: Array = planejador.achar_rota(global_position, vaga.global_position)
 		if rota.size() < 2:
 			continue
 		var custo := _comprimento_rota(rota)
@@ -185,7 +185,7 @@ func _aplicar_rota(rota: Array) -> void:
 	indice_waypoint = 0
 	_resetar_tentativa()
 	if planejador != null:
-		planejador.mostrar_rota(rota)
+		planejador.definir_rota(rota)
 
 
 func _ao_pedir_nova_vaga_interna() -> void:
@@ -446,7 +446,7 @@ func _replanejar_ou_recuperar() -> void:
 		alvo = waypoints[waypoints.size() - 1]
 	else:
 		alvo = global_position
-	var rota := planejador.achar_rota(global_position, alvo)
+	var rota: Array = planejador.achar_rota(global_position, alvo)
 	if rota.size() >= 2:
 		_aplicar_rota(rota)
 		tentativa_mudou.emit(0, "Replanejou rota (A*)")
