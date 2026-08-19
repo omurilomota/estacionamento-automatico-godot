@@ -28,6 +28,11 @@ enum Estado { BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO }
 @export var distancia_seguranca: float = 40.0
 @export var distancia_freio: float = 160.0
 
+# Sensores frontais: distância que dispara o desvio e quando a rota
+# pode ser retomada (não precisa esperar o leque ficar 100% livre).
+@export var distancia_desvio: float = 90.0
+@export var limite_caminho_livre: float = 70.0
+
 @export var tolerancia_chegada: float = 24.0
 @export var tolerancia_alinhamento: float = 0.03
 @export var debug_sensores: bool = true
@@ -179,9 +184,10 @@ func _aplicar_movimento(delta: float) -> void:
 
 
 func _velocidade_por_sensor() -> float:
-	# Converte a leitura do sensor frontal em velocidade alvo.
-	# Longe => rápida. Na bolha de segurança => parada.
-	var dist: float = distancia_frente()
+	# A velocidade segue o que está REALMENTE no caminho do carro: o raio
+	# CENTRAL. Um obstáculo só raspando num canto não deve frear o carro —
+	# ele pode seguir reto enquanto o centro está livre.
+	var dist: float = distancia_centro()
 	if dist == INF:
 		return velocidade_maxima
 	if dist <= distancia_seguranca:
@@ -213,9 +219,9 @@ func _processar_buscando(delta: float) -> void:
 		_iniciar_recuperacao()
 		return
 
-	# Se qualquer raio frontal mede algo a menos de 90px, hora de desviar.
-	# (pulado durante a "graça" da recuperação)
-	if tempo_ignorar_sensor <= 0.0 and distancia_frente() < 90.0:
+	# Se qualquer raio frontal mede algo a menos de distancia_desvio, hora de
+	# desviar. (pulado durante a "graça" da recuperação)
+	if tempo_ignorar_sensor <= 0.0 and distancia_frente() < distancia_desvio:
 		_mudar_estado(Estado.DESVIANDO)
 		return
 
@@ -438,6 +444,12 @@ func distancia_frente() -> float:
 	return menor
 
 
+func distancia_centro() -> float:
+	# Distância do raio CENTRAL: o que está mesmo à frente do carro.
+	# É ela que manda na velocidade (freiar por um canto raspando = errado).
+	return _distancia_do_raio(ray_frente_centro)
+
+
 func distancia_tras() -> float:
 	return _distancia_do_raio(ray_tras)
 
@@ -457,13 +469,20 @@ func _lado_com_mais_espaco() -> int:
 
 
 func _espaco_insuficiente() -> bool:
-	# Os dois lados bloqueados => não há para onde virar.
+	# Só declara "preso" se não dá nem para seguir em frente: o CENTRO
+	# está bloqueado E os dois lados não têm espaço para virar. Se o centro
+	# está livre, o carro segue reto (não faz manobra à toa).
+	if distancia_centro() >= distancia_desvio:
+		return false
 	return _distancia_do_raio(ray_esquerda) < espaco_minimo_desvio \
 		and _distancia_do_raio(ray_direita) < espaco_minimo_desvio
 
 
 func _caminho_livre() -> bool:
-	return distancia_frente() == INF
+	# Não precisa estar 100% sem colisão: basta o obstáculo estar longe o
+	# suficiente (limite_caminho_livre) para retomar a rota. Senão, ao passar
+	# raspando por um obstáculo lateral, o carro "encara" e nunca sai do desvio.
+	return distancia_frente() > limite_caminho_livre
 
 
 func _quase_apontando_ao_waypoint() -> bool:
