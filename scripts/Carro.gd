@@ -33,6 +33,11 @@ enum Estado { BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO }
 @export var distancia_desvio: float = 90.0
 @export var limite_caminho_livre: float = 70.0
 
+# Câmera de longo alcance (antecipação). distancia_antecipacao = 0 desliga.
+@export var distancia_antecipacao: float = 220.0
+@export var velocidade_antecipacao: float = 80.0
+@export var folga_beco: float = 50.0
+
 @export var tolerancia_chegada: float = 24.0
 @export var tolerancia_alinhamento: float = 0.03
 @export var debug_sensores: bool = true
@@ -62,6 +67,9 @@ const ESTRATEGIAS := {
 @onready var ray_esquerda: RayCast2D = $RayEsquerda
 @onready var ray_direita: RayCast2D = $RayDireita
 @onready var ray_tras: RayCast2D = $RayTras
+@onready var ray_frente_longo: RayCast2D = $RayFrenteLongo
+@onready var ray_frente_longo_esq: RayCast2D = $RayFrenteLongoEsq
+@onready var ray_frente_longo_dir: RayCast2D = $RayFrenteLongoDir
 
 var estado: Estado = Estado.BUSCANDO
 var waypoints: Array[Vector2] = []
@@ -123,6 +131,8 @@ func descricao_sensor() -> String:
 	# Usado pela UI (Mundo.gd) para mostrar o que o sensor está lendo.
 	if ray_frente_centro.is_colliding() or ray_frente_esq.is_colliding() or ray_frente_dir.is_colliding():
 		return "Obstáculo à frente"
+	if ray_frente_longo.is_colliding() or ray_frente_longo_esq.is_colliding() or ray_frente_longo_dir.is_colliding():
+		return "Obstáculo à frente (longe)"
 	if ray_esquerda.is_colliding():
 		return "Obstáculo à esquerda"
 	if ray_direita.is_colliding():
@@ -158,7 +168,8 @@ func _physics_process(delta: float) -> void:
 
 
 func _atualizar_sensores() -> void:
-	var todos := [ray_frente_centro, ray_frente_esq, ray_frente_dir, ray_esquerda, ray_direita, ray_tras]
+	var todos := [ray_frente_centro, ray_frente_esq, ray_frente_dir, ray_esquerda, ray_direita, ray_tras, \
+		ray_frente_longo, ray_frente_longo_esq, ray_frente_longo_dir]
 	for raio in todos:
 		raio.force_raycast_update()
 
@@ -219,8 +230,26 @@ func _processar_buscando(delta: float) -> void:
 		_iniciar_recuperacao()
 		return
 
-	# Se qualquer raio frontal mede algo a menos de distancia_desvio, hora de
-	# desviar. (pulado durante a "graça" da recuperação)
+	# --- CÂMERA DE LONGO ALCANCE (antecipação) ---------------------------
+	# O carro "vê de longe": se algo está bloqueando à frente, ele reage
+	# ANTES de chegar perto — vira cedo pro lado livre (beco confirmado
+	# é tratado no DESVIANDO, quando os dois lados curtos fecham).
+	if tempo_ignorar_sensor <= 0.0 and distancia_antecipacao > 0.0:
+		var visao: float = _distancia_do_raio(ray_frente_longo)
+		if visao < distancia_antecipacao:
+			var dist_wp: float = global_position.distance_to(waypoints[indice_waypoint])
+			# Obstáculo mais longe que o waypoint? Antecipa o desvio:
+			# vira pro lado mais livre JÁ AGORA e reduz a velocidade.
+			if visao < dist_wp:
+				var lado: int = _lado_com_mais_espaco_longe()
+				var erro_ant: float = angle_difference(rotation, global_position.direction_to(waypoints[indice_waypoint]).angle())
+				estercamento_alvo = clampf(erro_ant * 2.0 + lado * 0.6, -max_estercamento, max_estercamento)
+				velocidade_desejada = minf(velocidade_antecipacao, _velocidade_por_sensor())
+				_aplicar_movimento(delta)
+				return
+
+	# Se qualquer raio frontal (curto) mede algo a menos de distancia_desvio,
+	# hora de desviar. (pulado durante a "graça" da recuperação)
 	if tempo_ignorar_sensor <= 0.0 and distancia_frente() < distancia_desvio:
 		_mudar_estado(Estado.DESVIANDO)
 		return
@@ -247,9 +276,16 @@ func _processar_desviando(delta: float) -> void:
 		_iniciar_recuperacao()
 		return
 
-	# Sem espaço nos DOIS lados? Não dá para desviar virando: faz
-	# a manobra de três tempos em vez de ficar oscilando (zigue-zague).
+	# Sem espaço nos DOIS lados? Não dá para desviar virando. Se a parede
+	# longa confirma beco sem saída, o carro reconhece e pula cedo (visão);
+	# senão, faz a manobra de três tempos em vez de oscilar (zigue-zague).
 	if _espaco_insuficiente():
+		if _beco_confirmado():
+			_desistir_waypoint()
+			tempo_ignorar_sensor = 0.5
+			tentativa_mudou.emit(0, "Reconheceu beco sem saída")
+			_mudar_estado(Estado.BUSCANDO)
+			return
 		_iniciar_recuperacao()
 		return
 
@@ -468,6 +504,24 @@ func _lado_com_mais_espaco() -> int:
 	return -1 if espaco_esq >= espaco_dir else 1
 
 
+func _lado_com_mais_espaco_longe() -> int:
+	# Igual ao de cima, mas usando a câmera de longo alcance: vê qual lado
+	# tem mais espaço LÁ NA FRENTE (na altura do obstáculo), não ao lado do carro.
+	var espaco_esq: float = _distancia_do_raio(ray_frente_longo_esq)
+	var espaco_dir: float = _distancia_do_raio(ray_frente_longo_dir)
+	return -1 if espaco_esq >= espaco_dir else 1
+
+
+func _beco_confirmado() -> bool:
+	# Confirma beco sem saída (usado quando os dois lados já estão fechados):
+	# a parede longa está batendo E o waypoint está além dela (ou colado).
+	var visao: float = _distancia_do_raio(ray_frente_longo)
+	if visao >= distancia_antecipacao:
+		return false
+	var dist_wp: float = global_position.distance_to(waypoints[indice_waypoint])
+	return dist_wp > visao - folga_beco
+
+
 func _espaco_insuficiente() -> bool:
 	# Só declara "preso" se não dá nem para seguir em frente: o CENTRO
 	# está bloqueado E os dois lados não têm espaço para virar. Se o centro
@@ -514,6 +568,11 @@ func _draw() -> void:
 	var cor_obstaculo := Color(1, 0.12, 0.12, 0.9)
 	for raio in [ray_frente_centro, ray_frente_esq, ray_frente_dir, ray_esquerda, ray_direita, ray_tras]:
 		_desenhar_raio(raio, cor_livre, cor_obstaculo)
+	# Câmera de longo alcance: desenhada em CIANO para diferenciar.
+	var cor_livre_longa := Color(0.3, 0.9, 1, 0.18)
+	var cor_obstaculo_longa := Color(0.3, 0.9, 1, 0.9)
+	for raio in [ray_frente_longo, ray_frente_longo_esq, ray_frente_longo_dir]:
+		_desenhar_raio(raio, cor_livre_longa, cor_obstaculo_longa)
 
 
 func _desenhar_raio(raio: RayCast2D, cor_livre: Color, cor_obstaculo: Color) -> void:

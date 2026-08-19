@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/Mundo.gd" id="1_mundo"]
 [ext_resource type="PackedScene" path="res://scenes/Carro.tscn" id="2_carro"]
@@ -7,6 +7,7 @@
 [ext_resource type="Texture2D" path="res://assets/sprites/suv_branco.png" id="5_suv"]
 [ext_resource type="Texture2D" path="res://assets/sprites/musclecar_amarelo.png" id="6_musclecar"]
 [ext_resource type="Texture2D" path="res://assets/sprites/taxi.png" id="7_taxi"]
+[ext_resource type="Script" path="res://scripts/Minimapa.gd" id="8_minimapa"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_parede_h"]
 size = Vector2(1360, 40)
@@ -205,3 +206,18 @@ offset_bottom = 132.0
 theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
 theme_override_font_sizes/font_size = 20
 text = "TENTATIVA: 0"
+
+[node name="Minimapa" type="Control" parent="UI/Control"]
+anchor_left = 1.0
+anchor_top = 1.0
+offset_left = -272.0
+offset_top = -192.0
+offset_right = -12.0
+offset_bottom = -12.0
+script = ExtResource("8_minimapa")
+carro_path = NodePath("../../Carro")
+vagas_path = NodePath("../../Vagas")
+waypoints_path = NodePath("../../Waypoints")
+obstaculos_path = NodePath("../../Obstaculos")
+mundo_centro = Vector2(640, 360)
+mundo_tamanho = Vector2(1280, 720)

@@ -29,6 +29,7 @@ const NOMES_ESTADO := {
 @onready var vagas: Node2D = $Vagas
 @onready var waypoints: Node2D = $Waypoints
 @onready var camera: Camera2D = $Camera
+@onready var minimapa: Control = $UI/Control/Minimapa
 @onready var label_status: Label = $UI/Control/StatusLabel
 @onready var label_sensor: Label = $UI/Control/SensorLabel
 @onready var label_tentativa: Label = $UI/Control/TentativaLabel
@@ -42,6 +43,10 @@ func _ready() -> void:
 	_configurar_mapa()
 	_criar_paredes()
 	_configurar_camera()
+
+	# O minimapa acompanha o tamanho real do mundo (mapa * escala).
+	minimapa.mundo_centro = Vector2.ZERO
+	minimapa.mundo_tamanho = Vector2(largura_mundo, altura_mundo)
 
 	var pontos: Array = []
 	for wp in waypoints.get_children():
