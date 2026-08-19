@@ -4,7 +4,7 @@ extends Area2D
 @export var cor_livre: Color = Color(0.25, 0.9, 0.35)
 @export var cor_ocupada: Color = Color(0.95, 0.3, 0.3)
 
-@onready var contorno: Polygon2D = $Contorno
+@onready var contorno: Line2D = $Contorno
 @onready var fundo: Polygon2D = $Fundo
 
 var ocupada: bool = false
