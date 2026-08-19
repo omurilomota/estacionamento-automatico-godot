@@ -144,7 +144,9 @@ func _rdp(caminho: PackedVector2Array, inicio: int, fim: int, tolerancia: float)
 	var mais_longe: float = 0.0
 	var indice_longe: int = -1
 	for i in range(inicio + 1, fim):
-		var dist := Geometry2D.get_distance_to_segment(caminho[i], ponto_inicio, ponto_fim)
+		var dist := caminho[i].distance_to(
+			Geometry2D.get_closest_point_to_segment(caminho[i], ponto_inicio, ponto_fim)
+		)
 		if dist > mais_longe:
 			mais_longe = dist
 			indice_longe = i
