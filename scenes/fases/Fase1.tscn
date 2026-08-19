@@ -13,6 +13,8 @@ escala_mapa = 1.5
 zoom_camera = 0.8
 
 [node name="Mapa" type="Sprite2D" parent="."]
+texture = ExtResource("2_mapa")
+scale = Vector2(1.5, 1.5)
 
 [node name="Obstaculos" type="Node2D" parent="."]
 
