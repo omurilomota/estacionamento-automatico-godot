@@ -63,6 +63,8 @@ enum Estado { BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO }
 @export var ml_gravar: bool = false
 @export var ml_gravar_caminho: String = "res://ml/dados/gravacao.csv"
 @export var modo_ml: bool = false
+# Evolução/GA: desliga os fallbacks para o fitness medir SÓ a rede
+@export var ml_sem_fallback: bool = false
 var _ml_arquivo: FileAccess = null
 var _ml_rede: CerebroML = null
 var _ml_pos_ref: Vector2 = Vector2.ZERO
@@ -1797,16 +1799,18 @@ func _processar_ml(delta: float) -> void:
 			return
 	# Fallback por FALTA DE PROGRESSO (não só parada total): se em 4s andou
 	# menos de 100px (<25px/s), a rede está timida/rastejando — FSM assume.
-	_ml_t_progresso += delta
-	if _ml_t_progresso >= 4.0:
-		if global_position.distance_to(_ml_pos_ref) < 100.0:
-			modo_ml = false
-			_plano_pendente = true
-			return
-		_ml_pos_ref = global_position
-		_ml_t_progresso = 0.0
+	# (Desligado em ml_sem_fallback: durante a evolução o fitness mede só a rede.)
+	if not ml_sem_fallback:
+		_ml_t_progresso += delta
+		if _ml_t_progresso >= 4.0:
+			if global_position.distance_to(_ml_pos_ref) < 100.0:
+				modo_ml = false
+				_plano_pendente = true
+				return
+			_ml_pos_ref = global_position
+			_ml_t_progresso = 0.0
 	# Rede travada (quer andar e não anda, OU parada total): FSM assume
-	if velocidade_atual < 2.0:
+	if velocidade_atual < 2.0 and not ml_sem_fallback:
 		_tempo_parado += delta
 		if _tempo_parado > tempo_parado_replanejar * 2.0:
 			_tempo_parado = 0.0
