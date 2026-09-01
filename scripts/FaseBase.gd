@@ -2,12 +2,14 @@ extends Node2D
 ## FASE BASE — esqueleto de cada mapa (fase) do estacionamento.
 ## Cobre o mapa, cria a câmera que segue o carro, paredes no perímetro
 ## e a mesma UI de status/sensores/tentativas da cena de demonstração.
-## Teclas: 1/2/3 trocam de fase, R reinicia a fase atual.
+## Teclas: 1/2/3/4/5 trocam de fase, R reinicia a fase atual.
 
 const FASES := [
 	"res://scenes/fases/Fase1.tscn",
 	"res://scenes/fases/Fase2.tscn",
 	"res://scenes/fases/Fase3.tscn",
+	"res://scenes/fases/Fase4.tscn",
+	"res://scenes/fases/Fase5.tscn",
 ]
 
 const NOMES_ESTADO := {
@@ -60,17 +62,29 @@ func _ready() -> void:
 	var pontos: Array = []
 	for wp in waypoints.get_children():
 		pontos.append(wp.global_position)
-	if carro.auto_navegacao:
-		# Modo inteligente: o próprio carro escolhe a vaga e planeja a rota (A*).
+	# MODO TRILHA (automático): todas as fases seguem linha pré-calculada A* + fallback Line2D
+	if "modo_trilha" in carro and carro.modo_trilha:
+		if carro.has_method("iniciar_modo_trilha"):
+			carro.iniciar_modo_trilha()
+		else:
+			carro.iniciar_navegacao()
+	elif carro.auto_navegacao:
+		# Modo inteligente legado (A*).
 		carro.iniciar_navegacao()
 	else:
-		# Modo manual: usa os waypoints definidos na cena pelo professor.
-		carro.definir_waypoints(pontos)
+		# Modo manual: tenta usar Rotas Line2D como trilha, senão waypoints
+		var rota_fb: Array = _coletar_pontos_rotas()
+		if not rota_fb.is_empty() and "modo_trilha" in carro and carro.modo_trilha:
+			carro.definir_trilha(rota_fb)
+		elif not rota_fb.is_empty():
+			carro.definir_waypoints(rota_fb)
+		else:
+			carro.definir_waypoints(pontos)
 	carro.estado_mudou.connect(_ao_mudar_estado)
 	carro.tentativa_mudou.connect(_ao_mudar_tentativa)
 	carro.pedir_nova_vaga.connect(_ao_pedir_nova_vaga)
 	label_status.text = "STATUS: " + NOMES_ESTADO.get(carro.nome_estado(), carro.nome_estado())
-	label_sensor.text = "SENSOR: " + carro.descricao_sensor()
+	label_sensor.text = "SENSOR: " + carro.get_sensor_text()
 	label_tentativa.text = "TENTATIVA: 0"
 
 
@@ -100,14 +114,14 @@ func _posicionar_carro_aleatorio() -> void:
 
 
 func _process(_delta: float) -> void:
-	label_sensor.text = "SENSOR: " + carro.descricao_sensor()
+	label_sensor.text = "SENSOR: " + carro.get_sensor_text()
 	_seguir_carro()
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Teclas de teste: 1/2/3 trocam de fase, R reinicia a atual.
+	# Teclas de teste: 1/2/3/4 trocam de fase, R reinicia a atual.
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode >= KEY_1 and event.keycode <= KEY_3:
+		if event.keycode >= KEY_1 and event.keycode <= KEY_5:
 			var indice: int = event.keycode - KEY_1
 			get_tree().change_scene_to_file(FASES[indice])
 		elif event.keycode == KEY_R:
@@ -184,7 +198,53 @@ func _seguir_carro() -> void:
 
 
 func _ao_mudar_estado(nome: String) -> void:
-	label_status.text = "STATUS: " + NOMES_ESTADO.get(nome, nome)
+	# Em modo trilha, DESVIANDO significa "parado por obstáculo"
+	if "modo_trilha" in carro and carro.modo_trilha and nome == "DESVIANDO":
+		label_status.text = "STATUS: Parado (obstáculo à frente)"
+	else:
+		label_status.text = "STATUS: " + NOMES_ESTADO.get(nome, nome)
+
+
+func _coletar_pontos_rotas() -> Array:
+	var rotas_node := get_node_or_null("Rotas")
+	if rotas_node == null:
+		return []
+	var melhor: Array = []
+	var melhor_score: float = INF
+	# Para cada Line2D, avalia proximidade ao carro e às vagas
+	var alvo_vaga: Vector2 = Vector2.INF
+	if vagas.get_child_count() > 0:
+		for v in vagas.get_children():
+			if not v.ocupada:
+				alvo_vaga = v.global_position
+				break
+		if alvo_vaga == Vector2.INF:
+			alvo_vaga = vagas.get_child(0).global_position
+	for child in rotas_node.get_children():
+		if not child is Line2D:
+			continue
+		var pts: PackedVector2Array = child.points
+		if pts.size() < 2:
+			continue
+		var glob: Array = []
+		for p in pts:
+			glob.append(child.to_global(p))
+		# Score: distância do carro ao início + distância fim à vaga
+		var d_ini: float = carro.global_position.distance_to(glob[0]) if glob.size() > 0 else INF
+		var d_fim: float = alvo_vaga.distance_to(glob[glob.size() - 1]) if glob.size() > 0 and alvo_vaga != Vector2.INF else INF
+		var score: float = d_ini * 0.6 + d_fim * 0.4
+		if score < melhor_score:
+			melhor_score = score
+			melhor = glob
+	if not melhor.is_empty():
+		return melhor
+	# Se nenhuma linha é boa, concatena todas as linhas em ordem
+	var todas: Array = []
+	for child in rotas_node.get_children():
+		if child is Line2D:
+			for p in child.points:
+				todas.append(child.to_global(p))
+	return todas
 
 
 func _ao_mudar_tentativa(tentativas: int, estrategia: String) -> void:

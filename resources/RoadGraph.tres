@@ -1,0 +1,37 @@
+[gd_resource type="Resource" format=3 uid="uid://roadgraph_parking5"]
+
+[resource]
+# HD-Map manual Parkinglot5 1408x768 escala 1.0 - centerlines em coordenadas mundo (0,0 centro)
+# Cada Lane: Curve2D com pontos da faixa + largura + sucessores (viradas sempre pela faixa)
+lanes = [{
+"nome": "Norte_Leste",
+"largura": 60.0,
+"pontos": PackedVector2Array(-600, -260, -200, -260, 200, -260, 500, -260),
+"sucessores": [1, 5]
+}, {
+"nome": "Leste_Norte",
+"largura": 60.0,
+"pontos": PackedVector2Array(560, -200, 560, 0, 560, 200),
+"sucessores": [2]
+}, {
+"nome": "Sul_Oeste",
+"largura": 60.0,
+"pontos": PackedVector2Array(500, 260, 0, 260, -600, 260),
+"sucessores": [3]
+}, {
+"nome": "Oeste_Sul",
+"largura": 60.0,
+"pontos": PackedVector2Array(-620, 200, -620, 0, -620, -200),
+"sucessores": [0]
+}, {
+"nome": "Rotatoria_N",
+"largura": 50.0,
+"pontos": PackedVector2Array(1, -40, 40, 6, 1, 52),
+"sucessores": [1]
+}, {
+"nome": "Rotatoria_S",
+"largura": 50.0,
+"pontos": PackedVector2Array(1, 52, -40, 6, 1, -40),
+"sucessores": [3]
+}]
+# Uso: Planejador.gd lê este Resource, constrói AStar2D sobre centerlines, peso 1.0 na faixa, INF fora

@@ -12,16 +12,16 @@ signal pedir_nova_vaga
 
 enum Estado { BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO }
 
-# Velocidades (baixas = dirigindo com cuidado, como uma pessoa)
-@export var velocidade_maxima: float = 120.0
-@export var velocidade_desvio: float = 90.0
-@export var velocidade_alinhamento: float = 55.0
+# Velocidades (humanas = mais ágeis, mas ainda cuidadosas)
+@export var velocidade_maxima: float = 160.0
+@export var velocidade_desvio: float = 110.0
+@export var velocidade_alinhamento: float = 65.0
 
-# Modelo de direção (volante)
-@export var aceleracao: float = 180.0
-@export var frenagem: float = 320.0
-@export var max_estercamento: float = 0.7
-@export var taxa_estercamento: float = 2.5
+# Modelo de direção (volante) - humano vira rápido e até o fim
+@export var aceleracao: float = 300.0
+@export var frenagem: float = 300.0
+@export var max_estercamento: float = 0.9
+@export var taxa_estercamento: float = 5.0
 @export var entre_eixos: float = 60.0
 
 # Segurança: "proibido bater"
@@ -46,8 +46,13 @@ enum Estado { BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO }
 @export var planejador_path: NodePath = NodePath("../Planejador")
 @export var vagas_path: NodePath = NodePath("../Vagas")
 
+# --- MODO TRILHA (simplificado): segue linha pré-calculada e só PARA ao ver obstáculo ---
+@export var modo_trilha: bool = true
+@export var tempo_parado_replanejar: float = 2.8
+@export var velocidade_trilha_max: float = 120.0
+
 @export var tolerancia_chegada: float = 24.0
-@export var tolerancia_alinhamento: float = 0.03
+@export var tolerancia_alinhamento: float = 0.08
 @export var debug_sensores: bool = true
 
 # Comportamento agêntico (quando o carro fica "preso")
@@ -78,6 +83,9 @@ const ESTRATEGIAS := {
 @onready var ray_frente_longo: RayCast2D = $RayFrenteLongo
 @onready var ray_frente_longo_esq: RayCast2D = $RayFrenteLongoEsq
 @onready var ray_frente_longo_dir: RayCast2D = $RayFrenteLongoDir
+@onready var ray_lateral_esq: RayCast2D = $RayLateralEsq
+@onready var ray_lateral_dir: RayCast2D = $RayLateralDir
+@onready var ray_seta: RayCast2D = $RaySeta
 @onready var planejador: Node2D = get_node_or_null(planejador_path)
 @onready var container_vagas: Node2D = get_node_or_null(vagas_path)
 
@@ -93,6 +101,7 @@ var _plano_pendente: bool = false
 var _sem_vagas: bool = false
 var _posicao_anterior: Vector2 = Vector2.ZERO
 var _deslocamento_total: float = 0.0
+var _tempo_parado: float = 0.0
 
 # Direção e velocidade atuais (acumuladas com rampa, não "teleportam")
 var estercamento: float = 0.0
@@ -120,6 +129,10 @@ func definir_waypoints(pontos: Array) -> void:
 		waypoints.append(ponto)
 	indice_waypoint = 0
 	_resetar_tentativa()
+	_tempo_parado = 0.0
+
+func definir_trilha(pontos: Array) -> void:
+	definir_waypoints(pontos)
 
 
 func _ready() -> void:
@@ -136,11 +149,65 @@ func iniciar_navegacao() -> void:
 	_plano_pendente = true
 
 
+func iniciar_modo_trilha() -> void:
+	modo_trilha = true
+	auto_navegacao = true
+	_sem_vagas = false
+	_plano_pendente = true
+	_tempo_parado = 0.0
+	tempo_ignorar_sensor = 1.0
+
+
 func _planejar_rota() -> void:
+	# Sequência correta: RotaReta -> RotaDaCurva -> RotaReta2 (com suavização)
+	if modo_trilha:
+		var rota_seq: Array = _construir_rota_sequencial_ruas()
+		if rota_seq.size() >= 2:
+			_aplicar_rota(rota_seq)
+			_sem_vagas = false
+			tentativa_mudou.emit(0, "Rota sequencial Reta->Curva->Reta2")
+			return
 	if planejador == null or container_vagas == null:
+		if modo_trilha and container_vagas != null:
+			var fb: Array = _coletar_rota_fallback()
+			if fb.size() >= 2:
+				_sem_vagas = false
+				var melhor_vaga: Node2D = null
+				var melhor_dist: float = INF
+				for v in container_vagas.get_children():
+					if v.ocupada:
+						continue
+					var d: float = global_position.distance_to(v.global_position)
+					if d < melhor_dist:
+						melhor_dist = d
+						melhor_vaga = v
+				if melhor_vaga != null:
+					_vaga_alvo = melhor_vaga
+					fb.append(_vaga_alvo.global_position)
+					_aplicar_rota(fb)
+					tentativa_mudou.emit(0, "Rota fallback (sem A*)")
 		return
 	var escolha: Dictionary = _escolher_vaga()
 	if escolha.is_empty() or escolha["vaga"] == null:
+		var fb2: Array = _coletar_rota_fallback()
+		if fb2.size() >= 2:
+			var mv: Node2D = null
+			var md: float = INF
+			for v in container_vagas.get_children():
+				if v.ocupada:
+					continue
+				var dd: float = global_position.distance_to(v.global_position)
+				if dd < md:
+					md = dd
+					mv = v
+			if mv != null:
+				_vaga_alvo = mv
+				var rota_fb: Array = fb2.duplicate()
+				rota_fb.append(_vaga_alvo.global_position)
+				_aplicar_rota(rota_fb)
+				tentativa_mudou.emit(0, "Rota fallback (A* falhou)")
+				_sem_vagas = false
+				return
 		_sem_vagas = true
 		pedir_nova_vaga.emit()
 		return
@@ -148,6 +215,7 @@ func _planejar_rota() -> void:
 	_vaga_alvo = escolha["vaga"]
 	_aplicar_rota(escolha["rota"])
 	tentativa_mudou.emit(0, "Rota A* para a vaga")
+	_tempo_parado = 0.0
 
 
 func _escolher_vaga() -> Dictionary:
@@ -182,11 +250,20 @@ func _comprimento_rota(rota: Array) -> float:
 
 
 func _aplicar_rota(rota: Array) -> void:
+	var era_vazia: bool = waypoints.is_empty()
 	waypoints.clear()
 	for ponto in rota:
 		waypoints.append(ponto)
 	indice_waypoint = 0
 	_resetar_tentativa()
+	_tempo_parado = 0.0
+	if modo_trilha:
+		tempo_ignorar_sensor = 0.8
+		# Só orienta na primeira rota (spawn) — snap completo para não começar de lado
+		if era_vazia and rota.size() >= 2:
+			var dir_ini: Vector2 = (rota[1] as Vector2) - (rota[0] as Vector2)
+			if dir_ini.length_squared() > 1.0:
+				rotation = dir_ini.angle()
 	if planejador != null:
 		planejador.definir_rota(rota)
 
@@ -194,6 +271,25 @@ func _aplicar_rota(rota: Array) -> void:
 func _ao_pedir_nova_vaga_interna() -> void:
 	if auto_navegacao and not _sem_vagas:
 		_plano_pendente = true
+
+
+func preparar_estacionamento(rotacao_da_vaga: float, posicao_da_vaga: Vector2) -> void:
+	# Humano: cria waypoint de preparação à frente da vaga para ter espaço de manobra
+	if estado == Estado.ALINHANDO or estado == Estado.ESTACIONADO:
+		return
+	rotacao_alvo = rotacao_da_vaga
+	posicao_alvo = posicao_da_vaga
+	# Ponto de preparação: 1.8*entre_eixos à frente da boca, na direção oposta ao nariz da vaga
+	var dir_vaga := Vector2.RIGHT.rotated(rotacao_alvo)
+	var ponto_prep := posicao_da_vaga - dir_vaga * (entre_eixos * 2.5 + 80.0)
+	# Insere como waypoint temporário se ainda não estamos muito perto
+	if global_position.distance_to(posicao_da_vaga) > 60.0:
+		waypoints.clear()
+		waypoints.append(ponto_prep)
+		waypoints.append(posicao_da_vaga)
+		indice_waypoint = 0
+		_resetar_tentativa()
+	_mudar_estado(Estado.ALINHANDO)
 
 
 func entrar_estado_alinhando(rotacao_da_vaga: float, posicao_da_vaga: Vector2) -> void:
@@ -218,8 +314,10 @@ func nome_estado() -> String:
 			return "DESCONHECIDO"
 
 
-func descricao_sensor() -> String:
+func get_sensor_text() -> String:
 	# Usado pela UI (Mundo.gd) para mostrar o que o sensor está lendo.
+	if ray_seta != null and ray_seta.is_colliding():
+		return "Seguindo seta"
 	if ray_frente_centro.is_colliding() or ray_frente_esq.is_colliding() or ray_frente_dir.is_colliding():
 		return "Obstáculo à frente"
 	if ray_frente_longo.is_colliding() or ray_frente_longo_esq.is_colliding() or ray_frente_longo_dir.is_colliding():
@@ -249,60 +347,246 @@ func _physics_process(delta: float) -> void:
 	if tempo_ignorar_sensor > 0.0:
 		tempo_ignorar_sensor -= delta
 
-	match estado:
-		Estado.BUSCANDO:
-			_processar_buscando(delta)
-		Estado.DESVIANDO:
-			_processar_desviando(delta)
-		Estado.ALINHANDO:
-			_processar_alinhando(delta)
-		Estado.ESTACIONADO:
-			_processar_estacionado(delta)
-		Estado.RECUPERANDO:
-			_processar_recuperando(delta)
+	# MODO TRILHA: segue linha pré-calculada, só PARA se obstáculo à frente (não desvia)
+	if modo_trilha:
+		match estado:
+			Estado.BUSCANDO:
+				_processar_trilha(delta)
+			Estado.DESVIANDO:
+				# Em trilha, DESVIANDO vira "PARADO por obstáculo" — trata como trilha
+				_processar_trilha(delta)
+			Estado.ALINHANDO:
+				_processar_alinhando_trilha(delta)
+			Estado.ESTACIONADO:
+				_processar_estacionado(delta)
+			Estado.RECUPERANDO:
+				_processar_trilha(delta)
+	else:
+		match estado:
+			Estado.BUSCANDO:
+				_processar_buscando(delta)
+			Estado.DESVIANDO:
+				_processar_desviando(delta)
+			Estado.ALINHANDO:
+				_processar_alinhando(delta)
+			Estado.ESTACIONADO:
+				_processar_estacionado(delta)
+			Estado.RECUPERANDO:
+				_processar_recuperando(delta)
 
 	queue_redraw()
 
 
 func _atualizar_sensores() -> void:
 	var todos := [ray_frente_centro, ray_frente_esq, ray_frente_dir, ray_esquerda, ray_direita, ray_tras, \
-		ray_frente_longo, ray_frente_longo_esq, ray_frente_longo_dir]
+		ray_frente_longo, ray_frente_longo_esq, ray_frente_longo_dir, ray_lateral_esq, ray_lateral_dir, ray_seta]
 	for raio in todos:
+		if raio == null or not is_instance_valid(raio):
+			continue
+		if not raio.global_position.is_finite() or not raio.target_position.is_finite():
+			continue
 		raio.force_raycast_update()
 
 
 # --- MOVIMENTO (a "física" de dirigir de verdade) -------------------------
 
 func _aplicar_movimento(delta: float) -> void:
+	if not global_position.is_finite() or not is_finite(rotation) or not is_finite(estercamento):
+		estercamento = 0.0
+		return
 	# 1) O volante vira aos poucos (não instantâneo).
 	estercamento = move_toward(estercamento, estercamento_alvo, taxa_estercamento * delta)
-	# 2) Modelo de bicicleta: a rotação muda conforme o volante e a velocidade.
-	#    tan() faz o arco ficar fechado quando o volante está muito virado.
-	rotation += velocidade_atual / entre_eixos * tan(estercamento) * delta
-	# 3) PROIBIDO BATER: indo pra frente, se o CENTRO do caminho está a menos
-	#    de distancia_seguranca, a velocidade alvo vira zero (para de vez).
-	#    (Usa o raio central, não o leque: só um canto raspando não trava o
-	#    carro numa curva — ele segue virando até o caminho ficar livre.)
-	if velocidade_desejada > 0.0 and distancia_centro() < distancia_seguranca:
-		velocidade_desejada = 0.0
-	# 4) Rampa de aceleração/frenagem: a velocidade muda aos poucos.
-	#    Freia mais forte do que acelera (igual motorista de verdade).
-	var variacao: float = (frenagem if velocidade_desejada < velocidade_atual else aceleracao) * delta
-	velocidade_atual = move_toward(velocidade_atual, velocidade_desejada, variacao)
-	velocity = transform.x * velocidade_atual
+	if not is_finite(estercamento):
+		estercamento = 0.0
+	# 2) Modelo de bicicleta: entre_eixos escala com o tamanho visual do carro
+	var escala_media := (global_scale.x + global_scale.y) * 0.5
+	var entre_eixos_efetivo := entre_eixos * maxf(escala_media, 1.0)
+	if entre_eixos_efetivo < 1.0:
+		entre_eixos_efetivo = 60.0
+	# Proibido girar parado — humano só vira com o carro em movimento
+	if absf(velocidade_atual) > 1.0 and is_finite(velocidade_atual):
+		rotation += velocidade_atual / entre_eixos_efetivo * tan(estercamento) * delta
+	if not is_finite(rotation):
+		rotation = 0.0
+	# 3) PROIBIDO BATER: frente e lateral — humano não raspa parede (escalado)
+	var escala_seg := maxf(escala_media, 1.0)
+	var seg_escalado := distancia_seguranca * escala_seg * 0.6 # 0.6 evita freio excessivo em escala grande
+	# clamp minimo para não ficar 0 em escala pequena
+	seg_escalado = maxf(seg_escalado, 18.0)
+	if velocidade_desejada > 0.0:
+		var dist_frente := distancia_centro()
+		var dist_lat := distancia_lateral()
+		var limite_lat := 12.0 if estado == Estado.RECUPERANDO else 22.0
+		limite_lat *= escala_seg
+		limite_lat = maxf(limite_lat, 14.0)
+		if dist_frente < seg_escalado or dist_lat < limite_lat:
+			velocidade_desejada = 0.0
+	if velocidade_desejada < 0.0 and distancia_tras() < seg_escalado:
+		if not (estado == Estado.RECUPERANDO and absf(estercamento) > 0.5):
+			velocidade_desejada = 0.0
+	# 4) Rampa suave humana: escala até 160 em reta, cai em curva (v_curva)
+	var rate: float = 6.0 if velocidade_desejada < velocidade_atual else 3.0
+	velocidade_atual = lerp(velocidade_atual, velocidade_desejada, clamp(rate * delta, 0.0, 1.0))
+	if absf(velocidade_desejada) < 0.01 and absf(velocidade_atual) < 0.5:
+		velocidade_atual = 0.0
+	# 5) Guarda contra NaN/transform inválido antes de projetar o vetor.
+	if not velocity.is_finite():
+		velocity = Vector2.ZERO
+		velocidade_atual = 0.0
+		return
+	var dir_mov := Vector2.RIGHT.rotated(rotation)
+	velocity = dir_mov * velocidade_atual
+	# Segurança reforçada contra Godot #94928: normal (0,0)
+	# threshold maior (2 px/s = length_squared 4) evita slide degenerado
+	if not velocity.is_finite() or velocity.length_squared() < 4.0:
+		velocity = Vector2.ZERO
+		velocidade_atual = 0.0
+		return
+	# Detecção de penetração: se já está dentro de parede, não chama slide (gera normal 0)
+	if test_move(transform, Vector2.ZERO):
+		velocity = Vector2.ZERO
+		velocidade_atual = 0.0
+		return
+	# Teste preditivo: se o movimento colidiria com normal degenerada, freia antes
+	var col_teste := move_and_collide(velocity * delta, true)
+	if col_teste != null:
+		var n_teste := col_teste.get_normal()
+		if not n_teste.is_finite() or n_teste.length_squared() < 0.25:
+			velocity = Vector2.ZERO
+			velocidade_atual = 0.0
+			return
+		if n_teste.length_squared() < 0.9 or not n_teste.is_normalized():
+			# normal quase zero ou não normalizada -> trata como penetração
+			if velocity.length() < 30.0:
+				velocity = Vector2.ZERO
+				velocidade_atual = 0.0
+				return
+	if debug_sensores and absf(velocidade_atual) < 60.0 and \
+		(distancia_frente() < 80.0 or distancia_tras() < 80.0 or distancia_lateral() < 80.0):
+		print("[dbg-alinhamento] st=", nome_estado(), " desejada=", velocidade_desejada,
+			" atual=", velocidade_atual, " df=", distancia_frente(),
+			" dt=", distancia_tras(), " dlat=", distancia_lateral())
 	move_and_slide()
+	var dir_drift := Vector2.RIGHT.rotated(rotation)
+	if velocity.is_finite():
+		velocity = velocity.dot(dir_drift) * dir_drift
+		velocidade_atual = velocity.dot(dir_drift)
+
+
+func _aplicar_movimento_trilha(delta: float) -> void:
+	# Versão KINEMÁTICA para modo trilha: não usa move_and_slide (evita normal 0)
+	if not global_position.is_finite() or not is_finite(rotation) or not is_finite(estercamento):
+		estercamento = 0.0
+		return
+	if not is_finite(velocidade_desejada) or absf(velocidade_desejada) > 1e6:
+		print("[BUG] desejada huge entry ", velocidade_desejada, " vel_atual ", velocidade_atual)
+		velocidade_desejada = clampf(velocidade_desejada, -200, 200)
+	if not is_finite(velocidade_atual) or absf(velocidade_atual) > 1e6:
+		print("[BUG] vel_atual huge entry ", velocidade_atual)
+		velocidade_atual = clampf(velocidade_atual, -200, 200)
+	estercamento = move_toward(estercamento, estercamento_alvo, taxa_estercamento * delta)
+	if not is_finite(estercamento):
+		estercamento = 0.0
+	if not is_finite(estercamento_alvo):
+		print("[BUG] est_alvo not finite ", estercamento_alvo)
+		estercamento_alvo = 0.0
+	var escala_media := (global_scale.x + global_scale.y) * 0.5
+	var entre_eixos_efetivo := entre_eixos * maxf(escala_media, 1.0)
+	if entre_eixos_efetivo < 1.0:
+		entre_eixos_efetivo = 60.0
+	# Realista: só vira andando, sem drift/pivot parado
+	if absf(velocidade_atual) > 1.0 and is_finite(velocidade_atual):
+		rotation += velocidade_atual / entre_eixos_efetivo * tan(estercamento) * delta
+	if not is_finite(rotation):
+		rotation = 0.0
+	var rate: float = 6.0 if velocidade_desejada < velocidade_atual else 5.0
+	var prev_vel: float = velocidade_atual
+	velocidade_atual = lerp(velocidade_atual, velocidade_desejada, clamp(rate * delta, 0.0, 1.0))
+	if absf(velocidade_atual) < 1.0 and absf(velocidade_desejada) > 50.0:
+		print("[SLOW] vel ", velocidade_atual, " desejada ", velocidade_desejada, " df ", distancia_centro(), " dlat ", distancia_lateral(), " pos ", global_position)
+	if absf(velocidade_atual) > 500.0:
+		print("[BUG] vel explosion lerp prev=", prev_vel, " desejada=", velocidade_desejada, " curr=", velocidade_atual, " delta=", delta, " rate=", rate)
+		velocidade_atual = clampf(velocidade_atual, -200.0, 200.0)
+	if absf(velocidade_desejada) < 0.01 and absf(velocidade_atual) < 0.5:
+		velocidade_atual = 0.0
+	if not velocity.is_finite():
+		velocity = Vector2.ZERO
+		velocidade_atual = 0.0
+		return
+	var dir_trilha := Vector2.RIGHT.rotated(rotation)
+	velocity = dir_trilha * velocidade_atual
+	if not velocity.is_finite() or velocity.length_squared() < 0.0001:
+		velocity = Vector2.ZERO
+		return
+	var movimento := velocity * delta
+	if not movimento.is_finite():
+		print("[BUG] movimento INF vel=", velocity, " delta=", delta)
+		velocity = Vector2.ZERO
+		velocidade_atual = 0.0
+		return
+	# Clamp contra teleporte (delta grande no primeiro frame de construir)
+	movimento = movimento.limit_length(8.0)
+	if movimento.length_squared() < 0.001:
+		velocity = Vector2.ZERO
+		return
+	var col := move_and_collide(movimento)
+	if col != null:
+		var n := col.get_normal()
+		if not n.is_finite() or n.length_squared() < 0.25 or not n.is_normalized():
+			velocity = Vector2.ZERO
+			velocidade_atual = 0.0
+			return
+		velocity = velocity.slide(n)
+		if velocity.is_finite():
+			velocidade_atual = velocity.length()
+		return
+	# Sem colisão: garante sem drift lateral
+	if velocity.is_finite() :
+		var dir = Vector2.RIGHT.rotated(rotation)
+		velocity = velocity.dot(dir) * dir
+		velocidade_atual = velocity.dot(dir)
 
 
 func _velocidade_por_sensor() -> float:
-	# A velocidade segue o que está REALMENTE no caminho do carro: o raio
-	# CENTRAL. Um obstáculo só raspando num canto não deve frear o carro —
-	# ele pode seguir reto enquanto o centro está livre.
-	var dist: float = distancia_centro()
+	# Humano: considera centro e lateral — parede ao lado também freia
+	var dist_c := distancia_centro()
+	var dist_lat := distancia_lateral()
+	var dist := minf(dist_c, dist_lat * 1.4)
 	if dist == INF:
 		return velocidade_maxima
 	if dist <= distancia_seguranca:
 		return 0.0
 	return clampf((dist - distancia_seguranca) / (distancia_freio - distancia_seguranca), 0.0, 1.0) * velocidade_maxima
+
+func _velocidade_aproximacao_vaga(vel_base: float) -> float:
+	# Perfil CONTÍNUO de aproximação (sem degraus): cruzeiro até ~450px da
+	# vaga, descendo suave até ~26px/s a 40px. Usado no modo trilha E no
+	# ALINHANDO para não haver salto de velocidade na troca de estado
+	# (a Boca da vaga dispara ALINHANDO longe, e os caps diferentes dos dois
+	# estados é que causavam "desacelerada" no meio da rua).
+	var alvo: Vector2
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
+		alvo = _vaga_alvo.global_position
+	elif posicao_alvo != Vector2.ZERO:
+		alvo = posicao_alvo
+	else:
+		return vel_base
+	var d: float = global_position.distance_to(alvo)
+	if d >= 450.0:
+		return vel_base
+	var vel_cruzeiro: float = velocidade_maxima * 0.85
+	var v_perfil: float = remap(clampf(d, 40.0, 450.0), 40.0, 450.0, 26.0, vel_cruzeiro)
+	return minf(vel_base, v_perfil)
+
+
+func _perto_da_vaga_para_snap() -> bool:
+	# O snap ("desliza pra dentro da vaga") só vale bem perto. Em fases com
+	# vaga escalada (ex. Fase3, 6.4x2.9) o teste de 100% dentro dispara ainda
+	# NA RUA (~200px), e o lerp do snap parecia uma "acelerada fantasma"
+	# com velocidade zero no final.
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
+		return global_position.distance_to(_vaga_alvo.global_position) < 80.0
+	return global_position.distance_to(posicao_alvo) < 80.0
 
 
 func _velocidade_reversa() -> float:
@@ -350,7 +634,7 @@ func _processar_buscando(delta: float) -> void:
 			if visao < dist_wp:
 				var lado: int = _lado_com_mais_espaco_longe()
 				var erro_ant: float = angle_difference(rotation, global_position.direction_to(waypoints[indice_waypoint]).angle())
-				estercamento_alvo = clampf(erro_ant * 2.0 + lado * 0.6, -max_estercamento, max_estercamento)
+				estercamento_alvo = clampf(erro_ant * 3.0 + lado * 0.9, -max_estercamento, max_estercamento)
 				velocidade_desejada = minf(velocidade_antecipacao, _velocidade_por_sensor())
 				_aplicar_movimento(delta)
 				return
@@ -361,14 +645,36 @@ func _processar_buscando(delta: float) -> void:
 		_mudar_estado(Estado.DESVIANDO)
 		return
 
-	# Aponta o volante para o waypoint. O arco surge sozinho do modelo.
+	# Aponta o volante para o waypoint. Humano vira até o fim quando precisa.
 	var alvo: Vector2 = waypoints[indice_waypoint]
 	var angulo_erro: float = angle_difference(rotation, global_position.direction_to(alvo).angle())
-	estercamento_alvo = clampf(angulo_erro * 2.0, -max_estercamento, max_estercamento)
+	# Preferência por seta (se houver, mistura 35% da direção da seta)
+	var dir_seta := _obter_direcao_seta()
+	if dir_seta != INF:
+		var erro_seta := angle_difference(rotation, dir_seta)
+		angulo_erro = lerp(angulo_erro, erro_seta, 0.35)
+	# Deadband reta: não oscila se já está quase reto e perto da linha
+	var cte_b: float = INF
+	for i in range(waypoints.size() - 1):
+		var p2 := Geometry2D.get_closest_point_to_segment(global_position, waypoints[i], waypoints[i + 1])
+		cte_b = minf(cte_b, global_position.distance_to(p2))
+	if cte_b < 20.0 and absf(angulo_erro) < 0.15:
+		angulo_erro *= 0.5
+	estercamento_alvo = clampf(angulo_erro * 3.0, -max_estercamento, max_estercamento)
 
-	# Motorista real freia em curva: quanto mais virado o volante, mais devagar.
-	var fator_curva: float = 1.0 - minf(absf(angulo_erro) / max_estercamento, 1.0) * 0.5
-	velocidade_desejada = _velocidade_por_sensor() * fator_curva
+	# Humano freia suave quando quer virar — preditivo por curvatura
+	var curv := _curvatura_a_frente()
+	var v_curva: float = sqrt(0.9 / max(curv, 0.015))
+	var base_vel := _velocidade_por_sensor()
+	base_vel = minf(base_vel, v_curva * 1.1)
+	# Freio proporcional suave
+	var fator_curva: float = 1.0 - minf(absf(angulo_erro) / max_estercamento, 1.0) * 0.4
+	base_vel *= fator_curva
+	# Freio extra suave para curva forte (sem degrau)
+	if absf(angulo_erro) > 0.7:
+		var t: float = clampf((absf(angulo_erro) - 0.7) / 0.3, 0.0, 1.0)
+		base_vel *= lerp(0.75, 0.5, t)
+	velocidade_desejada = base_vel
 
 	_aplicar_movimento(delta)
 
@@ -397,14 +703,32 @@ func _processar_rota(delta: float) -> void:
 		_aplicar_movimento(delta)
 		return
 
-	# Ponto à frente do caminho: é nele que o volante aponta (curva suave).
+	# Humano: mira adiante mas vira com decisão quando precisa
 	var alvo := _ponto_lookahead(distancia_lookahead)
 	var erro: float = angle_difference(rotation, global_position.direction_to(alvo).angle())
-	# Volante GENTIL: corrige aos poucos. Numa fresta larga, quase não vira.
-	estercamento_alvo = clampf(erro * 1.5, -max_estercamento, max_estercamento)
-	# Motorista real freia em curva: quanto mais virado o volante, mais devagar.
-	var fator_curva: float = 1.0 - minf(absf(erro) / max_estercamento, 1.0) * 0.5
-	velocidade_desejada = _velocidade_por_sensor() * fator_curva
+	var dir_seta2 := _obter_direcao_seta()
+	if dir_seta2 != INF:
+		var erro_s := angle_difference(rotation, dir_seta2)
+		erro = lerp(erro, erro_s, 0.3)
+	# Deadband para não oscilar em reta: se CTE <20 e erro pequeno, suaviza
+	var cte: float = INF
+	for i in range(waypoints.size() - 1):
+		var p := Geometry2D.get_closest_point_to_segment(global_position, waypoints[i], waypoints[i + 1])
+		cte = minf(cte, global_position.distance_to(p))
+	if cte < 20.0 and absf(erro) < 0.15:
+		erro *= 0.5
+	estercamento_alvo = clampf(erro * 2.8, -max_estercamento, max_estercamento)
+	# Freio suave preditivo
+	var curv2 := _curvatura_a_frente()
+	var v_curva2: float = sqrt(0.9 / max(curv2, 0.015))
+	var base_vel2 := _velocidade_por_sensor()
+	base_vel2 = minf(base_vel2, v_curva2 * 1.1)
+	var fator_curva2: float = 1.0 - minf(absf(erro) / max_estercamento, 1.0) * 0.4
+	base_vel2 *= fator_curva2
+	if absf(erro) > 0.7:
+		var t2: float = clampf((absf(erro) - 0.7) / 0.3, 0.0, 1.0)
+		base_vel2 *= lerp(0.75, 0.5, t2)
+	velocidade_desejada = base_vel2
 
 	_aplicar_movimento(delta)
 	_avancar_indice_rota()
@@ -449,6 +773,21 @@ func _ponto_lookahead(distancia: float) -> Vector2:
 	return waypoints[waypoints.size() - 1]
 
 
+func _curvatura_a_frente() -> float:
+	if waypoints.size() < indice_waypoint + 3:
+		return 0.0
+	var p1: Vector2 = waypoints[indice_waypoint]
+	var p2: Vector2 = waypoints[indice_waypoint + 1]
+	var p3: Vector2 = waypoints[indice_waypoint + 2]
+	var v1: Vector2 = (p2 - p1).normalized()
+	var v2: Vector2 = (p3 - p2).normalized()
+	var ang: float = absf(v1.angle_to(v2))
+	var dist: float = p1.distance_to(p2) + p2.distance_to(p3)
+	if dist < 10.0:
+		return 0.0
+	return ang / (dist * 0.5)
+
+
 func _avancar_indice_rota() -> void:
 	if indice_waypoint >= waypoints.size() - 1:
 		return
@@ -478,6 +817,370 @@ func _replanejar_ou_recuperar() -> void:
 		tentativa_mudou.emit(0, "Replanejou rota (A*)")
 	else:
 		_iniciar_recuperacao()
+
+
+
+# --- MODO TRILHA: segue linha pré-calculada (geração automática A* + fallback Line2D) ---
+func _coletar_rota_fallback() -> Array:
+	# Tenta montar trilha a partir de Rotas Line2D (ruas desenhadas) + Waypoints
+	var rotas_node := get_node_or_null("../Rotas")
+	if rotas_node != null:
+		var linhas: Array = []
+		for child in rotas_node.get_children():
+			if child is Line2D:
+				var pts: PackedVector2Array = child.points
+				if pts.size() < 2:
+					continue
+				var glob: Array = []
+				for p in pts:
+					glob.append(child.to_global(p))
+				linhas.append(glob)
+		if linhas.size() > 0:
+			# Escolhe a linha cujo início está mais perto do carro e cujo fim está mais perto da vaga
+			var melhor: Array = []
+			var melhor_score: float = INF
+			var alvo_vaga: Vector2 = _vaga_alvo.global_position if _vaga_alvo != null else global_position
+			for linha in linhas:
+				var d_ini: float = global_position.distance_to(linha[0])
+				var d_fim: float = alvo_vaga.distance_to(linha[linha.size()-1]) if linha.size() > 0 else INF
+				var score: float = d_ini * 0.7 + d_fim * 0.3
+				if score < melhor_score:
+					melhor_score = score
+					melhor = linha
+			if melhor.size() >= 2:
+				return melhor
+	# Fallback 2: Waypoints manuais (array interno ou nós da cena)
+	if not waypoints.is_empty():
+		return Array(waypoints)
+	var wp_node := get_node_or_null("../Waypoints")
+	if wp_node != null and wp_node.get_child_count() >= 2:
+		var arr: Array = []
+		for c in wp_node.get_children():
+			if c is Marker2D:
+				arr.append(c.global_position)
+		if arr.size() >= 2:
+			return arr
+	# Fallback 3: linha reta até vaga
+	if _vaga_alvo != null:
+		return [global_position, _vaga_alvo.global_position]
+	# Fallback 4: se ainda nada, tenta vaga mais próxima sem rota
+	if container_vagas != null:
+		for v in container_vagas.get_children():
+			if not v.ocupada:
+				return [global_position, v.global_position]
+	return []
+
+
+func _construir_rota_sequencial_ruas() -> Array:
+	# Ordem CORRETA solicitada: RotaReta -> RotaDaCurva -> RotaReta2
+	var rotas_node := get_node_or_null("../Rotas")
+	if rotas_node == null or container_vagas == null:
+		return []
+	var vaga_escolhida: Node2D = null
+	var menor_dist: float = INF
+	for v in container_vagas.get_children():
+		if v.ocupada:
+			continue
+		var d: float = global_position.distance_to(v.global_position)
+		if d < menor_dist:
+			menor_dist = d
+			vaga_escolhida = v
+	if vaga_escolhida == null:
+		return []
+	_vaga_alvo = vaga_escolhida
+	var ordem: Array = ["RotaReta", "RotaDaCurva", "RotaReta2"]
+	var rua: Array = []
+	rua.append(global_position)
+	var prev_end: Vector2 = global_position
+	for nome in ordem:
+		var line: Line2D = rotas_node.get_node_or_null(nome) as Line2D
+		if line == null:
+			continue
+		var pts: PackedVector2Array = line.points
+		if pts.size() < 2:
+			continue
+		# Converte pontos locais para global, respeitando position/rotation/scale da Line2D
+		var glob: Array = []
+		for p in pts:
+			glob.append(line.to_global(p))
+		# Transição suave com 6 pontos interpolados (evita parada brusca)
+		if rua.size() >= 1:
+			var gap: float = rua[rua.size()-1].distance_to(glob[0])
+			if gap > 40.0:
+				for s in range(1, 7):
+					var t: float = float(s) / 7.0
+					t = t * t * (3.0 - 2.0 * t) # ease
+					rua.append(rua[rua.size()-1].lerp(glob[0], t))
+			for i in range(glob.size()):
+				if rua[rua.size()-1].distance_to(glob[i]) > 8.0:
+					rua.append(glob[i])
+		else:
+			for p in glob:
+				rua.append(p)
+	# Adiciona ponto_prep e vaga com transição suave (evita curva brusca de 90°)
+	var dir_vaga: Vector2 = Vector2.RIGHT.rotated(_vaga_alvo.rotacao_alvo if "rotacao_alvo" in _vaga_alvo else 0.0)
+	var ponto_prep: Vector2 = _vaga_alvo.global_position - dir_vaga * (entre_eixos * 2.5 + 60.0)
+	# Só adiciona ponto_prep se não estiver muito longe da última parte da rua (evita zig-zag)
+	if rua[rua.size()-1].distance_to(ponto_prep) > 15.0:
+		# Suaviza com ponto intermediário
+		var mid_prep: Vector2 = rua[rua.size()-1].lerp(ponto_prep, 0.5)
+		rua.append(mid_prep)
+		rua.append(ponto_prep)
+	rua.append(_vaga_alvo.global_position)
+	# Filtra e suaviza com Douglas-Peucker leve (12px) para tirar micro-zigue-zague
+	var filtrada: Array = []
+	for pt in rua:
+		if filtrada.is_empty() or filtrada[filtrada.size()-1].distance_to(pt) > 10.0:
+			filtrada.append(pt)
+	return filtrada
+
+
+func _replanejar_ou_recuperar_trilha() -> void:
+	_tempo_parado = 0.0
+	if planejador == null:
+		# sem planejador: tenta fallback
+		var fb: Array = _coletar_rota_fallback()
+		if fb.size() >= 2:
+			_aplicar_rota(fb)
+			tentativa_mudou.emit(0, "Trilha fallback (Line2D)")
+		return
+	var alvo: Vector2
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
+		alvo = _vaga_alvo.global_position
+	elif not waypoints.is_empty():
+		alvo = waypoints[waypoints.size() - 1]
+	else:
+		alvo = global_position
+	var rota: Array = planejador.achar_rota(global_position, alvo)
+	if rota.size() >= 2:
+		_aplicar_rota(rota)
+		tentativa_mudou.emit(0, "Replanejou trilha (A*)")
+	else:
+		var fb2: Array = _coletar_rota_fallback()
+		if fb2.size() >= 2:
+			_aplicar_rota(fb2)
+			tentativa_mudou.emit(0, "Trilha fallback (sem A*)")
+		else:
+			velocidade_desejada = 0.0
+			estercamento_alvo = 0.0
+
+
+func _processar_trilha(delta: float) -> void:
+	if absf(velocidade_atual) > 500:
+		print("[BUG] entry vel huge ", velocidade_atual, " desejada ", velocidade_desejada, " estado ", nome_estado(), " pos ", global_position)
+		velocidade_atual = clampf(velocidade_atual, -200, 200)
+	_deslocamento_total += global_position.distance_to(_posicao_anterior)
+	_posicao_anterior = global_position
+	_atualizar_progresso(delta)
+	# Se 100% dentro E perto, PARA imediatamente (lógica principal solicitada).
+	# O gate de distância evita o snap "fantasma" em vagas escaladas, onde
+	# "100% dentro" acontece ainda na rua.
+	if _esta_100_dentro_da_vaga() and _perto_da_vaga_para_snap():
+		var _err_inside: float = angle_difference(rotation, rotacao_alvo)
+		if absf(_err_inside) < 0.20:
+			estercamento_alvo = 0.0
+			velocidade_desejada = 0.0
+			velocity = Vector2.ZERO
+			velocidade_atual = 0.0
+			global_position = global_position.lerp(posicao_alvo, delta * 6.0)
+			rotation = lerp_angle(rotation, rotacao_alvo, delta * 6.0)
+			if absf(_err_inside) < tolerancia_alinhamento and global_position.distance_to(posicao_alvo) < 12.0:
+				if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
+					_vaga_alvo.marcar_ocupada()
+				_mudar_estado(Estado.ESTACIONADO)
+			return
+	var _seg_tmp: float = 44.0 * maxf((global_scale.x + global_scale.y)*0.5, 1.0) + 22.0
+	_seg_tmp = maxf(_seg_tmp, 48.0)
+	var _frente_tmp: bool = distancia_centro() < _seg_tmp
+	# Travamento só se não está parado por obstáculo frontal (evita replanejar em loop)
+	if not _frente_tmp and _detectar_travamento_rota():
+		_replanejar_ou_recuperar_trilha()
+		return
+	# --- PARADA por obstáculo: no modo trilha o carro NÃO desvia, só PARA ---
+	var escala_media_trilha := (global_scale.x + global_scale.y) * 0.5
+	var seg_trilha: float = 44.0 * maxf(escala_media_trilha, 1.0) + 22.0
+	seg_trilha = maxf(seg_trilha, 48.0)
+	var df_trilha := distancia_centro()
+	var frente_bloqueada: bool = df_trilha < seg_trilha
+	if frente_bloqueada and tempo_ignorar_sensor <= 0.0:
+		_tempo_parado += delta
+		if _tempo_parado < 0.7:
+			# Para e volante reto
+			estercamento_alvo = move_toward(estercamento_alvo, 0.0, delta * 3.0)
+			velocidade_desejada = 0.0
+		elif _tempo_parado < 1.6:
+			# Ré curta com volante para sair do bloqueio (realista, gira andando de ré)
+			var alvo_r := _ponto_lookahead(distancia_lookahead)
+			var err_r: float = angle_difference(rotation, global_position.direction_to(alvo_r).angle())
+			estercamento_alvo = clampf(-err_r * 0.9, -max_estercamento, max_estercamento)
+			velocidade_desejada = -velocidade_alinhamento * 0.45
+			if distancia_tras() < seg_trilha:
+				velocidade_desejada = 0.0
+				estercamento_alvo = 0.0
+		else:
+			estercamento_alvo = move_toward(estercamento_alvo, 0.0, delta * 3.0)
+			velocidade_desejada = 0.0
+		_aplicar_movimento_trilha(delta)
+		if _tempo_parado > tempo_parado_replanejar:
+			_replanejar_ou_recuperar_trilha()
+		return
+	else:
+		_tempo_parado = 0.0
+	# Chegada no fim da rota: aproxima devagar
+	if waypoints.size() >= 1:
+		var fim_rota: Vector2 = waypoints[waypoints.size() - 1]
+		if indice_waypoint >= waypoints.size() - 1 and global_position.distance_to(fim_rota) < tolerancia_chegada * 2.5:
+			var erro_fim: float = angle_difference(rotation, global_position.direction_to(fim_rota).angle())
+			estercamento_alvo = clampf(erro_fim * 1.2, -max_estercamento, max_estercamento)
+			velocidade_desejada = velocidade_alinhamento * 0.5
+			_aplicar_movimento_trilha(delta)
+			return
+	# Pure pursuit sobre a trilha
+	var alvo := _ponto_lookahead(distancia_lookahead)
+	var erro: float = angle_difference(rotation, global_position.direction_to(alvo).angle())
+	var dir_seta2 := _obter_direcao_seta()
+	if dir_seta2 != INF:
+		var erro_s := angle_difference(rotation, dir_seta2)
+		erro = lerp(erro, erro_s, 0.2)
+	var cte: float = INF
+	for i in range(waypoints.size() - 1):
+		var p := Geometry2D.get_closest_point_to_segment(global_position, waypoints[i], waypoints[i + 1])
+		cte = minf(cte, global_position.distance_to(p))
+	if cte < 20.0 and absf(erro) < 0.15:
+		erro *= 0.5
+	estercamento_alvo = clampf(erro * 2.2, -max_estercamento, max_estercamento)
+	var curv2 := _curvatura_a_frente()
+	var v_curva2: float = velocidade_maxima
+	if curv2 > 0.05:
+		v_curva2 = sqrt(30.0 / curv2)
+		v_curva2 = maxf(v_curva2, 45.0)
+	var dist_vaga_fim: float = global_position.distance_to(_vaga_alvo.global_position) if _vaga_alvo else INF
+	var base_vel2: float
+	if dist_vaga_fim > 350.0:
+		# Longe da vaga: velocidade constante na rua, sem frenagem de sensor
+		base_vel2 = velocidade_maxima * 0.85
+		base_vel2 = minf(base_vel2, v_curva2 * 1.1)
+	else:
+		base_vel2 = _velocidade_por_sensor()
+		base_vel2 = minf(base_vel2, v_curva2 * 1.1)
+		base_vel2 = minf(base_vel2, velocidade_maxima)
+	# limita ao max de trilha para não correr demais em mapa grande
+	base_vel2 = minf(base_vel2, velocidade_trilha_max * maxf(escala_media_trilha, 1.0))
+	var fator_curva2: float = 1.0 - minf(absf(erro) / max_estercamento, 1.0) * 0.25
+	base_vel2 *= fator_curva2
+	if absf(erro) > 0.7:
+		var t2: float = clampf((absf(erro) - 0.7) / 0.3, 0.0, 1.0)
+		base_vel2 *= lerp(0.85, 0.65, t2)
+	# Frenagem CONTÍNUA na aproximação da vaga (mesmo perfil do ALINHANDO,
+	# sem degraus de 75/45/28 que davam sensação de freio seco)
+	base_vel2 = _velocidade_aproximacao_vaga(base_vel2)
+	velocidade_desejada = base_vel2
+	_aplicar_movimento_trilha(delta)
+	_avancar_indice_rota()
+
+
+func _processar_alinhando_trilha(delta: float) -> void:
+	# Lógica principal: Se 100% dentro e reto, PARA imediatamente
+	var _dist0: float = global_position.distance_to(posicao_alvo)
+	var _err0: float = angle_difference(rotation, rotacao_alvo)
+	var _reto0: bool = absf(_err0) < 0.20
+	var _dentro0: bool = _esta_100_dentro_da_vaga()
+	if _dentro0 and _reto0 and _perto_da_vaga_para_snap():
+		estercamento_alvo = 0.0
+		velocidade_desejada = 0.0
+		velocity = Vector2.ZERO
+		velocidade_atual = 0.0
+		global_position = global_position.lerp(posicao_alvo, delta * 6.0)
+		rotation = lerp_angle(rotation, rotacao_alvo, delta * 6.0)
+		if absf(_err0) < tolerancia_alinhamento and _dist0 < 12.0:
+			if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
+				_vaga_alvo.marcar_ocupada()
+			_mudar_estado(Estado.ESTACIONADO)
+		return
+	# Usa ponto_prep se houver waypoints (preparação realista)
+	if not waypoints.is_empty() and indice_waypoint < waypoints.size():
+		var alvo_wp: Vector2 = waypoints[indice_waypoint]
+		var dist_wp: float = global_position.distance_to(alvo_wp)
+		if dist_wp < tolerancia_chegada:
+			indice_waypoint += 1
+			if indice_waypoint < waypoints.size():
+				alvo_wp = waypoints[indice_waypoint]
+			else:
+				alvo_wp = posicao_alvo
+		# Se ainda tem waypoint intermediário, vai até ele primeiro
+		if indice_waypoint < waypoints.size() - 1 or (waypoints.size() == 1 and dist_wp > tolerancia_chegada):
+			var ang_wp: float = global_position.direction_to(alvo_wp).angle()
+			var err_wp: float = angle_difference(rotation, ang_wp)
+			estercamento_alvo = clampf(err_wp * 1.8, -max_estercamento, max_estercamento)
+			# Mesmo perfil da trilha: cruzeiro longe, frenagem contínua perto
+			# (sem o cap 84 que dava o degrau 135->84 na boca da vaga)
+			var base_wp: float = _velocidade_por_sensor()
+			base_wp = minf(base_wp, velocidade_maxima * 0.85)
+			base_wp = _velocidade_aproximacao_vaga(base_wp)
+			if absf(err_wp) > 0.7:
+				base_wp *= 0.45
+			elif absf(err_wp) > 0.4:
+				base_wp *= 0.7
+			velocidade_desejada = base_wp
+			if distancia_lateral() < 35.0:
+				velocidade_desejada *= 0.5
+			if distancia_centro() < distancia_seguranca * 1.2:
+				velocidade_desejada = 0.0
+			_aplicar_movimento_trilha(delta)
+			# Checagem de vaga só quando no último waypoint
+			var _dist_vaga: float = global_position.distance_to(posicao_alvo)
+			var _erro_vaga: float = angle_difference(rotation, rotacao_alvo)
+			if _esta_100_dentro_da_vaga() and absf(_erro_vaga) < tolerancia_alinhamento and _dist_vaga < 12.0:
+				if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
+					_vaga_alvo.marcar_ocupada()
+				_mudar_estado(Estado.ESTACIONADO)
+			return
+	var distancia: float = global_position.distance_to(posicao_alvo)
+	var erro: float = angle_difference(rotation, rotacao_alvo)
+	if distancia > tolerancia_chegada * 2.0:
+		var angulo: float = global_position.direction_to(posicao_alvo).angle()
+		var erro_approach := angle_difference(rotation, angulo)
+		estercamento_alvo = clampf(erro_approach * 1.8, -max_estercamento, max_estercamento)
+		velocidade_desejada = _velocidade_aproximacao_vaga(75.0)
+		if absf(erro_approach) > 0.6:
+			velocidade_desejada = _velocidade_aproximacao_vaga(45.0)
+		if distancia_centro() < distancia_seguranca:
+			velocidade_desejada = 0.0
+	else:
+		if _esta_100_dentro_da_vaga() and absf(erro) > 0.08:
+			# Dentro da vaga: gira parado suave para alinhar (único lugar permitido)
+			estercamento_alvo = 0.0
+			velocidade_desejada = 0.0
+			rotation = lerp_angle(rotation, rotacao_alvo, delta * 2.0)
+		elif absf(erro) > 0.7:
+			estercamento_alvo = -sign(erro) * max_estercamento * 0.75
+			velocidade_desejada = -_velocidade_reversa() * 0.55
+			if distancia_tras() < distancia_seguranca:
+				velocidade_desejada = 0.0
+		elif absf(erro) > 0.35:
+			estercamento_alvo = clampf(erro * 1.8, -max_estercamento, max_estercamento)
+			velocidade_desejada = velocidade_alinhamento * 0.65
+		else:
+			estercamento_alvo = clampf(erro * 2.2, -max_estercamento, max_estercamento)
+			var alinhado: bool = absf(erro) < tolerancia_alinhamento
+			if alinhado:
+				velocidade_desejada = velocidade_alinhamento * 0.5
+				if distancia < 12.0:
+					velocidade_desejada *= 0.45
+			else:
+				if distancia > 14.0:
+					velocidade_desejada = velocidade_alinhamento * 0.3
+				else:
+					velocidade_desejada = velocidade_alinhamento * 0.18
+	_aplicar_movimento_trilha(delta)
+	if _esta_100_dentro_da_vaga() and absf(erro) < tolerancia_alinhamento and distancia < 12.0:
+		if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
+			_vaga_alvo.marcar_ocupada()
+		_mudar_estado(Estado.ESTACIONADO)
+	elif distancia < 9.0 and absf(erro) < 0.22 and _esta_100_dentro_da_vaga():
+		if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
+			_vaga_alvo.marcar_ocupada()
+		_mudar_estado(Estado.ESTACIONADO)
 
 
 func _processar_desviando(delta: float) -> void:
@@ -513,26 +1216,76 @@ func _processar_desviando(delta: float) -> void:
 
 
 func _processar_alinhando(delta: float) -> void:
-	# Estacionamento: primeiro se aproxima da vaga (curva), depois gira até a
-	# rotação certa e entra devagar até o centro.
+	# Estacionamento humano: aproxima, se torto faz ré esterçada, ajuste fino
 	var distancia: float = global_position.distance_to(posicao_alvo)
-	if distancia > tolerancia_chegada * 2.0:
+	var erro: float = angle_difference(rotation, rotacao_alvo)
+	if distancia > tolerancia_chegada * 2.5:
 		var angulo: float = global_position.direction_to(posicao_alvo).angle()
-		estercamento_alvo = clampf(angle_difference(rotation, angulo) * 2.0, -max_estercamento, max_estercamento)
-		velocidade_desejada = _velocidade_por_sensor() * (velocidade_alinhamento / velocidade_maxima)
+		var erro_approach := angle_difference(rotation, angulo)
+		estercamento_alvo = clampf(erro_approach * 1.8, -max_estercamento, max_estercamento)
+		# Freia para virar — habilidade de frear quando quer
+		var base_a := _velocidade_por_sensor() * 0.6
+		if absf(erro_approach) > 0.7:
+			base_a *= 0.45
+		elif absf(erro_approach) > 0.4:
+			base_a *= 0.7
+		velocidade_desejada = base_a
+		var lat := distancia_lateral()
+		if lat < 35.0:
+			velocidade_desejada *= 0.5
 	else:
-		var erro: float = angle_difference(rotation, rotacao_alvo)
-		estercamento_alvo = clampf(erro * 2.0, -max_estercamento, max_estercamento)
-		var alinhado: bool = absf(erro) < tolerancia_alinhamento
-		velocidade_desejada = velocidade_alinhamento if alinhado else velocidade_alinhamento * 0.3
+		# Perto da vaga: precisa ficar reto
+		if absf(erro) > 0.7:
+			# Muito torto: ré esterçada como humano (manobra 3 tempos simplificada)
+			estercamento_alvo = -sign(erro) * max_estercamento * 0.9
+			velocidade_desejada = -_velocidade_reversa() * 0.7
+			if distancia_tras() < distancia_seguranca + 12.0:
+				estercamento_alvo = sign(erro) * max_estercamento * 0.5
+				velocidade_desejada = _velocidade_por_sensor() * 0.3
+		else:
+			estercamento_alvo = clampf(erro * 2.2, -max_estercamento, max_estercamento)
+			var alinhado: bool = absf(erro) < tolerancia_alinhamento
+			if alinhado:
+				# Reto: entra devagar
+				velocidade_desejada = velocidade_alinhamento * 0.6
+				if distancia < 12.0:
+					velocidade_desejada *= 0.5
+			else:
+				# Quase: pequeno ajuste frente/ré
+				if distancia > 14.0:
+					velocidade_desejada = velocidade_alinhamento * 0.35
+				else:
+					velocidade_desejada = -_velocidade_reversa() * 0.4
 
 	_aplicar_movimento(delta)
 
-	if distancia < 10.0 and absf(angle_difference(rotation, rotacao_alvo)) < tolerancia_alinhamento:
+	# Só estaciona se 100% dentro da vaga (humano) e não em cima de calçada
+	if _esta_100_dentro_da_vaga() and absf(erro) < tolerancia_alinhamento and distancia < 12.0:
+		if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
+			_vaga_alvo.marcar_ocupada()
+		_mudar_estado(Estado.ESTACIONADO)
+	elif distancia < 10.0 and absf(erro) < tolerancia_alinhamento and _esta_100_dentro_da_vaga():
+		if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
+			_vaga_alvo.marcar_ocupada()
 		_mudar_estado(Estado.ESTACIONADO)
 
 
 func _processar_estacionado(delta: float) -> void:
+	# Trava bonitinho: interpola até o centro exato da vaga com rotação perfeita
+	var dano_pos := posicao_alvo - global_position
+	var erro_rot := angle_difference(rotation, rotacao_alvo)
+	# Se já está bem perto, trava duro
+	if dano_pos.length() < 8.0 and absf(erro_rot) < 0.08:
+		global_position = global_position.lerp(posicao_alvo, delta * 6.0)
+		rotation = lerp_angle(rotation, rotacao_alvo, delta * 6.0)
+		velocidade_atual = move_toward(velocidade_atual, 0.0, frenagem * delta * 2.0)
+		velocity = Vector2.ZERO
+		estercamento = 0.0
+		estercamento_alvo = 0.0
+		# ESTACIONADO: posicionado via lerp acima. move_and_slide com
+		# velocidade zero dispara "normal (0.0, 0.0) must be normalized"
+		# (Godot #94928); o frame físico é intencionalmente ignorado.
+		return
 	estercamento_alvo = 0.0
 	velocidade_desejada = 0.0
 	_aplicar_movimento(delta)
@@ -582,36 +1335,135 @@ func _detectar_travamento() -> bool:
 func _iniciar_recuperacao() -> void:
 	tentativas += 1
 	tempo_no_waypoint = 0.0
-	distancia_inicio_waypoint = global_position.distance_to(waypoints[indice_waypoint])
+	distancia_inicio_waypoint = global_position.distance_to(waypoints[indice_waypoint]) if indice_waypoint < waypoints.size() else 0.0
 	contador_oscilacao = 0
 
-	if tentativas <= 3:
-		# Estratégia 0: manobra de três tempos — ré girando, depois frente.
+	if tentativas == 1:
+		# Paralelo por manobra: avalia 3 estratégias via corrotina com snapshot
+		_tentar_manoabras_paralelo()
+		return
+	elif tentativas == 2:
+		# 2ª: desvio lateral (contorna) — já avaliado no paralelo, mas mantém fallback
+		estrategia = 1
+		_inserir_waypoint_desvio()
+		tempo_ignorar_sensor = 0.5
+		_mudar_estado(Estado.BUSCANDO)
+	elif tentativas == 3:
+		# 3ª: replaneja com corredor mais justo (inflar menor) — tenta nova rota antes de desistir
+		estrategia = 2
+		if planejador != null:
+			# Tenta rota alternativa com inflar reduzido temporariamente
+			var inflar_original = planejador.inflar
+			planejador.inflar = 50.0
+			planejador.construir()
+			var alvo: Vector2 = _vaga_alvo.global_position if _vaga_alvo != null else waypoints[waypoints.size()-1]
+			var nova_rota: Array = planejador.achar_rota(global_position, alvo)
+			planejador.inflar = inflar_original
+			planejador.construir()
+			if nova_rota.size() >= 2:
+				_aplicar_rota(nova_rota)
+				tentativa_mudou.emit(tentativas, "Replanejou (humano)")
+				_mudar_estado(Estado.BUSCANDO)
+				return
+		# Se não conseguiu nova rota, faz ré simples
+		tempo_estrategia = 0.0
+		_mudar_estado(Estado.RECUPERANDO)
+	elif tentativas < max_tentativas_por_waypoint:
+		# 4ª: ré prolongada
+		estrategia = 2
+		tempo_estrategia = 0.0
+		_mudar_estado(Estado.RECUPERANDO)
+	else:
+		# Só agora desiste da vaga e escolhe próxima (agêntico)
+		estrategia = 3
+		_desistir_waypoint()
+		if tentativas >= max_tentativas_por_waypoint and _vaga_alvo != null:
+			# Marca vaga atual como tentada e pede nova
+			pedir_nova_vaga.emit()
+		_mudar_estado(Estado.BUSCANDO)
+
+	tentativa_mudou.emit(tentativas, ESTRATEGIAS[estrategia])
+
+
+func _tentar_manoabras_paralelo() -> void:
+	# Paralelo por manobra via corrotina await (3 fantasmas)
+	if planejador == null or _vaga_alvo == null:
 		estrategia = 0
 		fase_manobra = 1
 		tempo_estrategia = 0.0
 		vies_lado = _lado_com_mais_espaco()
 		_mudar_estado(Estado.RECUPERANDO)
-	elif tentativas <= 6:
-		# Estratégia 1: contorna — cria um waypoint temporário ao lado,
-		# então o carro dá a volta por fora e retoma o caminho.
-		estrategia = 1
-		_inserir_waypoint_desvio()
-		tempo_ignorar_sensor = 0.5
-		_mudar_estado(Estado.BUSCANDO)
-	elif tentativas < max_tentativas_por_waypoint:
-		# Estratégia 2: ré — recua para se reposicionar.
-		estrategia = 2
+		tentativa_mudou.emit(tentativas, ESTRATEGIAS[estrategia])
+		return
+	var snap = planejador.snapshot()
+	var alvo: Vector2 = _vaga_alvo.global_position
+	# Simula 3 estratégias sem mover o corpo, usando snapshot
+	var resultados: Array = []
+	# Estratégia 0: manobra 3 tempos — precisa espaço lateral >50 e trás >40
+	var espaco_lat_0 = minf(_distancia_do_raio(ray_esquerda), _distancia_do_raio(ray_lateral_esq))
+	var espaco_lat_1 = minf(_distancia_do_raio(ray_direita), _distancia_do_raio(ray_lateral_dir))
+	var score0: float = INF
+	if maxf(espaco_lat_0, espaco_lat_1) > 50.0 and distancia_tras() > 40.0:
+		score0 = 0.0
+	resultados.append({"id":0, "score":score0, "nome":"Manobra de três tempos"})
+	await get_tree().process_frame
+	# Estratégia 1: contornar — waypoint lateral + rota snapshot
+	var lado1: int = _lado_com_mais_espaco()
+	var ponto1: Vector2 = global_position + Vector2(0, 1).rotated(rotation + lado1 * PI / 2.0) * distancia_waypoint_desvio
+	var rota1: Array = planejador.achar_rota_snapshot(global_position, ponto1, snap)
+	var score1: float = INF
+	if rota1.size() >= 2:
+		score1 = _comprimento_rota(rota1) * 0.8
+	resultados.append({"id":1, "score":score1, "rota":rota1, "nome":"Contornar o obstáculo"})
+	await get_tree().process_frame
+	# Estratégia 2: replanejar com inflar 35
+	var rota2: Array = []
+	# Simula inflar 35 construindo grade local com celulas do snapshot mas com raio menor?
+	# Aproxima: usa snapshot atual mas com peso menor, rota deve ser similar
+	rota2 = planejador.achar_rota_snapshot(global_position, alvo, snap)
+	var score2: float = INF
+	if rota2.size() >= 2:
+		score2 = _comprimento_rota(rota2) * 1.1
+		if rota2.size() > 0:
+			# Penaliza se passa muito perto de obstáculo (já inflado)
+			score2 += 20.0
+	resultados.append({"id":2, "score":score2, "rota":rota2, "nome":"Dar ré"})
+	await get_tree().process_frame
+	# Escolhe menor score viável
+	resultados.sort_custom(func(a,b): return a.score < b.score)
+	var melhor = resultados[0]
+	if melhor.score == INF:
+		# Nenhuma viável: fallback manobra
+		estrategia = 0
+		fase_manobra = 1
 		tempo_estrategia = 0.0
+		vies_lado = _lado_com_mais_espaco()
 		_mudar_estado(Estado.RECUPERANDO)
 	else:
-		# Estratégia 3: desiste — pula o waypoint; se era o último,
-		# pede para escolher outra vaga.
-		estrategia = 3
-		_desistir_waypoint()
-		_mudar_estado(Estado.BUSCANDO)
-
-	tentativa_mudou.emit(tentativas, ESTRATEGIAS[estrategia])
+		if melhor.id == 0:
+			estrategia = 0
+			fase_manobra = 1
+			tempo_estrategia = 0.0
+			vies_lado = _lado_com_mais_espaco()
+			_mudar_estado(Estado.RECUPERANDO)
+		elif melhor.id == 1:
+			estrategia = 1
+			# Reusa rota já calculada
+			if melhor.rota.size() >= 2:
+				_aplicar_rota(melhor.rota)
+			else:
+				_inserir_waypoint_desvio()
+			tempo_ignorar_sensor = 0.5
+			_mudar_estado(Estado.BUSCANDO)
+		elif melhor.id == 2:
+			estrategia = 2
+			if melhor.rota.size() >= 2:
+				_aplicar_rota(melhor.rota)
+				_mudar_estado(Estado.BUSCANDO)
+			else:
+				tempo_estrategia = 0.0
+				_mudar_estado(Estado.RECUPERANDO)
+	tentativa_mudou.emit(tentativas, ESTRATEGIAS[estrategia] + " (paralelo)")
 
 
 func _processar_manobra_tres_tempos(delta: float) -> void:
@@ -697,6 +1549,47 @@ func distancia_centro() -> float:
 	return _distancia_do_raio(ray_frente_centro)
 
 
+func distancia_lateral() -> float:
+	# Menor distância lateral pura — humano sente parede ao lado
+	var esq := _distancia_do_raio(ray_lateral_esq)
+	var dir := _distancia_do_raio(ray_lateral_dir)
+	return minf(esq, dir)
+
+
+func _esta_100_dentro_da_vaga() -> bool:
+	if _vaga_alvo == null or not is_instance_valid(_vaga_alvo):
+		return false
+	var forma_vaga: RectangleShape2D = _vaga_alvo.get_node("Area").shape
+	if forma_vaga == null:
+		return false
+	var size_vaga: Vector2 = forma_vaga.size * _vaga_alvo.global_scale
+	var rot_vaga: float = _vaga_alvo.rotacao_alvo if "rotacao_alvo" in _vaga_alvo else 0.0
+	# Carro 4 cantos em mundo
+	var forma_carro: RectangleShape2D = $CollisionShape2D.shape
+	if forma_carro == null:
+		return false
+	var size_carro: Vector2 = forma_carro.size * global_scale
+	var half: Vector2 = size_carro * 0.5
+	var corners: Array[Vector2] = [
+		global_position + Vector2(-half.x, -half.y).rotated(rotation),
+		global_position + Vector2(half.x, -half.y).rotated(rotation),
+		global_position + Vector2(half.x, half.y).rotated(rotation),
+		global_position + Vector2(-half.x, half.y).rotated(rotation),
+	]
+	for p: Vector2 in corners:
+		# Transforma ponto para espaço local da vaga (inverso da rotação da vaga)
+		var local_vec: Vector2 = (p - _vaga_alvo.global_position).rotated(-rot_vaga)
+		var half_vaga := size_vaga * 0.5
+		if absf(local_vec.x) > half_vaga.x + 2.0 or absf(local_vec.y) > half_vaga.y + 2.0:
+			return false
+	# Proibir estar em cima de obstáculo (calçada) — grade sólida
+	if planejador != null and planejador.grade_pronta():
+		var cel = planejador._celula_de(global_position)
+		if planejador._grade.is_point_solid(cel):
+			return false
+	return true
+
+
 func distancia_tras() -> float:
 	return _distancia_do_raio(ray_tras)
 
@@ -708,10 +1601,21 @@ func _distancia_do_raio(raio: RayCast2D) -> float:
 	return raio.global_position.distance_to(raio.get_collision_point())
 
 
+func _obter_direcao_seta() -> float:
+	if ray_seta != null and ray_seta.is_colliding():
+		var col = ray_seta.get_collider()
+		if col != null and col.has_method("get") and "direcao" in col:
+			return col.direcao
+		# Tenta via propriedade direta
+		if col != null and col.get("direcao") != null:
+			return col.get("direcao")
+	return INF
+
+
 func _lado_com_mais_espaco() -> int:
 	# Mede folga nos dois lados e escolhe o maior. -1 = esquerda, 1 = direita.
-	var espaco_esq: float = _distancia_do_raio(ray_esquerda)
-	var espaco_dir: float = _distancia_do_raio(ray_direita)
+	var espaco_esq: float = minf(_distancia_do_raio(ray_esquerda), _distancia_do_raio(ray_lateral_esq))
+	var espaco_dir: float = minf(_distancia_do_raio(ray_direita), _distancia_do_raio(ray_lateral_dir))
 	return -1 if espaco_esq >= espaco_dir else 1
 
 
@@ -777,7 +1681,7 @@ func _draw() -> void:
 		return
 	var cor_livre := Color(1, 1, 1, 0.25)
 	var cor_obstaculo := Color(1, 0.12, 0.12, 0.9)
-	for raio in [ray_frente_centro, ray_frente_esq, ray_frente_dir, ray_esquerda, ray_direita, ray_tras]:
+	for raio in [ray_frente_centro, ray_frente_esq, ray_frente_dir, ray_esquerda, ray_direita, ray_tras, ray_lateral_esq, ray_lateral_dir]:
 		_desenhar_raio(raio, cor_livre, cor_obstaculo)
 	# Câmera de longo alcance: desenhada em CIANO para diferenciar.
 	var cor_livre_longa := Color(0.3, 0.9, 1, 0.18)

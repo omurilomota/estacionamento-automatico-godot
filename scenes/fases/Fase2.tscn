@@ -1,51 +1,119 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene format=3 uid="uid://yl6vtxaowtq0"]
 
-[ext_resource type="Script" path="res://scripts/FaseBase.gd" id="1_base"]
-[ext_resource type="Texture2D" path="res://assets/mapas/fase2.svg" id="2_mapa"]
-[ext_resource type="PackedScene" path="res://scenes/Carro.tscn" id="3_carro"]
-[ext_resource type="Script" path="res://scripts/Minimapa.gd" id="4_minimapa"]
-[ext_resource type="Script" path="res://scripts/Planejador.gd" id="5_planejador"]
+[ext_resource type="Script" uid="uid://1cp1lvqfg0k0" path="res://scripts/FaseBase.gd" id="1_base"]
+[ext_resource type="Texture2D" uid="uid://dt70iqrf0rqk1" path="res://estacionamento/parking_lot2.svg" id="2_mapa"]
+[ext_resource type="PackedScene" uid="uid://b4cjmm24wb4xw" path="res://scenes/Carro.tscn" id="3_carro"]
+[ext_resource type="PackedScene" uid="uid://c4wuyyewj2v8c" path="res://scenes/Vaga.tscn" id="4_cr1d0"]
+[ext_resource type="Script" uid="uid://b7alvlabsrc8p" path="res://scripts/Minimapa.gd" id="4_minimapa"]
+[ext_resource type="Script" uid="uid://bxvsh1e2woyok" path="res://scripts/Planejador.gd" id="5_planejador"]
+[ext_resource type="PackedScene" uid="uid://1b2em06t5orn" path="res://scenes/Obstaculo.tscn" id="6_obs"]
+[ext_resource type="Script" path="res://scripts/ControleRotas.gd" id="9_rotas_ctrl"]
 
-[node name="Fase2" type="Node2D"]
+[node name="Fase2" type="Node2D" unique_id=634094271]
 script = ExtResource("1_base")
 mapa = ExtResource("2_mapa")
 escala_mapa = 3.0
-zoom_camera = 0.8
+zoom_camera = 0.45
+posicao_aleatoria = false
 
-[node name="Mapa" type="Sprite2D" parent="."]
+[node name="Mapa" type="Sprite2D" parent="." unique_id=1492809442]
+scale = Vector2(3, 3)
 texture = ExtResource("2_mapa")
-scale = Vector2(3.0, 3.0)
 
-[node name="Obstaculos" type="Node2D" parent="."]
+[node name="Obstaculos" type="Node2D" parent="." unique_id=1895540734]
 
-[node name="Paredes" type="Node2D" parent="."]
+[node name="CalcadaEsq" parent="Obstaculos" unique_id=2064523953 instance=ExtResource("6_obs")]
+position = Vector2(-860, -168)
+scale = Vector2(6.34, 13.77)
 
-[node name="Waypoints" type="Node2D" parent="."]
+[node name="CalcadaBase" parent="Obstaculos" unique_id=920512807 instance=ExtResource("6_obs")]
+position = Vector2(-373, 845)
+scale = Vector2(13.367478, 2.727102)
 
-[node name="Vagas" type="Node2D" parent="."]
+[node name="CalcadaTopo" parent="Obstaculos" unique_id=1950745475 instance=ExtResource("6_obs")]
+position = Vector2(-331.00003, -1218)
+scale = Vector2(12.431456, 2.5930138)
 
-[node name="Carro" parent="." instance=ExtResource("3_carro")]
-position = Vector2(-835, 1010)
+[node name="Rotas" type="Node2D" parent="." unique_id=1041577064]
 
-[node name="Planejador" type="Node2D" parent="."]
+[node name="RotaLeste" type="Line2D" parent="Rotas" unique_id=1900094592]
+position = Vector2(35, -51)
+scale = Vector2(1.1608669, 1.0253075)
+points = PackedVector2Array(400, -1400, 400, 1400)
+width = 4.0
+default_color = Color(0.2, 0.8, 1, 0.6)
+
+[node name="RotaOeste" type="Line2D" parent="Rotas" unique_id=1900094594]
+position = Vector2(1365, 0)
+points = PackedVector2Array(-400, 1400, -400.00012, -224.9013, -400, -1400)
+width = 4.0
+default_color = Color(0.2, 0.8, 1, 0.6)
+
+[node name="Paredes" type="Node2D" parent="." unique_id=1759262357]
+
+[node name="Waypoints" type="Node2D" parent="." unique_id=681519172]
+
+[node name="W1" type="Marker2D" parent="Waypoints" unique_id=1800002001]
+position = Vector2(400, -1400)
+
+[node name="W2" type="Marker2D" parent="Waypoints" unique_id=1800002002]
+position = Vector2(400, 1400)
+
+[node name="W3" type="Marker2D" parent="Waypoints" unique_id=1800002003]
+position = Vector2(-400, 1400)
+
+[node name="W4" type="Marker2D" parent="Waypoints" unique_id=1800002004]
+position = Vector2(-400, -1400)
+
+[node name="Vagas" type="Node2D" parent="." unique_id=1556456459]
+
+[node name="Vaga" parent="Vagas" unique_id=1064579741 instance=ExtResource("4_cr1d0")]
+position = Vector2(-202, -761)
+scale = Vector2(6.242248, 2.5600014)
+
+[node name="Vaga2" parent="Vagas" unique_id=1910928748 instance=ExtResource("4_cr1d0")]
+position = Vector2(-135, -374)
+scale = Vector2(7.6595674, 2.619526)
+
+[node name="Vaga3" parent="Vagas" unique_id=240278727 instance=ExtResource("4_cr1d0")]
+position = Vector2(-137.99998, 2.9999695)
+scale = Vector2(7.6595674, 2.619526)
+
+[node name="Vaga4" parent="Vagas" unique_id=256522980 instance=ExtResource("4_cr1d0")]
+position = Vector2(-138, 384.99997)
+scale = Vector2(7.6595674, 2.619526)
+
+[node name="Carro" parent="." unique_id=1576977963 instance=ExtResource("3_carro")]
+position = Vector2(-744, 1511.0001)
+scale = Vector2(2.2, 2.2)
+auto_navegacao = false
+modo_trilha = true
+
+[node name="Planejador" type="Node2D" parent="." unique_id=15643400]
 script = ExtResource("5_planejador")
 
-[node name="Camera" type="Camera2D" parent="."]
+[node name="Camera" type="Camera2D" parent="." unique_id=357252589]
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=895140780]
 
-[node name="Control" type="Control" parent="UI"]
+[node name="Control" type="Control" parent="UI" unique_id=639857211]
+layout_mode = 3
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
-[node name="Fundo" type="ColorRect" parent="UI/Control"]
+[node name="Fundo" type="ColorRect" parent="UI/Control" unique_id=1872033779]
+layout_mode = 0
 offset_left = 12.0
 offset_top = 12.0
 offset_right = 460.0
 offset_bottom = 140.0
 color = Color(0, 0, 0, 0.55)
 
-[node name="StatusLabel" type="Label" parent="UI/Control"]
+[node name="StatusLabel" type="Label" parent="UI/Control" unique_id=1612828522]
+layout_mode = 0
 offset_left = 28.0
 offset_top = 22.0
 offset_right = 620.0
@@ -54,7 +122,8 @@ theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 26
 text = "STATUS: Buscando vaga"
 
-[node name="SensorLabel" type="Label" parent="UI/Control"]
+[node name="SensorLabel" type="Label" parent="UI/Control" unique_id=235123885]
+layout_mode = 0
 offset_left = 28.0
 offset_top = 64.0
 offset_right = 620.0
@@ -63,7 +132,8 @@ theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 20
 text = "SENSOR: Livre"
 
-[node name="TentativaLabel" type="Label" parent="UI/Control"]
+[node name="TentativaLabel" type="Label" parent="UI/Control" unique_id=1357585083]
+layout_mode = 0
 offset_left = 28.0
 offset_top = 100.0
 offset_right = 620.0
@@ -72,15 +142,50 @@ theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
 theme_override_font_sizes/font_size = 20
 text = "TENTATIVA: 0"
 
-[node name="Minimapa" type="Control" parent="UI/Control"]
+[node name="Minimapa" type="Control" parent="UI/Control" unique_id=829355204]
+anchors_preset = 0
 anchor_left = 1.0
 anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
 offset_left = -272.0
 offset_top = -192.0
 offset_right = -12.0
 offset_bottom = -12.0
 script = ExtResource("4_minimapa")
-carro_path = NodePath("../../Carro")
-vagas_path = NodePath("../../Vagas")
-waypoints_path = NodePath("../../Waypoints")
-obstaculos_path = NodePath("../../Obstaculos")
+carro_path = NodePath("../../../Carro")
+vagas_path = NodePath("../../../Vagas")
+waypoints_path = NodePath("../../../Waypoints")
+obstaculos_path = NodePath("../../../Obstaculos")
+
+[node name="ControleRotas" type="Control" parent="UI/Control" unique_id=2093030082]
+anchors_preset = 0
+offset_left = 480.0
+offset_top = 12.0
+offset_right = 760.0
+offset_bottom = 200.0
+script = ExtResource("9_rotas_ctrl")
+
+[node name="VBox" type="VBoxContainer" parent="UI/Control/ControleRotas" unique_id=2093559639]
+layout_mode = 0
+offset_right = 280.0
+offset_bottom = 188.0
+
+[node name="CheckGrade" type="CheckBox" parent="UI/Control/ControleRotas/VBox" unique_id=2052747566]
+layout_mode = 2
+text = "Mostrar Grade"
+
+[node name="CheckRota" type="CheckBox" parent="UI/Control/ControleRotas/VBox" unique_id=2054147817]
+layout_mode = 2
+text = "Mostrar Rota A*"
+
+[node name="CheckRotas" type="CheckBox" parent="UI/Control/ControleRotas/VBox" unique_id=2041621174]
+layout_mode = 2
+text = "Mostrar Rotas Line2D"
+
+[node name="CheckAuto" type="CheckBox" parent="UI/Control/ControleRotas/VBox" unique_id=2028844100]
+layout_mode = 2
+text = "Auto Navegação"
+
+[node name="ComboRotas" type="OptionButton" parent="UI/Control/ControleRotas/VBox" unique_id=2016116539]
+layout_mode = 2
