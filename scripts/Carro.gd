@@ -1,5 +1,7 @@
 extends CharacterBody2D
 ## O CÉREBRO DO CARRO — Máquina de Estados (FSM) com RECUPERAÇÃO.
+
+const CerebroML = preload("res://scripts/CerebroML.gd")
 ## O movimento imita um motorista real:
 ##  - O volante (estercamento) vira aos poucos e o carro faz ARCO, não pivota.
 ##  - Acelera e freia com rampa (frenagem mais forte que aceleração).
@@ -54,6 +56,17 @@ enum Estado { BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO }
 @export var tolerancia_chegada: float = 24.0
 @export var tolerancia_alinhamento: float = 0.08
 @export var debug_sensores: bool = true
+
+# --- MACHINE LEARNING (imitação / behavior cloning) ---
+# ml_gravar: grava CSV (sensores -> ações) do cérebro atual (o "professor")
+# modo_ml:   o "aluno" (rede treinada em ml/treinar.py) dirige pelos sensores
+@export var ml_gravar: bool = false
+@export var ml_gravar_caminho: String = "res://ml/dados/gravacao.csv"
+@export var modo_ml: bool = false
+var _ml_arquivo: FileAccess = null
+var _ml_rede: CerebroML = null
+var _ml_pos_ref: Vector2 = Vector2.ZERO
+var _ml_t_progresso: float = 0.0
 
 # Comportamento agêntico (quando o carro fica "preso")
 @export var limite_tempo_preso: float = 3.0
@@ -159,6 +172,32 @@ func iniciar_modo_trilha() -> void:
 
 
 func _planejar_rota() -> void:
+	# MODO ML: sem rota desenhada — só escolhe a vaga livre mais próxima.
+	# A rede neural (CerebroML) dirige usando apenas os sensores.
+	if modo_ml:
+		waypoints = []
+		indice_waypoint = 0
+		var melhor_ml: Node2D = null
+		var menor_ml: float = INF
+		if container_vagas != null:
+			for v in container_vagas.get_children():
+				if v.ocupada:
+					continue
+				var dm: float = global_position.distance_to(v.global_position)
+				if dm < menor_ml:
+					menor_ml = dm
+					melhor_ml = v
+		if melhor_ml == null:
+			_sem_vagas = true
+			pedir_nova_vaga.emit()
+			return
+		_vaga_alvo = melhor_ml
+		_sem_vagas = false
+		_tempo_parado = 0.0
+		_ml_pos_ref = global_position
+		_ml_t_progresso = 0.0
+		tentativa_mudou.emit(0, "MODO ML: rede neural dirige")
+		return
 	# Sequência correta: RotaReta -> RotaDaCurva -> RotaReta2 (com suavização)
 	if modo_trilha:
 		var rota_seq: Array = _construir_rota_sequencial_ruas()
@@ -347,6 +386,21 @@ func _physics_process(delta: float) -> void:
 	if tempo_ignorar_sensor > 0.0:
 		tempo_ignorar_sensor -= delta
 
+	# MODO ML (imitação): a rede neural dirige pelos sensores — sem trilha.
+	# A FSM continua sendo o "juiz" (vaga/ESTACIONADO/ALINHANDO).
+	if modo_ml:
+		match estado:
+			Estado.BUSCANDO, Estado.DESVIANDO:
+				_processar_ml(delta)
+			Estado.ALINHANDO:
+				_processar_alinhando_trilha(delta)
+			Estado.ESTACIONADO:
+				_processar_estacionado(delta)
+			Estado.RECUPERANDO:
+				_processar_trilha(delta)
+		queue_redraw()
+		return
+
 	# MODO TRILHA: segue linha pré-calculada, só PARA se obstáculo à frente (não desvia)
 	if modo_trilha:
 		match estado:
@@ -375,6 +429,14 @@ func _physics_process(delta: float) -> void:
 				_processar_recuperando(delta)
 
 	queue_redraw()
+
+	# GRAVAÇÃO (professor): cada frame de BUSCANDO vira uma linha do dataset
+	if ml_gravar and estado == Estado.BUSCANDO:
+		_ml_gravar_linha()
+
+
+func _exit_tree() -> void:
+	_ml_fechar()
 
 
 func _atualizar_sensores() -> void:
@@ -1660,6 +1722,123 @@ func _quase_apontando_ao_waypoint() -> bool:
 	var alvo: Vector2 = waypoints[indice_waypoint]
 	var angulo_erro: float = absf(angle_difference(rotation, global_position.direction_to(alvo).angle()))
 	return angulo_erro < 0.7
+
+
+# ================= MACHINE LEARNING (imitação) ===============================
+
+func _ml_features() -> PackedFloat64Array:
+	# 18 entradas da rede, todas normalizadas:
+	#   [0..10]  distância dos 11 raios (0 = colado, 1 = livre)
+	#   [11]     velocidade atual / velocidade_maxima
+	#   [12]     distância até a vaga / 2500
+	#   [13,14]  sin/cos do erro angular até a vaga
+	#   [15..17] seta do piso: achou?(0/1) e cos/sin da direção relativa
+	var f := PackedFloat64Array()
+	var raios: Array[RayCast2D] = [ray_frente_centro, ray_frente_esq, ray_frente_dir,
+		ray_esquerda, ray_direita, ray_tras, ray_frente_longo, ray_frente_longo_esq,
+		ray_frente_longo_dir, ray_lateral_esq, ray_lateral_dir]
+	for r in raios:
+		var alcance: float = maxf(r.target_position.length(), 1.0)
+		var d: float = _distancia_do_raio(r)
+		f.append(clampf(d / alcance, 0.0, 1.0))
+	f.append(clampf(velocidade_atual / velocidade_maxima, -1.0, 1.0))
+	var alvo_v: Vector2 = posicao_alvo
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
+		alvo_v = _vaga_alvo.global_position
+	var erro_v: float = angle_difference(rotation, global_position.direction_to(alvo_v).angle())
+	f.append(clampf(global_position.distance_to(alvo_v) / 2500.0, 0.0, 1.0))
+	f.append(sin(erro_v))
+	f.append(cos(erro_v))
+	var dir_s: float = _obter_direcao_seta()
+	if dir_s != INF:
+		f.append(1.0)
+		f.append(cos(dir_s - rotation))
+		f.append(sin(dir_s - rotation))
+	else:
+		f.append(0.0)
+		f.append(0.0)
+		f.append(0.0)
+	return f
+
+
+func _ml_gravar_linha() -> void:
+	# Uma linha = (18 entradas, 2 ações do professor neste mesmo frame)
+	if _ml_arquivo == null:
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://ml/dados"))
+		_ml_arquivo = FileAccess.open(ml_gravar_caminho, FileAccess.WRITE)
+		if _ml_arquivo == null:
+			push_warning("ML: falha ao abrir " + ml_gravar_caminho)
+			ml_gravar = false
+			return
+	var f := _ml_features()
+	var partes: PackedStringArray = []
+	for v in f:
+		partes.append("%.4f" % v)
+	partes.append("%.4f" % clampf(estercamento_alvo / max_estercamento, -1.0, 1.0))
+	partes.append("%.4f" % clampf(velocidade_desejada / velocidade_maxima, 0.0, 1.0))
+	_ml_arquivo.store_line(",".join(partes))
+
+
+func _ml_fechar() -> void:
+	if _ml_arquivo != null:
+		_ml_arquivo.close()
+		_ml_arquivo = null
+
+
+func _processar_ml(delta: float) -> void:
+	# O ALUNO dirige: sensores -> rede -> volante/velocidade. Sem trilha.
+	if _ml_rede == null:
+		_ml_rede = CerebroML.new()
+		if not _ml_rede.carregar("res://ml/modelo/pesos.json"):
+			# Sem modelo treinado: fallback seguro para o cérebro de trilha
+			_ml_rede = null
+			modo_ml = false
+			_plano_pendente = true
+			return
+	# Fallback por FALTA DE PROGRESSO (não só parada total): se em 4s andou
+	# menos de 100px (<25px/s), a rede está timida/rastejando — FSM assume.
+	_ml_t_progresso += delta
+	if _ml_t_progresso >= 4.0:
+		if global_position.distance_to(_ml_pos_ref) < 100.0:
+			modo_ml = false
+			_plano_pendente = true
+			return
+		_ml_pos_ref = global_position
+		_ml_t_progresso = 0.0
+	# Rede travada (quer andar e não anda, OU parada total): FSM assume
+	if velocidade_atual < 2.0:
+		_tempo_parado += delta
+		if _tempo_parado > tempo_parado_replanejar * 2.0:
+			_tempo_parado = 0.0
+			modo_ml = false
+			_plano_pendente = true
+			return
+	else:
+		_tempo_parado = 0.0
+	# Rede de segurança do snap: dentro + perto + alinhado = estacionou
+	if _esta_100_dentro_da_vaga() and _perto_da_vaga_para_snap():
+		var rot_v: float = rotation
+		if _vaga_alvo != null and "rotacao_alvo" in _vaga_alvo:
+			rot_v = _vaga_alvo.rotacao_alvo
+		if absf(angle_difference(rotation, rot_v)) < 0.20:
+			estercamento_alvo = 0.0
+			velocidade_desejada = 0.0
+			velocity = Vector2.ZERO
+			velocidade_atual = 0.0
+			global_position = global_position.lerp(_vaga_alvo.global_position, delta * 6.0)
+			rotation = lerp_angle(rotation, rot_v, delta * 6.0)
+			if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
+				_vaga_alvo.marcar_ocupada()
+			_mudar_estado(Estado.ESTACIONADO)
+			return
+	var f := _ml_features()
+	var saida: PackedFloat64Array = _ml_rede.inferir(f)
+	estercamento_alvo = clampf(saida[0] * max_estercamento, -max_estercamento, max_estercamento)
+	velocidade_desejada = maxf(saida[1] * velocidade_maxima, 0.0)
+	# Camada de segurança dura (sensores freiam, não dirigem):
+	if distancia_centro() < distancia_seguranca:
+		velocidade_desejada = 0.0
+	_aplicar_movimento_trilha(delta)
 
 
 func _mudar_estado(novo: Estado) -> void:
