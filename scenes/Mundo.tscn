@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene uid="uid://s4xzvsgwf5omg" load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://scripts/Mundo.gd" id="1_mundo"]
 [ext_resource type="PackedScene" path="res://scenes/Carro.tscn" id="2_carro"]
@@ -221,9 +221,9 @@ offset_top = -192.0
 offset_right = -12.0
 offset_bottom = -12.0
 script = ExtResource("8_minimapa")
-carro_path = NodePath("../../Carro")
-vagas_path = NodePath("../../Vagas")
-waypoints_path = NodePath("../../Waypoints")
-obstaculos_path = NodePath("../../Obstaculos")
+carro_path = NodePath("../../../Carro")
+vagas_path = NodePath("../../../Vagas")
+waypoints_path = NodePath("../../../Waypoints")
+obstaculos_path = NodePath("../../../Obstaculos")
 mundo_centro = Vector2(640, 360)
 mundo_tamanho = Vector2(1280, 720)

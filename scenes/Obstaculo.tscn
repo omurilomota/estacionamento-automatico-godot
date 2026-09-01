@@ -1,0 +1,20 @@
+[gd_scene uid="uid://evpwyoxgfdkjf" load_steps=4 format=3]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_carro"]
+size = Vector2(88, 190)
+
+[node name="Obstaculo" type="StaticBody2D"]
+collision_layer = 2
+collision_mask = 0
+
+[node name="Desenho" type="Polygon2D" parent="."]
+color = Color(0.35, 0.35, 0.38, 1)
+polygon = PackedVector2Array(-44, -95, 44, -95, 44, 95, -44, 95)
+
+[node name="Contorno" type="Line2D" parent="."]
+points = PackedVector2Array(-44, -95, 44, -95, 44, 95, -44, 95, -44, -95)
+width = 3.0
+default_color = Color(0.1, 0.1, 0.1, 1)
+
+[node name="Colisao" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_carro")

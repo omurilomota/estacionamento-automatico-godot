@@ -1,9 +1,12 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene uid="uid://gzcqk1b539ry3" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/Vaga.gd" id="1_script"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_vaga"]
 size = Vector2(90, 120)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_boca"]
+size = Vector2(100, 28)
 
 [node name="Vaga" type="Area2D"]
 collision_layer = 4
@@ -21,3 +24,11 @@ default_color = Color(0.25, 0.9, 0.35, 1)
 
 [node name="Area" type="CollisionShape2D" parent="."]
 shape = SubResource("RectangleShape2D_vaga")
+
+[node name="Boca" type="Area2D" parent="."]
+collision_layer = 8
+collision_mask = 1
+
+[node name="ColisaoBoca" type="CollisionShape2D" parent="Boca"]
+shape = SubResource("RectangleShape2D_boca")
+position = Vector2(0, 74)
