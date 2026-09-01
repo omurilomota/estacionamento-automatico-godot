@@ -48,14 +48,33 @@ func _draw() -> void:
 
 	if carro != null:
 		# Triângulo laranja apontando na direção do carro.
+		if mundo_tamanho.x < 1.0 or mundo_tamanho.y < 1.0 or size.x < 1.0 or size.y < 1.0:
+			return
+		if not carro.global_position.is_finite() or not is_finite(carro.rotation):
+			return
 		var pos: Vector2 = converter.call(carro.global_position)
+		if not pos.is_finite():
+			return
 		var dir: Vector2 = Vector2.RIGHT.rotated(carro.rotation)
-		var tamanho: float = 5.0
-		draw_colored_polygon(PackedVector2Array([
-			pos + dir * tamanho,
-			pos + dir.rotated(2.4) * tamanho * 0.8,
-			pos + dir.rotated(-2.4) * tamanho * 0.8,
-		]), Color(1, 0.6, 0, 1))
+		if not dir.is_finite() or dir.length() < 0.5:
+			return
+		var tamanho: float = 6.0
+		var p1: Vector2 = pos + dir * tamanho
+		var p2: Vector2 = pos + dir.rotated(2.6) * tamanho * 0.7
+		var p3: Vector2 = pos + dir.rotated(-2.6) * tamanho * 0.7
+		if not p1.is_finite() or not p2.is_finite() or not p3.is_finite():
+			return
+		# Se o triângulo sai muito do minimapa, desenha círculo em vez de polígono
+		if p1.x < -5 or p1.y < -5 or p1.x > size.x+5 or p1.y > size.y+5:
+			draw_circle(pos, 3.0, Color(1, 0.6, 0, 1))
+			return
+		if p1.distance_squared_to(p2) < 2.0 or p2.distance_squared_to(p3) < 2.0 or p3.distance_squared_to(p1) < 2.0:
+			return
+		var area: float = absf((p2.x - p1.x)*(p3.y - p1.y) - (p3.x - p1.x)*(p2.y - p1.y)) * 0.5
+		if area < 2.0:
+			draw_circle(pos, 3.0, Color(1, 0.6, 0, 1))
+			return
+		draw_colored_polygon(PackedVector2Array([p1, p2, p3]), Color(1, 0.6, 0, 1))
 
 
 func _ponto(posicao: Vector2, raio: float, cor: Color) -> void:

@@ -11,9 +11,9 @@ extends Node2D
 
 @export var origem: Vector2 = Vector2(-640, -360)
 @export var tamanho: Vector2 = Vector2(1280, 720)
-@export var resolucao: int = 20
-@export var inflar: float = 50.0
-@export var mostrar_grade: bool = true
+@export var resolucao: int = 15
+@export var inflar: float = 110.0
+@export var mostrar_grade: bool = false
 @export var mostrar_rota: bool = true
 
 var _grade: AStarGrid2D
@@ -52,13 +52,14 @@ func construir() -> void:
 	_grade = AStarGrid2D.new()
 	_grade.cell_size = Vector2(resolucao, resolucao)
 	_grade.offset = origem
-	_grade.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	_grade.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
 	_grade.region = Rect2i(0, 0, _n_cel_x(), _n_cel_y())
 	_grade.update()
 
+	var inflar_efetivo: float = 95.0
 	var espaco := get_world_2d().direct_space_state
 	var forma := CircleShape2D.new()
-	forma.radius = inflar
+	forma.radius = inflar_efetivo
 	var parametros := PhysicsShapeQueryParameters2D.new()
 	parametros.collision_mask = 2
 	parametros.collide_with_bodies = true
@@ -71,10 +72,82 @@ func construir() -> void:
 			var centro: Vector2 = _centro_de(Vector2i(x, y))
 			parametros.transform = Transform2D(0, centro)
 			var acertos := espaco.intersect_shape(parametros, 1)
+			if x==97 and y==192:
+				print("DEBUG 97,192 centro", centro, " acertos ", acertos.size(), " inflar ", forma.radius)
 			if not acertos.is_empty():
 				_grade.set_point_solid(Vector2i(x, y), true)
 				_celulas_bloqueadas.append(Vector2i(x, y))
-	_grade.update()
+	# Preferência por setas (0.7 a favor — só se houver Node Setas)
+	var setas_node := get_parent().get_node_or_null("Setas")
+	if setas_node != null:
+		for seta in setas_node.get_children():
+			if not ("direcao" in seta):
+				continue
+			var pos_seta: Vector2 = seta.global_position
+			for y in range(_n_cel_y()):
+				for x in range(_n_cel_x()):
+					var cel := Vector2i(x, y)
+					if _grade.is_point_solid(cel):
+						continue
+					var centro: Vector2 = _centro_de(cel)
+					var dist_c := centro.distance_to(pos_seta)
+					if dist_c < 70.0:
+						_grade.set_point_weight_scale(cel, 0.7)
+					elif dist_c < 140.0:
+						if _grade.get_point_weight_scale(cel) == 1.0:
+							_grade.set_point_weight_scale(cel, 0.85)
+	# Preferência por Rotas Line2D (ruas desenhadas): peso 0.65 perto da linha, 0.85 até 90px
+	var rotas_node := get_parent().get_node_or_null("Rotas")
+	if rotas_node != null:
+		for child in rotas_node.get_children():
+			if not (child is Line2D):
+				continue
+			var pts_rota: PackedVector2Array = child.points
+			if pts_rota.size() < 2:
+				continue
+			for y in range(_n_cel_y()):
+				for x in range(_n_cel_x()):
+					var cel_r := Vector2i(x, y)
+					if _grade.is_point_solid(cel_r):
+						continue
+					var centro_r: Vector2 = _centro_de(cel_r)
+					var dist_r: float = INF
+					for i in range(pts_rota.size() - 1):
+						var a_r: Vector2 = child.to_global(pts_rota[i])
+						var b_r: Vector2 = child.to_global(pts_rota[i + 1])
+						dist_r = minf(dist_r, Geometry2D.get_closest_point_to_segment(centro_r, a_r, b_r).distance_to(centro_r))
+						if dist_r < 45.0:
+							break
+					if dist_r < 45.0:
+						_grade.set_point_weight_scale(cel_r, 0.65)
+					elif dist_r < 90.0:
+						if _grade.get_point_weight_scale(cel_r) == 1.0:
+							_grade.set_point_weight_scale(cel_r, 0.85)
+	# HD-Map manual: viradas sempre pela faixa (peso 1.0 na faixa, 1.5 fora)
+	var road_graph_res = load("res://resources/RoadGraph.tres")
+	if road_graph_res != null and road_graph_res.get("lanes") != null:
+		for y in range(_n_cel_y()):
+			for x in range(_n_cel_x()):
+				var cel := Vector2i(x, y)
+				if _grade.is_point_solid(cel):
+					continue
+				var centro: Vector2 = _centro_de(cel)
+				var menor_dist := INF
+				var largura_faixa := 60.0
+				for lane in road_graph_res.get("lanes"):
+					var pts: PackedVector2Array = lane.pontos
+					largura_faixa = lane.largura if "largura" in lane else 60.0
+					for i in range(pts.size() - 1):
+						var d := Geometry2D.get_closest_point_to_segment(centro, pts[i], pts[i+1]).distance_to(centro)
+						menor_dist = minf(menor_dist, d)
+						if menor_dist < largura_faixa * 0.5:
+							break
+					if menor_dist < largura_faixa * 0.5:
+						break
+				if menor_dist > 40.0:
+					var w := _grade.get_point_weight_scale(cel)
+					_grade.set_point_weight_scale(cel, maxf(w, 1.5))
+	# _grade.update() aqui limpava sólidos — removido
 	_grade_pronta = true
 	_gerar_imagem_grade()
 	queue_redraw()
@@ -86,7 +159,14 @@ func _gerar_imagem_grade() -> void:
 	_imagem_grade = Image.create(_n_cel_x(), _n_cel_y(), false, Image.FORMAT_RGBA8)
 	_imagem_grade.fill(Color(0, 0, 0, 0))
 	var ocupado := Color(1, 0.25, 0.25, 0.28)
+	# Filtra borda do mapa: paredes do perímetro (geradas em FaseBase) não devem aparecer vermelhas
+	var margem_borda: float = 100.0
 	for cel in _celulas_bloqueadas:
+		var centro: Vector2 = _centro_de(cel)
+		if centro.x < origem.x + margem_borda or centro.x > origem.x + tamanho.x - margem_borda:
+			continue
+		if centro.y < origem.y + margem_borda or centro.y > origem.y + tamanho.y - margem_borda:
+			continue
 		_imagem_grade.set_pixel(cel.x, cel.y, ocupado)
 	_textura_grade = ImageTexture.create_from_image(_imagem_grade)
 
@@ -103,6 +183,121 @@ func _celula_livre_proxima(cel: Vector2i) -> Vector2i:
 				if _grade.region.has_point(c) and not _grade.is_point_solid(c):
 					return c
 	return cel
+
+
+func snapshot() -> Dictionary:
+	return {
+		"origem": origem,
+		"tamanho": tamanho,
+		"resolucao": resolucao,
+		"region": _grade.region if _grade != null else Rect2i(0,0,0,0),
+		"celulas": _celulas_bloqueadas.duplicate(),
+		"pronta": _grade_pronta,
+	}
+
+
+func achar_rota_snapshot(origem_ponto: Vector2, destino_ponto: Vector2, snap: Dictionary) -> Array:
+	if not snap.pronta:
+		return achar_rota(origem_ponto, destino_ponto)
+	var resol_snap: int = snap.resolucao
+	var origem_snap: Vector2 = snap.origem
+	var _celula_de_snap = func(p: Vector2) -> Vector2i:
+		var local: Vector2 = (p - origem_snap) / resol_snap
+		return Vector2i(floori(local.x), floori(local.y))
+	var _centro_de_snap = func(cel: Vector2i) -> Vector2:
+		return origem_snap + (Vector2(cel) + Vector2(0.5, 0.5)) * resol_snap
+	var _celula_livre_proxima_snap = func(cel: Vector2i, g_local: AStarGrid2D) -> Vector2i:
+		if not g_local.is_point_solid(cel):
+			return cel
+		for raio in range(1, maxi(g_local.region.size.x, g_local.region.size.y)):
+			for y in range(cel.y - raio, cel.y + raio + 1):
+				for x in range(cel.x - raio, cel.x + raio + 1):
+					var c := Vector2i(x, y)
+					if g_local.region.has_point(c) and not g_local.is_point_solid(c):
+						return c
+		return cel
+	var grade_local := AStarGrid2D.new()
+	grade_local.region = snap.region
+	grade_local.cell_size = Vector2(resol_snap, resol_snap)
+	grade_local.offset = origem_snap
+	grade_local.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
+	grade_local.update()
+	for cel in snap.celulas:
+		grade_local.set_point_solid(cel, true)
+	# Copia pesos de setas se houver (preferência)
+	var setas_node := get_parent().get_node_or_null("Setas")
+	if setas_node != null:
+		for seta in setas_node.get_children():
+			if not ("direcao" in seta):
+				continue
+			var pos_seta: Vector2 = seta.global_position
+			for y in range(grade_local.region.size.y):
+				for x in range(grade_local.region.size.x):
+					var cel := Vector2i(x, y)
+					if grade_local.is_point_solid(cel):
+						continue
+					var centro: Vector2 = _centro_de_snap.call(cel)
+					var dist_s := centro.distance_to(pos_seta)
+					if dist_s < 70.0:
+						grade_local.set_point_weight_scale(cel, 0.7)
+					elif dist_s < 140.0 and grade_local.get_point_weight_scale(cel) == 1.0:
+						grade_local.set_point_weight_scale(cel, 0.85)
+	# Rotas Line2D snapshot: preferir rua
+	var rotas_node_snap := get_parent().get_node_or_null("Rotas")
+	if rotas_node_snap != null:
+		for child_snap in rotas_node_snap.get_children():
+			if not (child_snap is Line2D):
+				continue
+			var pts_snap: PackedVector2Array = child_snap.points
+			if pts_snap.size() < 2:
+				continue
+			for y in range(grade_local.region.size.y):
+				for x in range(grade_local.region.size.x):
+					var cel_r2 := Vector2i(x, y)
+					if grade_local.is_point_solid(cel_r2):
+						continue
+					var centro_r2: Vector2 = _centro_de_snap.call(cel_r2)
+					var dist_r2: float = INF
+					for i in range(pts_snap.size() - 1):
+						var a_s: Vector2 = child_snap.to_global(pts_snap[i])
+						var b_s: Vector2 = child_snap.to_global(pts_snap[i + 1])
+						dist_r2 = minf(dist_r2, Geometry2D.get_closest_point_to_segment(centro_r2, a_s, b_s).distance_to(centro_r2))
+						if dist_r2 < 45.0:
+							break
+					if dist_r2 < 45.0:
+						grade_local.set_point_weight_scale(cel_r2, 0.65)
+					elif dist_r2 < 90.0 and grade_local.get_point_weight_scale(cel_r2) == 1.0:
+						grade_local.set_point_weight_scale(cel_r2, 0.85)
+	# HD-Map manual snapshot
+	var road_graph_res_snap = load("res://resources/RoadGraph.tres")
+	if road_graph_res_snap != null and road_graph_res_snap.get("lanes") != null:
+		for y in range(grade_local.region.size.y):
+			for x in range(grade_local.region.size.x):
+				var cel2 := Vector2i(x, y)
+				if grade_local.is_point_solid(cel2):
+					continue
+				var centro2: Vector2 = _centro_de_snap.call(cel2)
+				var menor_dist2 := INF
+				for lane in road_graph_res_snap.get("lanes"):
+					var pts2: PackedVector2Array = lane.pontos
+					for i in range(pts2.size() - 1):
+						var d2 := Geometry2D.get_closest_point_to_segment(centro2, pts2[i], pts2[i+1]).distance_to(centro2)
+						menor_dist2 = minf(menor_dist2, d2)
+						if menor_dist2 < 30.0:
+							break
+					if menor_dist2 < 30.0:
+						break
+				if menor_dist2 > 40.0:
+					var w2 := grade_local.get_point_weight_scale(cel2)
+					grade_local.set_point_weight_scale(cel2, maxf(w2, 1.5))
+	var o_snap = _celula_livre_proxima_snap.call(_celula_de_snap.call(origem_ponto), grade_local)
+	var d_snap = _celula_livre_proxima_snap.call(_celula_de_snap.call(destino_ponto), grade_local)
+	if not grade_local.region.has_point(o_snap) or not grade_local.region.has_point(d_snap):
+		return []
+	var caminho = grade_local.get_point_path(o_snap, d_snap)
+	if caminho.size() < 2:
+		return []
+	return _decimar(caminho)
 
 
 func achar_rota(origem_ponto: Vector2, destino_ponto: Vector2) -> Array:
@@ -158,7 +353,7 @@ func definir_rota(rota: Array) -> void:
 func _decimar(caminho: PackedVector2Array) -> Array:
 	if caminho.size() < 3:
 		return Array(caminho)
-	return _rdp(caminho, 0, caminho.size() - 1, 12.0)
+	return _rdp(caminho, 0, caminho.size() - 1, 18.0)
 
 
 func _rdp(caminho: PackedVector2Array, inicio: int, fim: int, tolerancia: float) -> Array:

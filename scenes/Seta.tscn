@@ -1,0 +1,21 @@
+[gd_scene load_steps=3 format=3 uid="uid://seta_pref_001"]
+
+[ext_resource type="Script" path="res://scripts/Seta.gd" id="1_seta"]
+
+[sub_resource type="RectangleShape2D" id="Rect_arrow"]
+size = Vector2(120, 20)
+
+[node name="Seta" type="Area2D"]
+collision_layer = 8
+collision_mask = 0
+monitoring = false
+monitorable = true
+script = ExtResource("1_seta")
+
+[node name="Colisao" type="CollisionShape2D" parent="."]
+shape = SubResource("Rect_arrow")
+debug_color = Color(0.2, 0.6, 1, 0.15)
+
+[node name="Sprite" type="Sprite2D" parent="."]
+visible = false
+texture = null

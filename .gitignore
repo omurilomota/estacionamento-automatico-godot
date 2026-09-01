@@ -20,3 +20,6 @@ mono_crash.*.json
 # Pacote de assets completo (mantido fora do git)
 vehicles/
 estacionamento/
+
+# Ferramenta local de IA (nao versionar)
+.kilo/

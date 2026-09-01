@@ -6,18 +6,19 @@ Cada mapa de `estacionamento/` virou uma **situação-teste** (fase). O carro j�
 
 | Tecla | Ação |
 |---|---|
-| `1` / `2` / `3` | Troca de fase (funciona na demo E nas fases) |
+| `1` / `2` / `3` / `4` / `5` | Troca de fase (funciona na demo E nas fases) |
 | `R` | Reinicia a cena atual |
 
 Para rodar uma fase direto no editor: menu **Play** ▶ ou **F5** roda a cena principal (`Mundo.tscn`). Para abrir uma fase específica, dê dois cliques na cena (`scenes/fases/FaseN.tscn`) e aperte **F6** (rodar cena atual).
 
-> **Para VER a imagem do estacionamento:** as 3 fases já têm o mapa real carregado
-> (`Mapa` → `mapa` = `assets/mapas/faseN.png`). Rodando a demo (F5), aperte
-> **1**, **2** ou **3** para abrir cada uma. O `FaseBase.gd` posiciona a imagem,
+> **Para VER a imagem do estacionamento:** as 5 fases já têm o mapa real carregado
+> (`Mapa` → `mapa` = `estacionamento/parking_lot.jpg`, `parking_lot2.svg`,
+> `parking_lot3.svg`, `parking_lot4.jpg` e `Parkinglot5.jpeg`). Rodando a demo (F5), aperte **1**,
+> **2**, **3**, **4** ou **5** para abrir cada uma. O `FaseBase.gd` posiciona a imagem,
 > cria as paredes, ajusta a câmera e o minimapa automaticamente (tamanho =
 > `largura da imagem × escala_mapa`).
 >
-> Para usar **uma imagem sua**: coloque o arquivo em `assets/mapas/`, abra a
+> Para usar **uma imagem sua**: coloque o arquivo em `estacionamento/`, abra a
 > cena da fase e no nó raiz (`FaseBase`) arraste a imagem para `mapa`
 > (ajuste `escala_mapa`/`zoom_camera` no Inspector).
 
@@ -80,9 +81,10 @@ amarela e a grade no chão, estaciona e a vaga fica **vermelha**.
 
 ```
 scenes/fases/
-  FaseBase.gd     # esqueleto compartilhado (mapa, câmera, paredes, UI, teclas)
-  Fase1.tscn      # parking_assets.png
-  Fase2.tscn      # parking_assets_map.svg (importado pelo Godot)
-  Fase3.tscn      # parking_assets_map_02.png
-assets/mapas/     # mapas já pré-renderizados (PNG) ou copiados (SVG)
+  Fase1.tscn      # estacionamento/parking_lot.jpg   (escala_mapa = 0.4)
+  Fase2.tscn      # estacionamento/parking_lot2.svg  (escala_mapa = 3.0)
+  Fase3.tscn      # estacionamento/parking_lot3.svg  (escala_mapa = 3.0)
+  Fase4.tscn      # estacionamento/parking_lot4.jpg  (escala_mapa = 3.8)
+  Fase5.tscn      # estacionamento/Parkinglot5.jpeg  (escala_mapa = 1.0)
+estacionamento/   # mapas reais (JPG/SVG) usados como chão das fases
 ```
