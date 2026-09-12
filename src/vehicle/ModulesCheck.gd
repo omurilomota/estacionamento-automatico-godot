@@ -39,6 +39,30 @@ func _init() -> void:
 	var loco_rep: Dictionary = Locomotion.check()
 	_check("Locomotion.check", (loco_rep.get("fails", []) as Array).is_empty())
 
+	var aligned := PurePursuit.solve(Vector2.ZERO, 0.0, 1,
+		[Vector2.ZERO, Vector2(100, 0)], 0.9)
+	_check("PurePursuit.straight", absf(aligned.steering) < 0.05)
+	var side := PurePursuit.solve(Vector2(0, 0), 0.0, 1,
+		[Vector2(0, 0), Vector2(0, 100)], 0.9)
+	_check("PurePursuit.turns_side", side.steering > 0.5 and not side.arrived)
+	_check("PurePursuit.curve_slow", PurePursuit.curve_speed(160.0, 0.1, 160.0) < 100.0)
+
+	var rev := TrailFollower.solve_trail(Vector2.ZERO, 0.0, 0,
+		[Vector2.ZERO, Vector2(100, 0)], 120.0, 0.0, 500.0, 0.0, 120.0, 0.9)
+	_check("Trail.reverse_on_cte", rev.reverse and rev.speed < 0.0)
+	var auto_rev := AutonomousDriver.solve_route(Vector2.ZERO, 0.0, 0,
+		[Vector2.ZERO, Vector2(100, 0)], 300.0, 0.0, 500.0, 0.0, 160.0, 0.9)
+	_check("Auto.reverse_deadend", auto_rev.reverse and auto_rev.speed < 0.0)
+	var ml_cmd := MlDriver.map_outputs(0.5, 0.5, 1000.0, 2000.0, 160.0, 160.0)
+	_check("Ml.maps_outputs", ml_cmd.steering == 0.5 and ml_cmd.throttle > 0.0)
+	var ml_brake := MlDriver.map_outputs(0.0, 1.0, 30.0, 2000.0, 160.0, 160.0)
+	_check("Ml.center_brake", ml_brake.throttle == 0.0)
+	_check("Ml.stuck", MlDriver.likely_stuck(5.0, 1.0))
+	var row := DatasetRecorder.format_row(PackedFloat64Array([0.1, 0.2]), 0.5, 0.25)
+	_check("Recorder.cols", row.split(",").size() == 4)
+	_check("Recorder.valid", DatasetRecorder.valid_row(PackedFloat64Array([
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])))
+
 	print("MODULES_CHECK fails=%d" % _fails)
 	quit(_fails)
 

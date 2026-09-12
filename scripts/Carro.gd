@@ -4,6 +4,7 @@ extends CharacterBody2D
 const CerebroML = preload("res://scripts/CerebroML.gd")
 const SensorArrayRef = preload("res://src/vehicle/SensorArray.gd")
 const LocomotionRef = preload("res://src/vehicle/Locomotion.gd")
+const DatasetRecorderRef = preload("res://src/vehicle/DatasetRecorder.gd")
 ## O movimento imita um motorista real:
 ##  - O volante (estercamento) vira aos poucos e o carro faz ARCO, não pivota.
 ##  - Acelera e freia com rampa (frenagem mais forte que aceleração).
@@ -1790,6 +1791,7 @@ func _ml_features() -> PackedFloat64Array:
 	#   [13,14]  sin/cos do erro angular até a vaga
 	#   [15..17] seta do piso: achou?(0/1) e cos/sin da direção relativa
 	var f := PackedFloat64Array()
+	# Column order is the DatasetRecorder contract (see its header doc).
 	var rays := _rays_dict()
 	var raios_nomes: Array[String] = [SensorArrayRef.FRONT_CENTER, SensorArrayRef.FRONT_LEFT,
 		SensorArrayRef.FRONT_RIGHT, SensorArrayRef.SIDE_LEFT, SensorArrayRef.SIDE_RIGHT,
@@ -1830,12 +1832,10 @@ func _ml_gravar_linha() -> void:
 			ml_gravar = false
 			return
 	var f := _ml_features()
-	var partes: PackedStringArray = []
-	for v in f:
-		partes.append("%.4f" % v)
-	partes.append("%.4f" % clampf(estercamento_alvo / max_estercamento, -1.0, 1.0))
-	partes.append("%.4f" % clampf(velocidade_desejada / velocidade_maxima, 0.0, 1.0))
-	_ml_arquivo.store_line(",".join(partes))
+	# Row layout is the DatasetRecorder contract (18 feats + 2 labels).
+	var steering_norm: float = clampf(estercamento_alvo / max_estercamento, -1.0, 1.0)
+	var speed_norm: float = clampf(velocidade_desejada / velocidade_maxima, 0.0, 1.0)
+	_ml_arquivo.store_line(DatasetRecorderRef.format_row(f, steering_norm, speed_norm))
 
 
 func _ml_fechar() -> void:

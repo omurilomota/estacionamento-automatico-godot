@@ -147,12 +147,14 @@ attempt_changed/spot_change_requested`, methods
 
 1. DONE — `src/` facades + `LevelRegistry`/`VehicleState` + docs in EN
    (+ `Fases.gd` shim, regression green).
-2. DONE (part 1) — `Carro.gd` delegates distance helpers to `SensorArray`
-   (`_rays_dict()` + `_distancia_ray()`); `Locomotion.check()` is the
-   reference-physics spec; `ModulesCheck.gd` runs headless (fails=0);
-   `Vehicle.build_perception()` exposes snapshots for future brains.
-3. NEXT — split brains (`TrailFollower / AutonomousDriver / MlDriver`)
-   + `DatasetRecorder`; then Fase3 pilot on `LevelManager` + `LevelConfig`.
+2. DONE — `Carro.gd` delegates distance helpers to `SensorArray`;
+   `Locomotion.check()` is the reference-physics spec.
+3. DONE — brains split: `PurePursuit` (shared solver) +
+   `TrailFollower` / `AutonomousDriver` / `MlDriver` (pure idioms) +
+   `DatasetRecorder` (CSV contract); `_ml_gravar_linha` delegates;
+   `ModulesCheck.gd` 24 PASS headless; regression ESTACIONADO 50s.
+4. NEXT — wire FSM steering/speed through the brain solvers (behind a
+   flag, trajectory-diffed), then Fase3 pilot on `LevelManager`.
 
 ## 8. Agent workflow rules
 
