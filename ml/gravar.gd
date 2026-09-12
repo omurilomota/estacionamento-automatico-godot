@@ -37,13 +37,17 @@ func _init() -> void:
 		await process_frame
 		await process_frame
 		var carro = fase.get_node("Carro")
-		carro.ml_gravar = true
-		carro.ml_gravar_caminho = caminho
+		if carro.has_method("begin_recording"):
+			carro.call("begin_recording", caminho)
+		else:
+			carro.ml_gravar = true
+			carro.ml_gravar_caminho = caminho
 		var estacionou := false
 		var frames := int(LIMITE_SEGUNDOS * 60.0)
 		for i in range(frames):
 			await process_frame
-			if carro.estado == 3: # Estado.ESTACIONADO
+			var parked_ep: bool = bool(carro.call("is_parked")) if carro.has_method("is_parked") else carro.estado == 3
+			if parked_ep: # VehicleState.PARKED
 				estacionou = true
 				break
 		var linhas := _contar_linhas(caminho)
@@ -52,7 +56,10 @@ func _init() -> void:
 			fase_nome, ep, "aleatorio" if aleatorio else "fixo",
 			"ESTACIONADO" if estacionou else "TIMEOUT", linhas,
 			(frames / 60.0)])
-		carro._ml_fechar()
+		if carro.has_method("close_recording"):
+			carro.call("close_recording")
+		else:
+			carro._ml_fechar()
 		root.remove_child(fase)
 		fase.queue_free()
 		await process_frame

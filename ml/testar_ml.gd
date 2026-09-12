@@ -17,7 +17,11 @@ func _init() -> void:
 		return
 	for fase_nome: String in FASES:
 		var fase = load("res://scenes/fases/%s.tscn" % fase_nome).instantiate()
-		fase.get_node("Carro").modo_ml = true
+		var ml_car = fase.get_node("Carro")
+		if ml_car.has_method("set_ml_driving"):
+			ml_car.call("set_ml_driving", true)
+		else:
+			ml_car.modo_ml = true
 		root.add_child(fase)
 		await process_frame
 		await process_frame
@@ -29,12 +33,15 @@ func _init() -> void:
 		for i in range(frames):
 			await process_frame
 			if i % 300 == 0:
-				print("t %.1f pos %s vel %.0f estado %s fallback %s" % [
+				print("t %.1f pos %s vel %.0f state %s fallback %s" % [
 					i / 60.0, carro.global_position, carro.velocidade_atual,
-					carro.nome_estado(), str(not carro.modo_ml)])
-			if not carro.modo_ml:
+					carro.call("state_label_en") if carro.has_method("state_label_en") else carro.nome_estado(),
+					str(not (bool(carro.call("is_ml_driving")) if carro.has_method("is_ml_driving") else carro.modo_ml))])
+			var ml_still_on: bool = bool(carro.call("is_ml_driving")) if carro.has_method("is_ml_driving") else carro.modo_ml
+			if not ml_still_on:
 				usou_fallback = true
-			if carro.estado == 3:
+			var parked_ok: bool = bool(carro.call("is_parked")) if carro.has_method("is_parked") else carro.estado == 3
+			if parked_ok: # PARKED
 				ok = true
 				t_fim = i / 60.0
 				break

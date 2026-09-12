@@ -1,40 +1,42 @@
-# Machine Learning — carro que dirige sozinho (imitação)
+# Machine Learning — self-driving car (imitation)
 
-Plano em fases para tirar a dependência das linhas (Line2D): o carro passa a
-dirigir **só com os sensores**, usando uma rede neural treinada a partir do
-cérebro atual (behavior cloning). A FSM continua sendo o "juiz" da missão.
+Phased plan to remove the Line2D dependency: the car drives **on sensors
+only**, using a neural net trained from the current brain (behavior
+cloning). The FSM stays the mission judge.
 
-## Arquitetura
+## Architecture
 
 ```
-FSM (Carro.gd)  = missão: escolher vaga, ALINHANDO, ESTACIONADO
-CerebroML.gd    = percepção -> ação (MLP 18-32-16-2, GDScript puro)
-ml/treinar.py   = treino offline (numpy), exporta ml/modelo/pesos.json
+FSM (Carro.gd / Vehicle) = mission: pick spot, ALIGNING, PARKED
+NeuralBrain (CerebroML)  = perception -> action (MLP 18-32-16-2, pure GDScript)
+ml/train.py              = offline training (numpy), exports ml/modelo/pesos.json
 ```
 
-- **Entradas (18):** 11 raios normalizados + velocidade + distância/ângulo
-  até a vaga + seta do piso (dist, cos, sin).
-- **Saídas (2):** estercamento (-1..1) e velocidade (0..1 × velocidade_maxima).
-- Camadas de segurança continuam hard-coded (freio por distância_centro,
-  fallback para o cérebro de trilha se a rede travar).
+- **Inputs (18):** 11 normalized rays + speed + distance/angle to the
+  spot + floor arrow (dist, cos, sin).
+- **Outputs (2):** steering (-1..1) and speed (0..1 × max speed).
+- Hard-coded safety layers stay (center-distance braking, fallback to
+  the trail brain if the net stalls).
 
-## Fases
+## Phases
 
-1. **Gravar** (professor): `godot --headless --script ml/gravar.gd`
-   → gera `ml/dados/<Fase>_ep<N>.csv` (~10k amostras).
-2. **Treinar**: `python3 ml/treinar.py` (só numpy)
-   → gera `ml/modelo/pesos.json` + métricas de validação.
-3. **Testar**: `godot --headless --script ml/testar_ml.gd`
-   → roda a fase com `modo_ml = true` (sem trilha) e reporta resultado.
+1. **Record** (teacher): `godot --headless --script ml/gravar.gd`
+   → `ml/dados/<Fase>_ep<N>.csv` (~10k samples).
+2. **Train**: `python3 ml/treinar.py` (numpy only)
+   → `ml/modelo/pesos.json` + validation metrics.
+3. **Evaluate**: `godot --headless --script ml/testar_ml.gd`
+   → runs the level with `modo_ml = true` (new: `set_ml_driving(true)`,
+   no drawn trail) and reports the outcome.
 
-## Uso no jogo
+## In-game use
 
-No inspetor do Carro: `modo_ml = true` (a rede carrega do JSON; se não
-existir, cai automaticamente no modo trilha).
+In the vehicle inspector: `modo_ml = true` (new: `ml_driving`). The net
+loads from JSON; if missing it falls back to trail mode automatically.
 
-## Limitações conhecidas (honestas)
+## Known limitations (honest)
 
-- Imitação só alcança o nível do professor — não inventa manobras novas
-  (manobra de três tempos, por exemplo). Para isso vem a Fase 3:
-  **neuroevolução** (GA sobre os pesos, GDScript puro).
-- O modelo aprende os layouts gravados; fases novas podem exigir regravação.
+- Imitation only matches the teacher — no novel maneuvers (e.g.
+  three-point turns). Phase 3 is next: **neuroevolution** (GA over the
+  weights, pure GDScript).
+- The model learns the recorded layouts; new levels may need re-recording.
+

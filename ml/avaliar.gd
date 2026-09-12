@@ -23,9 +23,15 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 	var carro = fase.get_node("Carro")
-	carro.modo_ml = true
-	carro.ml_sem_fallback = true
-	var vaga = carro._vaga_alvo
+	if carro.has_method("set_ml_driving"):
+		carro.call("set_ml_driving", true)
+	else:
+		carro.modo_ml = true
+	if carro.has_method("set_ml_fallback_off"):
+		carro.call("set_ml_fallback_off", true)
+	else:
+		carro.ml_sem_fallback = true
+	var vaga = carro.call("target_spot") if carro.has_method("target_spot") else carro._vaga_alvo
 	if vaga == null:
 		# vaga escolhida no primeiro frame de física
 		await physics_frame
@@ -35,9 +41,11 @@ func _init() -> void:
 	var t_fim := LIMITE_SEGUNDOS
 	for i in range(limite):
 		await physics_frame
-		if carro._vaga_alvo != null:
-			vaga = carro._vaga_alvo
-		if carro.estado == 3: # ESTACIONADO
+		var live_spot = carro.call("target_spot") if carro.has_method("target_spot") else carro._vaga_alvo
+		if live_spot != null:
+			vaga = live_spot
+		var parked_now: bool = bool(carro.call("is_parked")) if carro.has_method("is_parked") else carro.estado == 3
+		if parked_now: # PARKED
 			estacionou = true
 			t_fim = i / float(TICKS_POR_SEGUNDO)
 			break

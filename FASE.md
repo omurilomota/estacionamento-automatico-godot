@@ -1,83 +1,94 @@
-# Fases do Estacionamento (mapas reais)
+# Parking levels (real maps)
 
-Cada mapa de `estacionamento/` virou uma **situação-teste** (fase). O carro já tem o comportamento agêntico (recuperação com tentativas), então cada fase serve para testar como ele se sai em cenários diferentes.
+Each map in `estacionamento/` is a **test situation** (level). The car
+already drives agentically (retry strategies), so each level tests how it
+handles a different layout.
 
-## Como rodar
+## How to run
 
-| Tecla | Ação |
+| Key | Action |
 |---|---|
-| `1` / `2` / `3` / `4` / `5` | Troca de fase (funciona na demo E nas fases) |
-| `R` | Reinicia a cena atual |
+| `1` / `2` / `3` / `4` / `5` | Switch level (demo AND levels) |
+| `R` | Restart the current scene |
 
-Para rodar uma fase direto no editor: menu **Play** ▶ ou **F5** roda a cena principal (`Mundo.tscn`). Para abrir uma fase específica, dê dois cliques na cena (`scenes/fases/FaseN.tscn`) e aperte **F6** (rodar cena atual).
+To run a level in the editor: **Play** or **F5** runs the main scene
+(`Mundo.tscn`). To open one level, double-click it
+(`scenes/fases/FaseN.tscn`) and press **F6** (play current scene).
 
-> **Para VER a imagem do estacionamento:** as 5 fases já têm o mapa real carregado
+> **To SEE the parking image:** all 5 levels already load the real map
 > (`Mapa` → `mapa` = `estacionamento/parking_lot.jpg`, `parking_lot2.svg`,
-> `parking_lot3.svg`, `parking_lot4.jpg` e `Parkinglot5.jpeg`). Rodando a demo (F5), aperte **1**,
-> **2**, **3**, **4** ou **5** para abrir cada uma. O `FaseBase.gd` posiciona a imagem,
-> cria as paredes, ajusta a câmera e o minimapa automaticamente (tamanho =
-> `largura da imagem × escala_mapa`).
+> `parking_lot3.svg`, `parking_lot4.jpg`, `Parkinglot5.jpeg`). Play the demo
+> (F5), then press **1**–**5**. `FaseBase.gd` (legacy; new: `LevelManager`)
+> positions the image, builds walls, frames the camera and minimap
+> automatically (size = `image width × map_scale`).
 >
-> Para usar **uma imagem sua**: coloque o arquivo em `estacionamento/`, abra a
-> cena da fase e no nó raiz (`FaseBase`) arraste a imagem para `mapa`
-> (ajuste `escala_mapa`/`zoom_camera` no Inspector).
+> To use **your own image**: drop it in `estacionamento/`, open the level
+> scene and on the root node drag the image into `mapa`
+> (tune `escala_mapa`/`zoom_camera` in the Inspector; new API:
+> `LevelConfig.map_texture / map_scale / camera_zoom`).
 
-## Posição de partida do carro
+## Vehicle spawn
 
-- `posicao_aleatoria` (export no nó raiz): ligado por padrão — o carro nasce
-  em uma **célula livre sorteada** (nunca em cima de obstáculo nem de vaga).
-- Desligue (`false`) para usar a posição que você deixar no nó `Carro` da cena.
+- `posicao_aleatoria` (root export; new: `LevelConfig.random_spawn`):
+  on by default — the vehicle spawns in a **random free cell**
+  (never on an obstacle or spot).
+- Off (`false`) → uses the `Carro` node position from the scene.
 
-## O que cada fase já tem
+## What each level already has
 
-- **Mapa** (`Mapa`): a imagem do estacionamento **já aparece no editor** (textura +
-  escala gravadas na cena) e em jogo (`escala_mapa`). É o seu "chão" de trabalho.
-- **Paredes do perímetro** (`LimiteAutomatico`): geradas automaticamente em volta do mapa — o carro não sai dele.
-- **Câmera** (`Camera`): segue o carro, sem sair das bordas (`zoom_camera` ajusta o zoom).
-- **UI**: status, sensor e tentativa (igual à cena de demonstração).
-- **Carro**: já instanciado (posição provisória — mova para onde quiser).
+- **Map** (`Mapa`): the parking image renders in the editor (texture +
+  scale baked in the scene) and in game (`escala_mapa`). Your floor.
+- **Perimeter walls** (`LimiteAutomatico`): auto-generated around the map.
+- **Camera** (`Camera`): follows the car, clamped to the edges
+  (`zoom_camera` tunes zoom).
+- **UI**: status, sensor and attempt (same as the demo scene).
+- **Vehicle**: already instanced (placeholder position — move it freely).
 
-> **Importante (modo automático):** com `Carro.auto_navegacao = true`, o carro
-> **ignora os waypoints** — ele traça a própria rota (A*) até a vaga mais próxima.
-> O que realmente importa montar são as **VAGAS** (o objetivo) e os **OBSTÁCULOS**
-> (o que ele deve evitar).
+> **Automatic mode:** with `Carro.auto_navegacao = true` (new:
+> `Vehicle.set_autonomous(true)`), the car **ignores waypoints** — it plans
+> its own A* route to the nearest spot. What matters is **SPOTS** (the goal)
+> and **OBSTACLES** (what to avoid).
 
-## Como montar uma fase (passo a passo)
+## How to build a level (step by step)
 
-> Ordem recomendada: **1º vagas → 2º obstáculos → 3º ajustes**.
+> Recommended order: **1st spots → 2nd obstacles → 3rd tuning**.
 
-### 1. Colocar o OBJETIVO (as vagas onde o carro estaciona)
+### 1. Place the GOAL (spots where the car parks)
 
-1. Abra a fase: clique duas vezes em `scenes/fases/FaseN.tscn` (o mapa aparece no editor).
-2. No **FileSystem**, ache `scenes/Vaga.tscn` e **arraste** uma instância para o nó `Vagas` (no painel Scene).
-3. Posicione a vaga **sobre uma vaga desenhada no mapa** (os retângulos verdes são o contorno).
-4. Ajuste `rotacao_alvo` no Inspector da vaga — é a direção em que o **nariz do carro** aponta quando estacionado:
-   - nariz para **cima** → `-1.5708`
-   - nariz para a **direita** → `0`
-   - nariz para **baixo** → `1.5708`
-   - nariz para a **esquerda** → `3.14159`
-5. (Opcional) Force o carro a ir **sempre para uma vaga específica**: selecione o nó `Carro` → Inspector → `vaga_prioritaria` → arraste a vaga para o campo.
-6. Duplique (Ctrl+D) para as demais vagas, girando cada uma conforme a orientação.
+1. Open the level: double-click `scenes/fases/FaseN.tscn`.
+2. In **FileSystem**, find `scenes/Vaga.tscn` (new: `ParkingSpot`) and
+   **drag** an instance under `Vagas`.
+3. Position it **over a drawn bay** (green outlines are the contour).
+4. Set `rotacao_alvo` in the Inspector (new: `target_yaw`) — nose heading
+   when parked:
+   - nose **up** → `-1.5708`
+   - nose **right** → `0`
+   - nose **down** → `1.5708`
+   - nose **left** → `3.14159`
+5. (Optional) Force one spot: select `Carro` → `vaga_prioritaria` →
+   drag the spot in (new API: pass the spot to the brain directly).
+6. Duplicate (Ctrl+D) for the rest, rotating each as needed.
 
-Rodando a fase (F6): o carro escolhe a vaga livre mais próxima, desenha a rota
-amarela e a grade no chão, estaciona e a vaga fica **vermelha**.
+Playing the level (F6): the car picks the nearest free spot, draws the
+yellow route + floor grid, parks, and the spot turns **red**.
 
-### 2. Colocar OBSTÁCULOS (carros estacionados, guias, canteiros)
+### 2. Place OBSTACLES (parked cars, curbs, planters)
 
-- **Carros estacionados (proibidos):** arraste `scenes/Obstaculo.tscn` para o nó
-  `Obstaculos`. Gire o nó para a orientação do carro no mapa. Ele já tem
-  `collision_layer = 2` — o carro não vai conseguir entrar nessa vaga (rota desvia).
-- **Muros/colunas:** `Paredes` → **+** → `StaticBody2D` → **+** → `CollisionShape2D`
-  (retângulo sobre o muro), `collision_layer = 2`.
+- **Parked cars (blocked):** drag `scenes/Obstaculo.tscn` (new:
+  `Obstacle`) under `Obstaculos`. Rotate to match the map. It already has
+  `collision_layer = 2` — the route avoids it.
+- **Walls/columns:** `Paredes` → **+** → `StaticBody2D` → **+** →
+  `CollisionShape2D` (rectangle over the wall), `collision_layer = 2`.
 
-### 3. Ajustes finais
+### 3. Final tuning
 
-- **Posição de partida:** `posicao_aleatoria` (nó raiz) = `false` → use a posição
-  que você arrastar no nó `Carro`. Com `true`, o carro nasce numa célula livre sorteada.
-- **Escala/zoom:** nó raiz → `escala_mapa` e `zoom_camera`.
-- O **minimapa** (canto inferior direito) mostra as vagas (verde = livre, vermelha = ocupada) e o carro automaticamente.
+- **Spawn:** root `posicao_aleatoria` (`LevelConfig.random_spawn`) =
+  `false` → scene `Carro` position; `true` → random free cell.
+- **Scale/zoom:** root `escala_mapa` + `zoom_camera`.
+- The **minimap** (bottom-right) shows spots (green = free, red = occupied)
+  and the car automatically.
 
-## Estrutura de arquivos
+## File layout
 
 ```
 scenes/fases/
@@ -86,5 +97,5 @@ scenes/fases/
   Fase3.tscn      # estacionamento/parking_lot3.svg  (escala_mapa = 3.0)
   Fase4.tscn      # estacionamento/parking_lot4.jpg  (escala_mapa = 3.8)
   Fase5.tscn      # estacionamento/Parkinglot5.jpeg  (escala_mapa = 1.0)
-estacionamento/   # mapas reais (JPG/SVG) usados como chão das fases
+estacionamento/   # real maps (JPG/SVG) used as level floors
 ```
