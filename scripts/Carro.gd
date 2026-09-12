@@ -2,6 +2,8 @@ extends CharacterBody2D
 ## O CÉREBRO DO CARRO — Máquina de Estados (FSM) com RECUPERAÇÃO.
 
 const CerebroML = preload("res://scripts/CerebroML.gd")
+const SensorArrayRef = preload("res://src/vehicle/SensorArray.gd")
+const LocomotionRef = preload("res://src/vehicle/Locomotion.gd")
 ## O movimento imita um motorista real:
 ##  - O volante (estercamento) vira aos poucos e o carro faz ARCO, não pivota.
 ##  - Acelera e freia com rampa (frenagem mais forte que aceleração).
@@ -43,7 +45,7 @@ enum Estado { BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO }
 # --- NAVEGAÇÃO GLOBAL (o "GPS"): planejamento A* sobre o mapa de ocupação.
 # auto_navegacao = false mantém o modo manual (waypoints definidos na cena).
 @export var auto_navegacao: bool = true
-@export var distancia_lookahead: float = 80.0
+@export var distancia_lookahead: float = 180.0
 @export var vaga_prioritaria: NodePath
 @export var planejador_path: NodePath = NodePath("../Planejador")
 @export var vagas_path: NodePath = NodePath("../Vagas")
@@ -200,7 +202,7 @@ func _planejar_rota() -> void:
 		_ml_t_progresso = 0.0
 		tentativa_mudou.emit(0, "MODO ML: rede neural dirige")
 		return
-	# Sequência correta: RotaReta -> RotaDaCurva -> RotaReta2 (com suavização)
+	# Modo trilha: usa SOMENTE rota sequencial ou fallback Line2D - NUNCA A*
 	if modo_trilha:
 		var rota_seq: Array = _construir_rota_sequencial_ruas()
 		if rota_seq.size() >= 2:
@@ -208,47 +210,37 @@ func _planejar_rota() -> void:
 			_sem_vagas = false
 			tentativa_mudou.emit(0, "Rota sequencial Reta->Curva->Reta2")
 			return
-	if planejador == null or container_vagas == null:
-		if modo_trilha and container_vagas != null:
-			var fb: Array = _coletar_rota_fallback()
-			if fb.size() >= 2:
-				_sem_vagas = false
-				var melhor_vaga: Node2D = null
-				var melhor_dist: float = INF
-				for v in container_vagas.get_children():
-					if v.ocupada:
-						continue
-					var d: float = global_position.distance_to(v.global_position)
-					if d < melhor_dist:
-						melhor_dist = d
-						melhor_vaga = v
-				if melhor_vaga != null:
-					_vaga_alvo = melhor_vaga
-					fb.append(_vaga_alvo.global_position)
-					_aplicar_rota(fb)
-					tentativa_mudou.emit(0, "Rota fallback (sem A*)")
-		return
-	var escolha: Dictionary = _escolher_vaga()
-	if escolha.is_empty() or escolha["vaga"] == null:
-		var fb2: Array = _coletar_rota_fallback()
-		if fb2.size() >= 2:
-			var mv: Node2D = null
-			var md: float = INF
+		# Fallback: coleta rota via Line2D
+		var fb_trilha: Array = _coletar_rota_fallback()
+		if fb_trilha.size() >= 2:
+			_sem_vagas = false
+			var vaga_fb: Node2D = null
+			var dist_fb: float = INF
 			for v in container_vagas.get_children():
 				if v.ocupada:
 					continue
-				var dd: float = global_position.distance_to(v.global_position)
-				if dd < md:
-					md = dd
-					mv = v
-			if mv != null:
-				_vaga_alvo = mv
-				var rota_fb: Array = fb2.duplicate()
-				rota_fb.append(_vaga_alvo.global_position)
-				_aplicar_rota(rota_fb)
-				tentativa_mudou.emit(0, "Rota fallback (A* falhou)")
-				_sem_vagas = false
-				return
+				var d: float = global_position.distance_to(v.global_position)
+				if d < dist_fb:
+					dist_fb = d
+					vaga_fb = v
+			if vaga_fb != null:
+				_vaga_alvo = vaga_fb
+				fb_trilha.append(_vaga_alvo.global_position)
+				_aplicar_rota(fb_trilha)
+				tentativa_mudou.emit(0, "Rota trilha (fallback Line2D)")
+			return
+		# Sem rota disponível: pede nova vaga
+		_sem_vagas = true
+		pedir_nova_vaga.emit()
+		return
+
+	# NÃO é modo trilha: pode usar A* normal
+	if planejador == null or container_vagas == null:
+		_sem_vagas = true
+		pedir_nova_vaga.emit()
+		return
+	var escolha: Dictionary = _escolher_vaga()
+	if escolha.is_empty() or escolha["vaga"] == null:
 		_sem_vagas = true
 		pedir_nova_vaga.emit()
 		return
@@ -257,8 +249,6 @@ func _planejar_rota() -> void:
 	_aplicar_rota(escolha["rota"])
 	tentativa_mudou.emit(0, "Rota A* para a vaga")
 	_tempo_parado = 0.0
-
-
 func _escolher_vaga() -> Dictionary:
 	# Vaga prioritária (marcada na cena) e livre ganha sempre.
 	if not vaga_prioritaria.is_empty():
@@ -865,6 +855,15 @@ func _avancar_indice_rota() -> void:
 
 
 func _replanejar_ou_recuperar() -> void:
+	if modo_trilha:
+		# Em modo trilha, NÃO usar A* - apenas fallback Line2D
+		var fb: Array = _coletar_rota_fallback()
+		if fb.size() >= 2:
+			_aplicar_rota(fb)
+			tentativa_mudou.emit(0, "Trilha: replanejamento com Line2D (sem A*)")
+		else:
+			_iniciar_recuperacao()
+		return
 	if planejador == null:
 		_iniciar_recuperacao()
 		return
@@ -952,12 +951,16 @@ func _construir_rota_sequencial_ruas() -> Array:
 	if vaga_escolhida == null:
 		return []
 	_vaga_alvo = vaga_escolhida
-	var ordem: Array = ["RotaReta", "RotaDaCurva", "RotaReta2"]
+	var ordem: Array = []
+	# Ordem visual: segue a ordem dos filhos no nó Rotas (como arrumado no editor)
+	for child in rotas_node.get_children():
+		if child is Line2D:
+			ordem.append(child.name)
 	var rua: Array = []
 	rua.append(global_position)
-	var prev_end: Vector2 = global_position
+	var ponto_prep: Vector2
 	for nome in ordem:
-		var line: Line2D = rotas_node.get_node_or_null(nome) as Line2D
+		var line: Line2D = rotas_node.get_node_or_null(NodePath(nome)) as Line2D
 		if line == null:
 			continue
 		var pts: PackedVector2Array = line.points
@@ -967,23 +970,28 @@ func _construir_rota_sequencial_ruas() -> Array:
 		var glob: Array = []
 		for p in pts:
 			glob.append(line.to_global(p))
-		# Transição suave com 6 pontos interpolados (evita parada brusca)
+		# Transição suave com pontos interpolados (evita parada brusca)
 		if rua.size() >= 1:
 			var gap: float = rua[rua.size()-1].distance_to(glob[0])
+			# Sempre faz blend de transicao para suavizar, especialmente em curvas
+			var num_pontos_blend: int = 10
 			if gap > 40.0:
-				for s in range(1, 7):
-					var t: float = float(s) / 7.0
-					t = t * t * (3.0 - 2.0 * t) # ease
+				# Gap grande: interpolated points para suavizar
+				for s in range(1, num_pontos_blend + 1):
+					var t: float = float(s) / (num_pontos_blend + 1)
+					t = t * t * (3.0 - 2.0 * t) # ease-in-out
 					rua.append(rua[rua.size()-1].lerp(glob[0], t))
-			for i in range(glob.size()):
-				if rua[rua.size()-1].distance_to(glob[i]) > 8.0:
-					rua.append(glob[i])
-		else:
-			for p in glob:
-				rua.append(p)
-	# Adiciona ponto_prep e vaga com transição suave (evita curva brusca de 90°)
-	var dir_vaga: Vector2 = Vector2.RIGHT.rotated(_vaga_alvo.rotacao_alvo if "rotacao_alvo" in _vaga_alvo else 0.0)
-	var ponto_prep: Vector2 = _vaga_alvo.global_position - dir_vaga * (entre_eixos * 2.5 + 60.0)
+				for i in range(glob.size()):
+					if rua[rua.size()-1].distance_to(glob[i]) > 8.0:
+						rua.append(glob[i])
+			else:
+				# Gap pequeno ou negativo: adiciona pontos do glob diretamente
+				# mas ignora pontos muito proximos do ultimo para evitar zigue-zague
+				for i in range(glob.size()):
+					if i == 0 and rua[rua.size()-1].distance_to(glob[0]) < 20.0:
+						continue # Pula o primeiro se esta muito proximo
+					if rua[rua.size()-1].distance_to(glob[i]) > 10.0:
+						rua.append(glob[i])
 	# Só adiciona ponto_prep se não estiver muito longe da última parte da rua (evita zig-zag)
 	if rua[rua.size()-1].distance_to(ponto_prep) > 15.0:
 		# Suaviza com ponto intermediário
@@ -1001,6 +1009,16 @@ func _construir_rota_sequencial_ruas() -> Array:
 
 func _replanejar_ou_recuperar_trilha() -> void:
 	_tempo_parado = 0.0
+	if modo_trilha:
+		# Em modo trilha, NÃO usar A* - apenas fallback Line2D
+		var fb: Array = _coletar_rota_fallback()
+		if fb.size() >= 2:
+			_aplicar_rota(fb)
+			tentativa_mudou.emit(0, "Trilha: replanejamento com Line2D (sem A*)")
+		else:
+			velocidade_desejada = 0.0
+			_tempo_parado = 0.0
+		return
 	if planejador == null:
 		# sem planejador: tenta fallback
 		var fb: Array = _coletar_rota_fallback()
@@ -1027,7 +1045,6 @@ func _replanejar_ou_recuperar_trilha() -> void:
 		else:
 			velocidade_desejada = 0.0
 			estercamento_alvo = 0.0
-
 
 func _processar_trilha(delta: float) -> void:
 	if absf(velocidade_atual) > 500:
@@ -1110,8 +1127,6 @@ func _processar_trilha(delta: float) -> void:
 	for i in range(waypoints.size() - 1):
 		var p := Geometry2D.get_closest_point_to_segment(global_position, waypoints[i], waypoints[i + 1])
 		cte = minf(cte, global_position.distance_to(p))
-	if cte < 20.0 and absf(erro) < 0.15:
-		erro *= 0.5
 	estercamento_alvo = clampf(erro * 2.2, -max_estercamento, max_estercamento)
 	var curv2 := _curvatura_a_frente()
 	var v_curva2: float = velocidade_maxima
@@ -1413,10 +1428,19 @@ func _iniciar_recuperacao() -> void:
 		tempo_ignorar_sensor = 0.5
 		_mudar_estado(Estado.BUSCANDO)
 	elif tentativas == 3:
-		# 3ª: replaneja com corredor mais justo (inflar menor) — tenta nova rota antes de desistir
+		# 3ª: tenta replanejar somente se NÃO estiver em modo trilha
+		# Em modo trilha, só usa fallback Line2D (nunca A*)
 		estrategia = 2
-		if planejador != null:
-			# Tenta rota alternativa com inflar reduzido temporariamente
+		if modo_trilha:
+			# Modo trilha: usa fallback Line2D em vez de A*
+			var fb_alt: Array = _coletar_rota_fallback()
+			if fb_alt.size() >= 2:
+				_aplicar_rota(fb_alt)
+				tentativa_mudou.emit(tentativas, "Replanejou (trilha - Line2D)")
+				_mudar_estado(Estado.BUSCANDO)
+				return
+		elif planejador != null:
+			# Não é modo trilha: tenta rota alternativa com inflar reduzido temporariamente
 			var inflar_original = planejador.inflar
 			planejador.inflar = 50.0
 			planejador.construir()
@@ -1451,6 +1475,21 @@ func _iniciar_recuperacao() -> void:
 
 func _tentar_manoabras_paralelo() -> void:
 	# Paralelo por manobra via corrotina await (3 fantasmas)
+	if modo_trilha:
+		# Em modo trilha, não usar A*/snapshot para manobras - usar estratégia simples
+		estrategia = 0
+		fase_manobra = 1
+		tempo_estrategia = 0.0
+		# Ré simples para trás para sair do impasse, com estercamento suave
+		velocidade_desejada = -velocidade_alinhamento * 0.4
+		if _vaga_alvo != null:
+			var dir_alerte: float = angle_difference(rotation, _vaga_alvo.global_position.direction_to(global_position).angle())
+			estercamento_alvo = clampf(-dir_alerte * 0.8, -max_estercamento, max_estercamento)
+		else:
+			estercamento_alvo = 0.0
+		_mudar_estado(Estado.RECUPERANDO)
+		tentativa_mudou.emit(tentativas, ESTRATEGIAS[estrategia])
+		return
 	if planejador == null or _vaga_alvo == null:
 		estrategia = 0
 		fase_manobra = 1
@@ -1601,23 +1640,23 @@ func _resetar_tentativa() -> void:
 
 func distancia_frente() -> float:
 	# Menor distância medida pelos 3 raios frontais. INF = nada colidindo.
-	var menor: float = INF
-	for raio in [ray_frente_centro, ray_frente_esq, ray_frente_dir]:
-		menor = minf(menor, _distancia_do_raio(raio))
-	return menor
+	var rays: Dictionary = _rays_dict()
+	return minf(minf(_distancia_ray(rays, SensorArrayRef.FRONT_CENTER),
+		_distancia_ray(rays, SensorArrayRef.FRONT_LEFT)),
+		_distancia_ray(rays, SensorArrayRef.FRONT_RIGHT))
 
 
 func distancia_centro() -> float:
 	# Distância do raio CENTRAL: o que está mesmo à frente do carro.
 	# É ela que manda na velocidade (freiar por um canto raspando = errado).
-	return _distancia_do_raio(ray_frente_centro)
+	return _distancia_ray(_rays_dict(), SensorArrayRef.FRONT_CENTER)
 
 
 func distancia_lateral() -> float:
 	# Menor distância lateral pura — humano sente parede ao lado
-	var esq := _distancia_do_raio(ray_lateral_esq)
-	var dir := _distancia_do_raio(ray_lateral_dir)
-	return minf(esq, dir)
+	var rays := _rays_dict()
+	return minf(_distancia_ray(rays, SensorArrayRef.LATERAL_LEFT),
+		_distancia_ray(rays, SensorArrayRef.LATERAL_RIGHT))
 
 
 func _esta_100_dentro_da_vaga() -> bool:
@@ -1655,7 +1694,17 @@ func _esta_100_dentro_da_vaga() -> bool:
 
 
 func distancia_tras() -> float:
-	return _distancia_do_raio(ray_tras)
+	return _distancia_ray(_rays_dict(), SensorArrayRef.REAR)
+
+
+func _rays_dict() -> Dictionary:
+	# Single collection point for the extracted SensorArray contract.
+	# @onready rays are children; collect_from is null-safe by design.
+	return SensorArrayRef.collect_from(self)
+
+
+func _distancia_ray(rays: Dictionary, ray_name: String) -> float:
+	return SensorArrayRef.distance_of(rays.get(ray_name) as RayCast2D)
 
 
 func _distancia_do_raio(raio: RayCast2D) -> float:
@@ -1678,23 +1727,27 @@ func _obter_direcao_seta() -> float:
 
 func _lado_com_mais_espaco() -> int:
 	# Mede folga nos dois lados e escolhe o maior. -1 = esquerda, 1 = direita.
-	var espaco_esq: float = minf(_distancia_do_raio(ray_esquerda), _distancia_do_raio(ray_lateral_esq))
-	var espaco_dir: float = minf(_distancia_do_raio(ray_direita), _distancia_do_raio(ray_lateral_dir))
+	var rays := _rays_dict()
+	var espaco_esq: float = minf(_distancia_ray(rays, SensorArrayRef.SIDE_LEFT),
+		_distancia_ray(rays, SensorArrayRef.LATERAL_LEFT))
+	var espaco_dir: float = minf(_distancia_ray(rays, SensorArrayRef.SIDE_RIGHT),
+		_distancia_ray(rays, SensorArrayRef.LATERAL_RIGHT))
 	return -1 if espaco_esq >= espaco_dir else 1
 
 
 func _lado_com_mais_espaco_longe() -> int:
 	# Igual ao de cima, mas usando a câmera de longo alcance: vê qual lado
 	# tem mais espaço LÁ NA FRENTE (na altura do obstáculo), não ao lado do carro.
-	var espaco_esq: float = _distancia_do_raio(ray_frente_longo_esq)
-	var espaco_dir: float = _distancia_do_raio(ray_frente_longo_dir)
+	var rays := _rays_dict()
+	var espaco_esq: float = _distancia_ray(rays, SensorArrayRef.LONG_LEFT)
+	var espaco_dir: float = _distancia_ray(rays, SensorArrayRef.LONG_RIGHT)
 	return -1 if espaco_esq >= espaco_dir else 1
 
 
 func _beco_confirmado() -> bool:
 	# Confirma beco sem saída (usado quando os dois lados já estão fechados):
 	# a parede longa está batendo E o waypoint está além dela (ou colado).
-	var visao: float = _distancia_do_raio(ray_frente_longo)
+	var visao: float = _distancia_ray(_rays_dict(), SensorArrayRef.LONG_CENTER)
 	if visao >= distancia_antecipacao:
 		return false
 	var dist_wp: float = global_position.distance_to(waypoints[indice_waypoint])
@@ -1707,8 +1760,9 @@ func _espaco_insuficiente() -> bool:
 	# está livre, o carro segue reto (não faz manobra à toa).
 	if distancia_centro() >= distancia_desvio:
 		return false
-	return _distancia_do_raio(ray_esquerda) < espaco_minimo_desvio \
-		and _distancia_do_raio(ray_direita) < espaco_minimo_desvio
+	var rays := _rays_dict()
+	return _distancia_ray(rays, SensorArrayRef.SIDE_LEFT) < espaco_minimo_desvio \
+		and _distancia_ray(rays, SensorArrayRef.SIDE_RIGHT) < espaco_minimo_desvio
 
 
 func _caminho_livre() -> bool:
@@ -1736,12 +1790,15 @@ func _ml_features() -> PackedFloat64Array:
 	#   [13,14]  sin/cos do erro angular até a vaga
 	#   [15..17] seta do piso: achou?(0/1) e cos/sin da direção relativa
 	var f := PackedFloat64Array()
-	var raios: Array[RayCast2D] = [ray_frente_centro, ray_frente_esq, ray_frente_dir,
-		ray_esquerda, ray_direita, ray_tras, ray_frente_longo, ray_frente_longo_esq,
-		ray_frente_longo_dir, ray_lateral_esq, ray_lateral_dir]
-	for r in raios:
-		var alcance: float = maxf(r.target_position.length(), 1.0)
-		var d: float = _distancia_do_raio(r)
+	var rays := _rays_dict()
+	var raios_nomes: Array[String] = [SensorArrayRef.FRONT_CENTER, SensorArrayRef.FRONT_LEFT,
+		SensorArrayRef.FRONT_RIGHT, SensorArrayRef.SIDE_LEFT, SensorArrayRef.SIDE_RIGHT,
+		SensorArrayRef.REAR, SensorArrayRef.LONG_CENTER, SensorArrayRef.LONG_LEFT,
+		SensorArrayRef.LONG_RIGHT, SensorArrayRef.LATERAL_LEFT, SensorArrayRef.LATERAL_RIGHT]
+	for ray_name in raios_nomes:
+		var r: RayCast2D = rays.get(ray_name) as RayCast2D
+		var alcance: float = maxf(r.target_position.length() if r != null else 1.0, 1.0)
+		var d: float = _distancia_ray(rays, ray_name)
 		f.append(clampf(d / alcance, 0.0, 1.0))
 	f.append(clampf(velocidade_atual / velocidade_maxima, -1.0, 1.0))
 	var alvo_v: Vector2 = posicao_alvo

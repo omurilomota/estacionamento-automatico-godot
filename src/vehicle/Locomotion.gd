@@ -39,3 +39,31 @@ func yaw_rate() -> float:
 func stop() -> void:
 	speed = 0.0
 	steering = 0.0
+
+
+## Unit-style checks for the decoupled reference physics (no scene).
+## Same inputs as the legacy FSM idioms — asserts steering ramp, braking
+## ramp, safety cut, and reference yaw sign (Locomotion is the SPEC).
+static func check() -> Dictionary:
+	var report := {"fails": []}
+	var loco := Locomotion.new()
+	loco.max_speed = 160.0
+	var free := PerceptionSnapshot.new()
+	loco.tick(DriveCommand.make(1.0, 1.0), free, 0.5)
+	if not loco.speed > 0.0:
+		(report["fails"] as Array).append("accel")
+	if not absf(loco.steering) > 0.0:
+		(report["fails"] as Array).append("steer_ramp")
+	var yaw: float = loco.yaw_rate()
+	if signf(loco.steering) != 0.0 and signf(yaw) != signf(loco.steering):
+		(report["fails"] as Array).append("yaw_sign")
+	var blocked := PerceptionSnapshot.new()
+	blocked.front_center = 10.0
+	var guard := Locomotion.new()
+	guard.tick(DriveCommand.make(0.0, 1.0), blocked, 0.5)
+	if guard.speed != 0.0:
+		(report["fails"] as Array).append("safety")
+	loco.tick(DriveCommand.stop(), free, 2.0)
+	if loco.speed != 0.0:
+		(report["fails"] as Array).append("brake")
+	return report

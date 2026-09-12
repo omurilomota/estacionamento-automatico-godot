@@ -96,6 +96,18 @@ func set_ml_driving(value: bool) -> void:
 	modo_ml = value
 
 
+func build_perception() -> PerceptionSnapshot:
+	# New API: snapshot for DriverBrain implementations (legacy FSM keeps
+	# using its inline helpers until brains land). Zero behavior change.
+	var rays: Dictionary = SensorArray.collect_from(self)
+	var alvo: Vector2 = posicao_alvo
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
+		alvo = (_vaga_alvo as Node2D).global_position
+	var dist_t: float = global_position.distance_to(alvo)
+	var ang_t: float = angle_difference(rotation, global_position.direction_to(alvo).angle())
+	return SensorArray.snapshot(rays, velocidade_atual, dist_t, ang_t)
+
+
 func sensor_summary() -> String:
 	return get_sensor_text()
 func is_parked() -> bool:

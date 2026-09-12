@@ -147,14 +147,12 @@ attempt_changed/spot_change_requested`, methods
 
 1. DONE — `src/` facades + `LevelRegistry`/`VehicleState` + docs in EN
    (+ `Fases.gd` shim, regression green).
-2. NEXT — extract `SensorArray` + `Locomotion` from `Carro.gd`
-   (keep `Vehicle.gd` < 200 lines orchestration only).
-3. Pilot one level (Fase3) on `LevelManager` + `LevelConfig`; then
-   templatize `Level.tscn` (1 template + 5 `.tres` configs).
-4. Inject `RouteHints` into `PathPlanner`; delete scene crawling.
-5. Migrate `ml/*.gd` to public API (`state == PARKED`, no `_vaga_alvo`).
-6. Split `Carro.gd` brains into `TrailFollower / AutonomousDriver /
-   MlDriver` (`DriverBrain` kinds) + `DatasetRecorder`.
+2. DONE (part 1) — `Carro.gd` delegates distance helpers to `SensorArray`
+   (`_rays_dict()` + `_distancia_ray()`); `Locomotion.check()` is the
+   reference-physics spec; `ModulesCheck.gd` runs headless (fails=0);
+   `Vehicle.build_perception()` exposes snapshots for future brains.
+3. NEXT — split brains (`TrailFollower / AutonomousDriver / MlDriver`)
+   + `DatasetRecorder`; then Fase3 pilot on `LevelManager` + `LevelConfig`.
 
 ## 8. Agent workflow rules
 
