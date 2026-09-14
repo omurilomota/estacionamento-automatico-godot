@@ -19,19 +19,18 @@ func decide(perception: PerceptionSnapshot, _delta: float) -> DriveCommand:
 	return DriveCommand.make(0.0, 0.2)
 
 
-## Maps raw net outputs [steer -1..1, speed 0..1] to a DriveCommand,
-## applying the legacy safety/approach gates (mirrors _processar_ml).
+## Maps raw net outputs [steer -1..1, speed 0..1] to a DriveCommand.
+## EXACT mirror of _processar_ml today: raw steering + hard center-brake
+## (dist_centro < brake_dist → throttle 0). The former factor²/spot-approach
+## clamps were REMOVED — the legacy FSM does not have them; they belonged
+## to a future wiring, not to this spec.
 static func map_outputs(volante: float, vel_rede: float,
-		dist_centro: float, dist_spot: float,
-		brake_dist: float, v_max: float) -> DriveCommand:
-	var cmd := DriveCommand.make(volante, 0.0)
+		dist_centro: float, brake_dist: float, v_max: float) -> DriveCommand:
+	var cmd := DriveCommand.new()
 	cmd.steering = clampf(volante, -1.0, 1.0)
-	var v_desejada: float = clampf(vel_rede, 0.0, 1.0) * v_max
-	var fator: float = clampf((dist_centro - 40.0) / maxf(brake_dist - 40.0, 1.0), 0.0, 1.0)
-	v_desejada *= fator * fator
-	if dist_spot < 700.0:
-		v_desejada = minf(v_desejada, lerpf(30.0, 80.0, dist_spot / 700.0))
-	cmd.throttle = clampf(v_desejada / maxf(v_max, 1.0), 0.0, 1.0)
+	cmd.throttle = clampf(vel_rede, 0.0, 1.0)
+	if dist_centro < brake_dist:
+		cmd.throttle = 0.0
 	return cmd
 
 

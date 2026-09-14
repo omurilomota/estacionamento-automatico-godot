@@ -5,6 +5,12 @@ const CerebroML = preload("res://scripts/CerebroML.gd")
 const SensorArrayRef = preload("res://src/vehicle/SensorArray.gd")
 const LocomotionRef = preload("res://src/vehicle/Locomotion.gd")
 const DatasetRecorderRef = preload("res://src/vehicle/DatasetRecorder.gd")
+const DriveContextRef = preload("res://src/vehicle/DriveContext.gd")
+const DriveCommandAdapterRef = preload("res://src/vehicle/DriveCommandAdapter.gd")
+const FsmProfilesRef = preload("res://src/vehicle/FsmProfiles.gd")
+const TrailFollowerRef = preload("res://src/vehicle/TrailFollower.gd")
+const AutonomousDriverRef = preload("res://src/vehicle/AutonomousDriver.gd")
+const MlDriverRef = preload("res://src/vehicle/MlDriver.gd")
 ## O movimento imita um motorista real:
 ##  - O volante (estercamento) vira aos poucos e o carro faz ARCO, não pivota.
 ##  - Acelera e freia com rampa (frenagem mais forte que aceleração).
@@ -73,8 +79,28 @@ var _ml_rede: CerebroML = null
 var _ml_pos_ref: Vector2 = Vector2.ZERO
 var _ml_t_progresso: float = 0.0
 
+# --- SHADOW BRAINS (wiring step, behind flag) -----------------------------
+# Steering is now DELEGATED to PurePursuit.solve_error in all 4 FSM paths
+# (same transform, proven by the ShadowParity harness). The flag stays for
+# the next slice: speed/reverse shadow comparisons (curve_speed, approach
+# profiles, trail reverse idiom) before those delegate too.
+@export var shadow_brains: bool = false
+var _shadow_samples: int = 0
+var _shadow_worst: float = 0.0
+var _shadow_worst_speed: float = 0.0
+var _shadow_drifts: int = 0
+var _shadow_speed_drifts: int = 0
+
+# Opt-in decoupled brain. The legacy FSM remains the default and fallback.
+@export var brain_enabled: bool = false
+var driver_brain = null
+var _brain_command = null
+var _brain_context: DriveContextRef = null
+var _legacy_steering_target: float = 0.0
+var _legacy_speed_target: float = 0.0
+
 # Comportamento agêntico (quando o carro fica "preso")
-@export var limite_tempo_preso: float = 3.0
+@export var limite_tempo_preso: float = 30.0
 @export var limite_progresso: float = 40.0
 @export var limite_oscilacao: int = 6
 @export var max_tentativas_por_waypoint: int = 10
@@ -120,6 +146,7 @@ var _sem_vagas: bool = false
 var _posicao_anterior: Vector2 = Vector2.ZERO
 var _deslocamento_total: float = 0.0
 var _tempo_parado: float = 0.0
+var _rota_trilha_anterior: Array[Vector2] = []
 
 # Direção e velocidade atuais (acumuladas com rampa, não "teleportam")
 var estercamento: float = 0.0
@@ -203,7 +230,7 @@ func _planejar_rota() -> void:
 		_ml_t_progresso = 0.0
 		tentativa_mudou.emit(0, "MODO ML: rede neural dirige")
 		return
-	# Modo trilha: usa SOMENTE rota sequencial ou fallback Line2D - NUNCA A*
+	# Modo trilha: usa rota sequencial; o recovery pode usar A* se o fallback repetir.
 	if modo_trilha:
 		var rota_seq: Array = _construir_rota_sequencial_ruas()
 		if rota_seq.size() >= 2:
@@ -290,6 +317,9 @@ func _aplicar_rota(rota: Array) -> void:
 	_resetar_tentativa()
 	_tempo_parado = 0.0
 	if modo_trilha:
+		_rota_trilha_anterior.clear()
+		for ponto in waypoints:
+			_rota_trilha_anterior.append(ponto)
 		tempo_ignorar_sensor = 0.8
 		# Só orienta na primeira rota (spawn) — snap completo para não começar de lado
 		if era_vazia and rota.size() >= 2:
@@ -313,9 +343,14 @@ func preparar_estacionamento(rotacao_da_vaga: float, posicao_da_vaga: Vector2) -
 	posicao_alvo = posicao_da_vaga
 	# Ponto de preparação: 1.8*entre_eixos à frente da boca, na direção oposta ao nariz da vaga
 	var dir_vaga := Vector2.RIGHT.rotated(rotacao_alvo)
-	var ponto_prep := posicao_da_vaga - dir_vaga * (entre_eixos * 2.5 + 80.0)
+	var dist_prep := entre_eixos * 2.5 + 80.0
+	var ponto_prep := posicao_da_vaga - dir_vaga * dist_prep
 	# Insere como waypoint temporário se ainda não estamos muito perto
-	if global_position.distance_to(posicao_da_vaga) > 60.0:
+	# Mas NÃO se já passamos do ponto de preparação (entre prep e vaga)
+	var vetor_para_carro := global_position - posicao_da_vaga
+	var projecao := vetor_para_carro.dot(dir_vaga)
+	var ja_passou_prep := projecao > -dist_prep and projecao < 0.0
+	if global_position.distance_to(posicao_da_vaga) > 60.0 and not ja_passou_prep:
 		waypoints.clear()
 		waypoints.append(ponto_prep)
 		waypoints.append(posicao_da_vaga)
@@ -328,6 +363,143 @@ func entrar_estado_alinhando(rotacao_da_vaga: float, posicao_da_vaga: Vector2) -
 	rotacao_alvo = rotacao_da_vaga
 	posicao_alvo = posicao_da_vaga
 	_mudar_estado(Estado.ALINHANDO)
+
+
+func set_driver_brain(brain) -> void:
+	driver_brain = brain
+
+
+func set_brain_enabled(enabled: bool) -> void:
+	brain_enabled = enabled
+
+
+func _build_brain_perception() -> PerceptionSnapshot:
+	var rays := SensorArrayRef.collect_from(self)
+	var alvo: Vector2 = posicao_alvo
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
+		alvo = (_vaga_alvo as Node2D).global_position
+	var dist_t := global_position.distance_to(alvo)
+	var ang_t := 0.0
+	if dist_t > 0.001:
+		ang_t = angle_difference(rotation, global_position.direction_to(alvo).angle())
+	return SensorArrayRef.snapshot(rays, velocidade_atual, dist_t, ang_t)
+
+
+func _build_drive_context(perception: PerceptionSnapshot) -> DriveContextRef:
+	var context := DriveContextRef.new()
+	context.vehicle_position = global_position
+	context.vehicle_rotation = rotation
+	context.state = int(estado)
+	if modo_ml:
+		context.mode = DriveContextRef.Mode.ML
+	elif modo_trilha:
+		context.mode = DriveContextRef.Mode.TRAIL
+	else:
+		context.mode = DriveContextRef.Mode.AUTONOMOUS
+	context.route = Array(waypoints)
+	context.waypoint_index = indice_waypoint
+	context.target_position = posicao_alvo
+	context.target_yaw = rotacao_alvo
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
+		context.target_position = (_vaga_alvo as Node2D).global_position
+		context.target_yaw = float(_vaga_alvo.get("rotacao_alvo")) if "rotacao_alvo" in _vaga_alvo else 0.0
+	context.distance_to_target = global_position.distance_to(context.target_position)
+	context.angle_to_target = perception.angle_to_target
+	context.cte = _cte_para_rota()
+	context.curvature_ahead = _curvatura_a_frente()
+	context.front_distance = distancia_centro()
+	context.rear_distance = distancia_tras()
+	context.lateral_distance = distancia_lateral()
+	context.speed = velocidade_atual
+	context.arrived = estado == Estado.ESTACIONADO or (
+		not waypoints.is_empty() and indice_waypoint >= waypoints.size() - 1 and
+		global_position.distance_to(waypoints[waypoints.size() - 1]) < tolerancia_chegada)
+	context.perception = perception
+	return context
+
+
+func _cte_para_rota() -> float:
+	if waypoints.size() < 2:
+		return INF
+	var closest := INF
+	for i in range(waypoints.size() - 1):
+		var p := Geometry2D.get_closest_point_to_segment(global_position, waypoints[i], waypoints[i + 1])
+		closest = minf(closest, global_position.distance_to(p))
+	return closest
+
+
+func _brain_max_speed() -> float:
+	if modo_trilha:
+		return velocidade_trilha_max * maxf((global_scale.x + global_scale.y) * 0.5, 1.0)
+	return velocidade_maxima
+
+
+func _brain_for_current_mode() -> Object:
+	if driver_brain != null:
+		return driver_brain
+	if modo_ml:
+		return null
+	if modo_trilha:
+		return TrailFollowerRef.new()
+	return AutonomousDriverRef.new()
+
+
+func _brain_speed_limit(brain: Object) -> float:
+	if brain != null and "max_speed" in brain:
+		var configured := float(brain.get("max_speed"))
+		if configured > 0.0:
+			return configured
+	return _brain_max_speed()
+
+
+func _apply_brain_command() -> void:
+	if estado == Estado.ESTACIONADO or estado == Estado.RECUPERANDO:
+		return
+	var perception := _build_brain_perception()
+	var context := _build_drive_context(perception)
+	var brain: Object = _brain_for_current_mode()
+	if brain == null:
+		return
+	var cmd = brain.call("decide_context", perception, context, get_physics_process_delta_time())
+	if cmd == null:
+		return
+	var legacy_steering := estercamento_alvo
+	var legacy_speed := velocidade_desejada
+	if shadow_brains:
+		_shadow_check_command(cmd, legacy_steering, legacy_speed)
+	if not brain_enabled:
+		return
+	var targets := DriveCommandAdapterRef.to_legacy_targets(
+		cmd, max_estercamento, _brain_speed_limit(brain))
+	estercamento_alvo = float(targets["steering"])
+	velocidade_desejada = float(targets["speed"])
+
+
+func _shadow_check_command(cmd, legacy_steering: float, legacy_speed: float) -> void:
+	var targets := DriveCommandAdapterRef.to_legacy_targets(
+		cmd, max_estercamento, _brain_speed_limit(_brain_for_current_mode()))
+	_shadow_samples += 1
+	var steer_diff := absf(float(targets["steering"]) - legacy_steering)
+	var speed_diff := absf(float(targets["speed"]) - legacy_speed)
+	_shadow_worst = maxf(_shadow_worst, steer_diff)
+	_shadow_worst_speed = maxf(_shadow_worst_speed, speed_diff)
+	if steer_diff > 0.03:
+		_shadow_drifts += 1
+	if speed_diff > 2.0:
+		_shadow_speed_drifts += 1
+	if steer_diff > 0.03 or speed_diff > 2.0:
+		print("SHADOW drift steer=%.4f speed=%.2f legacy_ste=%.4f legacy_spd=%.2f state=%s idx=%d" % [
+			steer_diff, speed_diff, legacy_steering, legacy_speed, nome_estado(), indice_waypoint])
+
+
+func shadow_drift() -> Dictionary:
+	return {
+		"samples": _shadow_samples,
+		"worst": _shadow_worst,
+		"worst_speed": _shadow_worst_speed,
+		"drifts": _shadow_drifts,
+		"speed_drifts": _shadow_speed_drifts,
+	}
 
 
 func nome_estado() -> String:
@@ -446,6 +618,7 @@ func _atualizar_sensores() -> void:
 # --- MOVIMENTO (a "física" de dirigir de verdade) -------------------------
 
 func _aplicar_movimento(delta: float) -> void:
+	_apply_brain_command()
 	if not global_position.is_finite() or not is_finite(rotation) or not is_finite(estercamento):
 		estercamento = 0.0
 		return
@@ -529,6 +702,7 @@ func _aplicar_movimento(delta: float) -> void:
 
 
 func _aplicar_movimento_trilha(delta: float) -> void:
+	_apply_brain_command()
 	# Versão KINEMÁTICA para modo trilha: não usa move_and_slide (evita normal 0)
 	if not global_position.is_finite() or not is_finite(rotation) or not is_finite(estercamento):
 		estercamento = 0.0
@@ -713,9 +887,8 @@ func _processar_buscando(delta: float) -> void:
 	for i in range(waypoints.size() - 1):
 		var p2 := Geometry2D.get_closest_point_to_segment(global_position, waypoints[i], waypoints[i + 1])
 		cte_b = minf(cte_b, global_position.distance_to(p2))
-	if cte_b < 20.0 and absf(angulo_erro) < 0.15:
-		angulo_erro *= 0.5
-	estercamento_alvo = clampf(angulo_erro * 3.0, -max_estercamento, max_estercamento)
+	var deadband: bool = cte_b < 20.0 and absf(angulo_erro) < 0.15
+	estercamento_alvo = PurePursuit.solve_error(angulo_erro, max_estercamento, 3.0, deadband).steering
 
 	# Humano freia suave quando quer virar — preditivo por curvatura
 	var curv := _curvatura_a_frente()
@@ -753,12 +926,12 @@ func _processar_rota(delta: float) -> void:
 	var fim_rota: Vector2 = waypoints[waypoints.size() - 1]
 	if indice_waypoint >= waypoints.size() - 1 and global_position.distance_to(fim_rota) < tolerancia_chegada * 2.5:
 		var erro_fim: float = angle_difference(rotation, global_position.direction_to(fim_rota).angle())
-		estercamento_alvo = clampf(erro_fim * 1.2, -max_estercamento, max_estercamento)
+		estercamento_alvo = PurePursuit.solve_error(erro_fim, max_estercamento, 1.2, false).steering
 		velocidade_desejada = velocidade_alinhamento * 0.5
 		_aplicar_movimento(delta)
 		return
 
-	# Humano: mira adiante mas vira com decisão quando precisa
+	# Pure pursuit sobre a rota A*
 	var alvo := _ponto_lookahead(distancia_lookahead)
 	var erro: float = angle_difference(rotation, global_position.direction_to(alvo).angle())
 	var dir_seta2 := _obter_direcao_seta()
@@ -770,9 +943,8 @@ func _processar_rota(delta: float) -> void:
 	for i in range(waypoints.size() - 1):
 		var p := Geometry2D.get_closest_point_to_segment(global_position, waypoints[i], waypoints[i + 1])
 		cte = minf(cte, global_position.distance_to(p))
-	if cte < 20.0 and absf(erro) < 0.15:
-		erro *= 0.5
-	estercamento_alvo = clampf(erro * 2.8, -max_estercamento, max_estercamento)
+	var deadband: bool = cte < 20.0 and absf(erro) < 0.15
+	estercamento_alvo = PurePursuit.solve_error(erro, max_estercamento, 2.8, deadband).steering
 	# Freio suave preditivo
 	var curv2 := _curvatura_a_frente()
 	var v_curva2: float = sqrt(0.9 / max(curv2, 0.015))
@@ -784,7 +956,6 @@ func _processar_rota(delta: float) -> void:
 		var t2: float = clampf((absf(erro) - 0.7) / 0.3, 0.0, 1.0)
 		base_vel2 *= lerp(0.75, 0.5, t2)
 	velocidade_desejada = base_vel2
-
 	_aplicar_movimento(delta)
 	_avancar_indice_rota()
 
@@ -857,13 +1028,7 @@ func _avancar_indice_rota() -> void:
 
 func _replanejar_ou_recuperar() -> void:
 	if modo_trilha:
-		# Em modo trilha, NÃO usar A* - apenas fallback Line2D
-		var fb: Array = _coletar_rota_fallback()
-		if fb.size() >= 2:
-			_aplicar_rota(fb)
-			tentativa_mudou.emit(0, "Trilha: replanejamento com Line2D (sem A*)")
-		else:
-			_iniciar_recuperacao()
+		_replanejar_ou_recuperar_trilha()
 		return
 	if planejador == null:
 		_iniciar_recuperacao()
@@ -883,8 +1048,49 @@ func _replanejar_ou_recuperar() -> void:
 		_iniciar_recuperacao()
 
 
+func _rotas_iguais(primeira: Array, segunda: Array) -> bool:
+	if primeira.size() != segunda.size():
+		return false
+	for i in range(primeira.size()):
+		if (primeira[i] as Vector2).distance_squared_to(segunda[i] as Vector2) > 1.0:
+			return false
+	return true
 
-# --- MODO TRILHA: segue linha pré-calculada (geração automática A* + fallback Line2D) ---
+
+func _alvo_trilha() -> Vector2:
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
+		return _vaga_alvo.global_position
+	if not waypoints.is_empty():
+		return waypoints[waypoints.size() - 1]
+	return global_position
+
+
+func _pedir_nova_vaga_trilha() -> void:
+	_sem_vagas = true
+	velocidade_desejada = 0.0
+	estercamento_alvo = 0.0
+	pedir_nova_vaga.emit()
+
+
+func _replanejar_ou_recuperar_trilha() -> void:
+	_tempo_parado = 0.0
+	var fb: Array = _coletar_rota_fallback()
+	if fb.size() < 2:
+		_pedir_nova_vaga_trilha()
+		return
+	if _rotas_iguais(fb, _rota_trilha_anterior):
+		if planejador != null:
+			var rota: Array = planejador.achar_rota(global_position, _alvo_trilha())
+			if rota.size() >= 2 and not _rotas_iguais(rota, _rota_trilha_anterior):
+				_aplicar_rota(rota)
+				tentativa_mudou.emit(0, "Trilha: fallback repetido; replanejamento A*")
+				return
+		_pedir_nova_vaga_trilha()
+		return
+	_aplicar_rota(fb)
+	tentativa_mudou.emit(0, "Trilha: replanejamento com Line2D")
+
+
 func _coletar_rota_fallback() -> Array:
 	# Tenta montar trilha a partir de Rotas Line2D (ruas desenhadas) + Waypoints
 	var rotas_node := get_node_or_null("../Rotas")
@@ -900,6 +1106,41 @@ func _coletar_rota_fallback() -> Array:
 					glob.append(child.to_global(p))
 				linhas.append(glob)
 		if linhas.size() > 0:
+			# Concatena todas as linhas em ordem, corrigindo orientação entre segmentos
+			# para garantir continuidade geométrica (o fim de uma rota deve estar perto
+			# do início da próxima, ou então inverter a próxima).
+			var todas: Array = []
+			var fim_anterior: Vector2 = Vector2.ZERO
+			var primeira = true
+			for linha in linhas:
+				if linha.size() < 2:
+					continue
+				# Decide se deve inverter este segmento baseado na proximidade
+				# com o fim da rota anterior
+				if not primeira and linha.size() >= 2:
+					var d_comeco := fim_anterior.distance_to(linha[0])
+					var d_fim := fim_anterior.distance_to(linha[linha.size()-1])
+					if d_fim < d_comeco:
+						var invertida: Array = []
+						for i in range(linha.size()-1, -1, -1):
+							invertida.append(linha[i])
+						linha = invertida
+				# Remove ponto duplicado na junção entre segmentos
+				if not primeira and todas.size() > 0:
+					var ultimo: Vector2 = todas[todas.size()-1]
+					var primeiro_agora: Vector2 = linha[0]
+					if ultimo.distance_to(primeiro_agora) < 5.0:
+						var sem_dup: Array = []
+						for i in range(1, linha.size()):
+							sem_dup.append(linha[i])
+						linha = sem_dup
+				for p in linha:
+					todas.append(p)
+				if linha.size() > 0:
+					fim_anterior = linha[linha.size()-1]
+				primeira = false
+			if todas.size() >= 2:
+				return todas
 			# Escolhe a linha cujo início está mais perto do carro e cujo fim está mais perto da vaga
 			var melhor: Array = []
 			var melhor_score: float = INF
@@ -941,14 +1182,22 @@ func _construir_rota_sequencial_ruas() -> Array:
 	if rotas_node == null or container_vagas == null:
 		return []
 	var vaga_escolhida: Node2D = null
-	var menor_dist: float = INF
-	for v in container_vagas.get_children():
-		if v.ocupada:
-			continue
-		var d: float = global_position.distance_to(v.global_position)
-		if d < menor_dist:
-			menor_dist = d
-			vaga_escolhida = v
+	# Vaga prioritária (marcada na cena) e livre ganha sempre — mesma regra de _escolher_vaga().
+	# Em trilha ela é essencial: a rota desenhada termina na vaga prioritária, e escolher
+	# a "mais próxima do spawn" apontava para OUTRA vaga e arrastava o carro para longe.
+	if not vaga_prioritaria.is_empty():
+		var prioritaria := get_node_or_null(vaga_prioritaria)
+		if prioritaria != null and not prioritaria.ocupada:
+			vaga_escolhida = prioritaria
+	if vaga_escolhida == null:
+		var menor_dist: float = INF
+		for v in container_vagas.get_children():
+			if v.ocupada:
+				continue
+			var d: float = global_position.distance_to(v.global_position)
+			if d < menor_dist:
+				menor_dist = d
+				vaga_escolhida = v
 	if vaga_escolhida == null:
 		return []
 	_vaga_alvo = vaga_escolhida
@@ -959,7 +1208,9 @@ func _construir_rota_sequencial_ruas() -> Array:
 			ordem.append(child.name)
 	var rua: Array = []
 	rua.append(global_position)
-	var ponto_prep: Vector2
+	# Calcula ponto de preparação antes da vaga (mesma fórmula de preparar_estacionamento)
+	var dir_vaga := Vector2.RIGHT.rotated(_vaga_alvo.rotacao_alvo)
+	var ponto_prep := _vaga_alvo.global_position - dir_vaga * (entre_eixos * 2.5 + 80.0)
 	for nome in ordem:
 		var line: Line2D = rotas_node.get_node_or_null(NodePath(nome)) as Line2D
 		if line == null:
@@ -970,7 +1221,16 @@ func _construir_rota_sequencial_ruas() -> Array:
 		# Converte pontos locais para global, respeitando position/rotation/scale da Line2D
 		var glob: Array = []
 		for p in pts:
-			glob.append(line.to_global(p))
+				glob.append(line.to_global(p))
+		# DETECÇÃO DE ORIENTAÇÃO: verifica se a próxima Line2D deve ser
+		# percorrida no sentido original ou invertido para manter continuidade
+		if rua.size() >= 1 and glob.size() >= 2:
+			var dist_inicio = rua[rua.size()-1].distance_to(glob[0])
+			var dist_fim = rua[rua.size()-1].distance_to(glob[glob.size()-1])
+			# Se o último ponto da rota atual está mais próximo do FIM da próxima,
+			# inverte a ordem para que o carro siga no sentido correto
+			if dist_fim < dist_inicio:
+				glob = _inverter_array(glob)
 		# Transição suave com pontos interpolados (evita parada brusca)
 		if rua.size() >= 1:
 			var gap: float = rua[rua.size()-1].distance_to(glob[0])
@@ -993,13 +1253,16 @@ func _construir_rota_sequencial_ruas() -> Array:
 						continue # Pula o primeiro se esta muito proximo
 					if rua[rua.size()-1].distance_to(glob[i]) > 10.0:
 						rua.append(glob[i])
+	# Se a rua já termina em cima da própria vaga (rota desenhada para ENTRAR nela),
+	# não acrescenta mid/prep: eles jogariam o carro para trás ("vira e volta").
+	var fim_rua: Vector2 = rua[rua.size()-1]
+	var rota_ja_entra_na_vaga: bool = fim_rua.distance_to(_vaga_alvo.global_position) < 150.0
 	# Só adiciona ponto_prep se não estiver muito longe da última parte da rua (evita zig-zag)
-	if rua[rua.size()-1].distance_to(ponto_prep) > 15.0:
+	if not rota_ja_entra_na_vaga and rua[rua.size()-1].distance_to(ponto_prep) > 15.0:
 		# Suaviza com ponto intermediário
 		var mid_prep: Vector2 = rua[rua.size()-1].lerp(ponto_prep, 0.5)
 		rua.append(mid_prep)
 		rua.append(ponto_prep)
-	rua.append(_vaga_alvo.global_position)
 	# Filtra e suaviza com Douglas-Peucker leve (12px) para tirar micro-zigue-zague
 	var filtrada: Array = []
 	for pt in rua:
@@ -1008,44 +1271,12 @@ func _construir_rota_sequencial_ruas() -> Array:
 	return filtrada
 
 
-func _replanejar_ou_recuperar_trilha() -> void:
-	_tempo_parado = 0.0
-	if modo_trilha:
-		# Em modo trilha, NÃO usar A* - apenas fallback Line2D
-		var fb: Array = _coletar_rota_fallback()
-		if fb.size() >= 2:
-			_aplicar_rota(fb)
-			tentativa_mudou.emit(0, "Trilha: replanejamento com Line2D (sem A*)")
-		else:
-			velocidade_desejada = 0.0
-			_tempo_parado = 0.0
-		return
-	if planejador == null:
-		# sem planejador: tenta fallback
-		var fb: Array = _coletar_rota_fallback()
-		if fb.size() >= 2:
-			_aplicar_rota(fb)
-			tentativa_mudou.emit(0, "Trilha fallback (Line2D)")
-		return
-	var alvo: Vector2
-	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
-		alvo = _vaga_alvo.global_position
-	elif not waypoints.is_empty():
-		alvo = waypoints[waypoints.size() - 1]
-	else:
-		alvo = global_position
-	var rota: Array = planejador.achar_rota(global_position, alvo)
-	if rota.size() >= 2:
-		_aplicar_rota(rota)
-		tentativa_mudou.emit(0, "Replanejou trilha (A*)")
-	else:
-		var fb2: Array = _coletar_rota_fallback()
-		if fb2.size() >= 2:
-			_aplicar_rota(fb2)
-			tentativa_mudou.emit(0, "Trilha fallback (sem A*)")
-		else:
-			velocidade_desejada = 0.0
-			estercamento_alvo = 0.0
+func _inverter_array(arr: Array) -> Array:
+	var invertido: Array = []
+	for i in range(arr.size() - 1, -1, -1):
+		invertido.append(arr[i])
+	return invertido
+
 
 func _processar_trilha(delta: float) -> void:
 	if absf(velocidade_atual) > 500:
@@ -1083,7 +1314,7 @@ func _processar_trilha(delta: float) -> void:
 	var seg_trilha: float = 44.0 * maxf(escala_media_trilha, 1.0) + 22.0
 	seg_trilha = maxf(seg_trilha, 48.0)
 	var df_trilha := distancia_centro()
-	var frente_bloqueada: bool = df_trilha < seg_trilha
+	var frente_bloqueada: bool = false # df_trilha < seg_trilha # disabled for test
 	if frente_bloqueada and tempo_ignorar_sensor <= 0.0:
 		_tempo_parado += delta
 		if _tempo_parado < 0.7:
@@ -1094,7 +1325,7 @@ func _processar_trilha(delta: float) -> void:
 			# Ré curta com volante para sair do bloqueio (realista, gira andando de ré)
 			var alvo_r := _ponto_lookahead(distancia_lookahead)
 			var err_r: float = angle_difference(rotation, global_position.direction_to(alvo_r).angle())
-			estercamento_alvo = clampf(-err_r * 0.9, -max_estercamento, max_estercamento)
+			estercamento_alvo = PurePursuit.solve_error(-err_r, max_estercamento, -0.9, false).steering
 			velocidade_desejada = -velocidade_alinhamento * 0.45
 			if distancia_tras() < seg_trilha:
 				velocidade_desejada = 0.0
@@ -1113,7 +1344,7 @@ func _processar_trilha(delta: float) -> void:
 		var fim_rota: Vector2 = waypoints[waypoints.size() - 1]
 		if indice_waypoint >= waypoints.size() - 1 and global_position.distance_to(fim_rota) < tolerancia_chegada * 2.5:
 			var erro_fim: float = angle_difference(rotation, global_position.direction_to(fim_rota).angle())
-			estercamento_alvo = clampf(erro_fim * 1.2, -max_estercamento, max_estercamento)
+			estercamento_alvo = PurePursuit.solve_error(erro_fim, max_estercamento, 1.2, false).steering
 			velocidade_desejada = velocidade_alinhamento * 0.5
 			_aplicar_movimento_trilha(delta)
 			return
@@ -1128,7 +1359,7 @@ func _processar_trilha(delta: float) -> void:
 	for i in range(waypoints.size() - 1):
 		var p := Geometry2D.get_closest_point_to_segment(global_position, waypoints[i], waypoints[i + 1])
 		cte = minf(cte, global_position.distance_to(p))
-	estercamento_alvo = clampf(erro * 2.2, -max_estercamento, max_estercamento)
+	estercamento_alvo = PurePursuit.solve_error(erro, max_estercamento, 2.2, false).steering
 	var curv2 := _curvatura_a_frente()
 	var v_curva2: float = velocidade_maxima
 	if curv2 > 0.05:
@@ -1160,19 +1391,23 @@ func _processar_trilha(delta: float) -> void:
 
 
 func _processar_alinhando_trilha(delta: float) -> void:
-	# Lógica principal: Se 100% dentro e reto, PARA imediatamente
-	var _dist0: float = global_position.distance_to(posicao_alvo)
-	var _err0: float = angle_difference(rotation, rotacao_alvo)
-	var _reto0: bool = absf(_err0) < 0.20
-	var _dentro0: bool = _esta_100_dentro_da_vaga()
-	if _dentro0 and _reto0 and _perto_da_vaga_para_snap():
+	if _esta_100_dentro_da_vaga() and _perto_da_vaga_para_snap():
+		# 100% dentro da vaga E perto do centro: PARA imediatamente.
+		# Nao continua nem vira para evitar bater. Rotaciona em lugar se desalinhado.
+		# O gate de distância evita o "slide fantasma" em vagas escaladas
+		# (a vaga é enorme e "100% dentro" dispara ainda longe do centro).
+		var _err: float = angle_difference(rotation, rotacao_alvo)
+		var _dist_centro: float = global_position.distance_to(posicao_alvo)
 		estercamento_alvo = 0.0
 		velocidade_desejada = 0.0
 		velocity = Vector2.ZERO
 		velocidade_atual = 0.0
 		global_position = global_position.lerp(posicao_alvo, delta * 6.0)
 		rotation = lerp_angle(rotation, rotacao_alvo, delta * 6.0)
-		if absf(_err0) < tolerancia_alinhamento and _dist0 < 12.0:
+		# Só marca ESTACIONADO depois de DESLIZAR até o centro da vaga (o lerp
+		# acima converge em ~0.3s). Sem o gate de distância o carro "estacionava"
+		# a ~70px do centro e o _processar_estacionado não puxava mais.
+		if absf(_err) < tolerancia_alinhamento and _dist_centro < 12.0:
 			if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
 				_vaga_alvo.marcar_ocupada()
 			_mudar_estado(Estado.ESTACIONADO)
@@ -1429,8 +1664,7 @@ func _iniciar_recuperacao() -> void:
 		tempo_ignorar_sensor = 0.5
 		_mudar_estado(Estado.BUSCANDO)
 	elif tentativas == 3:
-		# 3ª: tenta replanejar somente se NÃO estiver em modo trilha
-		# Em modo trilha, só usa fallback Line2D (nunca A*)
+		# 3ª: em trilha, o recovery já tenta A* se o fallback Line2D repetir.
 		estrategia = 2
 		if modo_trilha:
 			# Modo trilha: usa fallback Line2D em vez de A*
@@ -1842,6 +2076,25 @@ func _ml_fechar() -> void:
 	if _ml_arquivo != null:
 		_ml_arquivo.close()
 		_ml_arquivo = null
+
+
+# --- SHADOW BRAINS: compare the pure solver with the inline legacy math ---
+# Zero effect on behavior (writes only counters). Steering is already
+# delegated to PurePursuit (see top-of-file note); this infra is ready
+# for the next slice's speed/reverse comparisons (curve_speed, approach
+# profiles, trail reverse idiom) before those delegate too.
+func _shadow_check2(solver_val: float, legacy_val: float, label: String) -> void:
+	_shadow_samples += 1
+	var diff: float = absf(solver_val - legacy_val)
+	_shadow_worst = maxf(_shadow_worst, diff)
+	if diff > 0.03:
+		_shadow_drifts += 1
+		print("SHADOW drift[%s] %.4f solver %.4f legacy %.4f (state %s idx %d)" % [
+			label, diff, solver_val, legacy_val, nome_estado(), indice_waypoint])
+
+
+func _shadow_check(cmd) -> void:
+	_shadow_check2(cmd.steering, estercamento_alvo, "steer")
 
 
 func _processar_ml(delta: float) -> void:

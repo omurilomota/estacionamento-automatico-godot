@@ -3,6 +3,15 @@
 /android/
 .nomedia
 
+# Godot-generated metadata and build artifacts
+*.uid
+*.import
+*.pck
+*.x86_64
+*.sh
+export_presets.cfg
+.tmp_analise/
+
 # Godot-specific ignores
 .import/
 export.cfg
