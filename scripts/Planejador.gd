@@ -14,7 +14,7 @@ extends Node2D
 @export var resolucao: int = 15
 @export var inflar: float = 110.0
 @export var mostrar_grade: bool = false
-@export var mostrar_rota: bool = true
+@export var mostrar_rota: bool = false
 
 var _grade: AStarGrid2D
 var _grade_pronta: bool = false
@@ -383,5 +383,3 @@ func _rdp(caminho: PackedVector2Array, inicio: int, fim: int, tolerancia: float)
 func _draw() -> void:
 	if mostrar_grade and _textura_grade != null:
 		draw_texture_rect(_textura_grade, Rect2(origem, tamanho), false)
-	if mostrar_rota and _rota_desenhar.size() >= 2:
-		draw_polyline(_rota_desenhar, Color(1, 0.85, 0.2, 0.9), 3.0)

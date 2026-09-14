@@ -4,21 +4,8 @@ extends Node2D
 ## e a mesma UI de status/sensores/tentativas da cena de demonstração.
 ## Teclas: 1/2/3/4/5 trocam de fase, R reinicia a fase atual.
 
-const FASES := [
-	"res://scenes/fases/Fase1.tscn",
-	"res://scenes/fases/Fase2.tscn",
-	"res://scenes/fases/Fase3.tscn",
-	"res://scenes/fases/Fase4.tscn",
-	"res://scenes/fases/Fase5.tscn",
-]
-
-const NOMES_ESTADO := {
-	"BUSCANDO": "Buscando vaga",
-	"DESVIANDO": "Desviando de obstáculo!",
-	"ALINHANDO": "Alinhando para estacionar",
-	"ESTACIONADO": "Estacionado!",
-	"RECUPERANDO": "Recuperando...",
-}
+const FASES := Fases.FASES
+const NOMES_ESTADO := Fases.NOMES_ESTADO
 
 # Qual imagem usar como chão da fase e em quanto ampliar (no mundo).
 @export var mapa: Texture2D
