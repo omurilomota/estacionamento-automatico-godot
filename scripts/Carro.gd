@@ -1182,14 +1182,22 @@ func _construir_rota_sequencial_ruas() -> Array:
 	if rotas_node == null or container_vagas == null:
 		return []
 	var vaga_escolhida: Node2D = null
-	var menor_dist: float = INF
-	for v in container_vagas.get_children():
-		if v.ocupada:
-			continue
-		var d: float = global_position.distance_to(v.global_position)
-		if d < menor_dist:
-			menor_dist = d
-			vaga_escolhida = v
+	# Vaga prioritária (marcada na cena) e livre ganha sempre — mesma regra de _escolher_vaga().
+	# Em trilha ela é essencial: a rota desenhada termina na vaga prioritária, e escolher
+	# a "mais próxima do spawn" apontava para OUTRA vaga e arrastava o carro para longe.
+	if not vaga_prioritaria.is_empty():
+		var prioritaria := get_node_or_null(vaga_prioritaria)
+		if prioritaria != null and not prioritaria.ocupada:
+			vaga_escolhida = prioritaria
+	if vaga_escolhida == null:
+		var menor_dist: float = INF
+		for v in container_vagas.get_children():
+			if v.ocupada:
+				continue
+			var d: float = global_position.distance_to(v.global_position)
+			if d < menor_dist:
+				menor_dist = d
+				vaga_escolhida = v
 	if vaga_escolhida == null:
 		return []
 	_vaga_alvo = vaga_escolhida
@@ -1245,8 +1253,12 @@ func _construir_rota_sequencial_ruas() -> Array:
 						continue # Pula o primeiro se esta muito proximo
 					if rua[rua.size()-1].distance_to(glob[i]) > 10.0:
 						rua.append(glob[i])
+	# Se a rua já termina em cima da própria vaga (rota desenhada para ENTRAR nela),
+	# não acrescenta mid/prep: eles jogariam o carro para trás ("vira e volta").
+	var fim_rua: Vector2 = rua[rua.size()-1]
+	var rota_ja_entra_na_vaga: bool = fim_rua.distance_to(_vaga_alvo.global_position) < 150.0
 	# Só adiciona ponto_prep se não estiver muito longe da última parte da rua (evita zig-zag)
-	if rua[rua.size()-1].distance_to(ponto_prep) > 15.0:
+	if not rota_ja_entra_na_vaga and rua[rua.size()-1].distance_to(ponto_prep) > 15.0:
 		# Suaviza com ponto intermediário
 		var mid_prep: Vector2 = rua[rua.size()-1].lerp(ponto_prep, 0.5)
 		rua.append(mid_prep)
@@ -1379,17 +1391,23 @@ func _processar_trilha(delta: float) -> void:
 
 
 func _processar_alinhando_trilha(delta: float) -> void:
-	# Se 100% dentro da vaga, PARA imediatamente. Nao continua
-	# nem vira para evitar bater. Rotaciona em lugar se desalinhado.
-	if _esta_100_dentro_da_vaga():
+	if _esta_100_dentro_da_vaga() and _perto_da_vaga_para_snap():
+		# 100% dentro da vaga E perto do centro: PARA imediatamente.
+		# Nao continua nem vira para evitar bater. Rotaciona em lugar se desalinhado.
+		# O gate de distância evita o "slide fantasma" em vagas escaladas
+		# (a vaga é enorme e "100% dentro" dispara ainda longe do centro).
 		var _err: float = angle_difference(rotation, rotacao_alvo)
+		var _dist_centro: float = global_position.distance_to(posicao_alvo)
 		estercamento_alvo = 0.0
 		velocidade_desejada = 0.0
 		velocity = Vector2.ZERO
 		velocidade_atual = 0.0
 		global_position = global_position.lerp(posicao_alvo, delta * 6.0)
 		rotation = lerp_angle(rotation, rotacao_alvo, delta * 6.0)
-		if absf(_err) < tolerancia_alinhamento:
+		# Só marca ESTACIONADO depois de DESLIZAR até o centro da vaga (o lerp
+		# acima converge em ~0.3s). Sem o gate de distância o carro "estacionava"
+		# a ~70px do centro e o _processar_estacionado não puxava mais.
+		if absf(_err) < tolerancia_alinhamento and _dist_centro < 12.0:
 			if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
 				_vaga_alvo.marcar_ocupada()
 			_mudar_estado(Estado.ESTACIONADO)
