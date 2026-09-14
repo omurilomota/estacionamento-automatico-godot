@@ -14,3 +14,7 @@ func kind() -> int:
 
 func decide(_perception: PerceptionSnapshot, _delta: float) -> DriveCommand:
 	return DriveCommand.stop()
+
+
+func decide_context(_perception: PerceptionSnapshot, _context: DriveContext, _delta: float) -> DriveCommand:
+	return decide(_perception, _delta)

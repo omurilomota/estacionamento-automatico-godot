@@ -130,3 +130,23 @@ func close_recording() -> void:
 func set_ml_fallback_off(value: bool) -> void:
 	ml_sem_fallback = value
 
+
+func set_driver_brain(brain: DriverBrain) -> void:
+	super.set_driver_brain(brain)
+
+
+func set_brain_enabled(value: bool) -> void:
+	super.set_brain_enabled(value)
+
+
+func build_drive_context() -> DriveContext:
+	return _build_drive_context(build_perception())
+
+
+func prepare_parking(target_yaw: float, target_position: Vector2) -> void:
+	preparar_estacionamento(target_yaw, target_position)
+
+
+func begin_alignment(target_yaw: float, target_position: Vector2) -> void:
+	entrar_estado_alinhando(target_yaw, target_position)
+
