@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Estacionamento Autonomo — o carro decide a rota sozinho</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="hero">
+<p class="kicker">Simulacao Godot 4.x — estacionamento autonomo top-down 2D</p>
+<h1>O carro decide a rota sozinho.</h1>
+<p class="lede">Ele le o mundo em tempo real com sensores, escolhe uma vaga livre,
+planeja o caminho com A* e estaciona de frente — sem trilha desenhada.</p>
+<div class="cta">
+<a class="btn primary" href="#download">Baixar o jogo (Linux)</a>
+<a class="btn" href="#como-funciona">Ver a IA</a>
+</div>
+</header>
+<main>
+<section id="o-problema">
+<h2>O problema</h2>
+<p>Levar o carro de um ponto aleatorio ate qualquer vaga livre (Fase2/Fase3),
+sempre entrando de frente, desviando de obstaculos estaticos e paredes.</p>
+</section>
+<section id="como-funciona">
+<h2>Como funciona: VER, DECIDIR, AGIR</h2>
+<div class="cards">
+<article><h3>VER</h3><p>12 raios + grade de ocupacao: o que o carro "enxerga".</p></article>
+<article><h3>DECIDIR</h3><p>FSM (SEEKING/AVOIDING/ALIGNING/PARKED/RECOVERING) + A* ate a vaga. Com o cerebro ativo, o DriveCommand manda no BUSCANDO; o FSM legado so assume sem cerebro.</p></article>
+<article><h3>AGIR</h3><p>Modelo bicicleta + camada de seguranca que veta bater.</p></article>
+</div>
+<p class="see">Na simulacao: ative a grade e a rota para VER o raciocinio; teclas 1-5 trocam de fase.</p>
+</section>
+<section id="fsm">
+<h2>A maquina de estados</h2>
+<ul>
+<li><strong>SEEKING</strong> — segue a rota com aceleracao/direcao suaves.</li>
+<li><strong>AVOIDING</strong> — sensor frontal bloqueado: desvia ate o leque liberar.</li>
+<li><strong>ALIGNING</strong> — perto da vaga: para de dirigir, gira ate o rumo-alvo.</li>
+<li><strong>PARKED</strong> — dentro da vaga e alinhado: vaga fica ocupada.</li>
+<li><strong>RECOVERING</strong> — da re de emergencia sem raspar.</li>
+</ul>
+</section>
+<section id="astar">
+<h2>O planejador A*</h2>
+<p>Varre o mundo, monta o mapa de ocupacao inflado com o tamanho do carro e
+roda A* ate a vaga livre mais barata (distancia + rumo compativel com
+entrada de frente; entradas de re sao rejeitadas). As setas e rotas
+desenhadas sao ignoradas — o planejador recebe dicas injetadas (vazias por
+padrao).</p>
+</section>
+<section id="sensores">
+<h2>Sensores</h2>
+<p>12 RayCast2D (leque frontal, laterais, traseira, longo alcance) viram um
+<code>PerceptionSnapshot</code> de 22 valores que os cerebros consomem — os
+cerebros nunca tocam nos raios. Slots de seta no piso estao mortos (0.0):
+o carro ignora as setas e decide a rota sozinho pelo A*.</p>
+</section>
+<section id="ml">
+<h2>Machine Learning (capitulo avancado)</h2>
+<p>Pipeline: gravar (professor) -&gt; treinar (numpy) -&gt; testar. O FSM continua
+sendo o juiz de seguranca; a rede propoe, a seguranca veta. Status honesto:
+a rede v2 (22 entradas) treina com correlacao 0.999 mas ainda precisa do
+fallback do FSM para estacionar — a proxima rodada e DAgger/evolucao.</p>
+</section>
+<section id="resultados">
+<h2>Resultados</h2>
+<table>
+<thead><tr><th>Fase</th><th>Status</th><th>Meta</th></tr></thead>
+<tbody>
+<tr><td>Fase2</td><td>OK (trilha ~35s)</td><td>ESTACIONADO &lt;90s, dist&lt;12px, neg_frames=0</td></tr>
+<tr><td>Fase3</td><td>OK (ML ~50s)</td><td>ESTACIONADO, sem fallback</td></tr>
+<tr><td>Fase1/4/5</td><td>Fora de escopo</td><td>Geometria de rota/trigger pre-existente</td></tr>
+</tbody>
+</table>
+</section>
+<section id="time">
+<h2>Time</h2>
+<ul>
+<li>Gian — Designer/Artista (sprites, vagas, obstaculos, UI).</li>
+<li>Murilo — Programador (cerebro: locomocao, sensores, FSM, navegacao).</li>
+<li>Matheus — Programador (mundo: cenario, vagas, HUD, waypoints).</li>
+</ul>
+</section>
+<section id="download">
+<h2>Download + como jogar</h2>
+<p>Binario Linux gerado pelo preset de exportacao. Teclas <strong>1-5</strong>
+trocam de fase, <strong>R</strong> reinicia.</p>
+</section>
+</main>
+<footer><p>Projeto academico — Godot 4.7, GL Compatibility.</p></footer>
+<script src="main.js"></script>
+</body>
+</html>
