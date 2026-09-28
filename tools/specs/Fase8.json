@@ -1,0 +1,102 @@
+{
+  "id": "Fase8",
+  "mapa": "res://estacionamento/gen_fase8.png",
+  "art": "estacionamento/gen_fase8.png",
+  "import_size": [2600, 1500],
+  "escala_mapa": 1.0,
+  "zoom_camera": 0.66,
+  "car_scale": 1.4,
+  "keep_right_shift": 300.0,
+  "posicao_aleatoria": true,
+  "car_pos": [-1100, 170],
+  "output": "scenes/fases/Fase8.tscn",
+  "sidewalks": [
+    {"name": "CalcadaNorte", "rect": [0, -715, 2600, 70]},
+    {"name": "CalcadaSul", "rect": [0, 715, 2600, 70]},
+    {"name": "CalcadaOeste", "rect": [-1265, 0, 70, 1500]},
+    {"name": "CalcadaLeste", "rect": [1265, 0, 70, 1500]}
+  ],
+  "rows": [
+    {
+      "name": "N1",
+      "side": "north",
+      "y_edge": -680,
+      "dir": 1,
+      "depth": 439.08,
+      "from": -1100,
+      "to": -450,
+      "count": 4,
+      "bay_scale": [2.2227, 3.659],
+      "rot": -1.5708,
+      "parked": [0, 1]
+    },
+    {
+      "name": "N2",
+      "side": "north",
+      "y_edge": -680,
+      "dir": 1,
+      "depth": 439.08,
+      "from": 450,
+      "to": 1100,
+      "count": 4,
+      "bay_scale": [2.2227, 3.659],
+      "rot": -1.5708,
+      "parked": [1]
+    },
+    {
+      "name": "S1",
+      "side": "south",
+      "y_edge": 680,
+      "dir": -1,
+      "depth": 439.08,
+      "from": -1100,
+      "to": -450,
+      "count": 4,
+      "bay_scale": [2.2227, 3.659],
+      "rot": 1.5708,
+      "parked": [2]
+    },
+    {
+      "name": "S2",
+      "side": "south",
+      "y_edge": 680,
+      "dir": -1,
+      "depth": 439.08,
+      "from": 450,
+      "to": 1100,
+      "count": 4,
+      "bay_scale": [2.2227, 3.659],
+      "rot": 1.5708,
+      "parked": [0, 2]
+    }
+  ],
+  "cones": [
+    {"pos": [-700, -715]},
+    {"pos": [700, -715]},
+    {"pos": [-700, 715]},
+    {"pos": [700, 715]}
+  ],
+  "crossers": [
+    {
+      "name": "CarroDeTransito",
+      "pos": [0, -640],
+      "point_a": [0, -640],
+      "point_b": [0, 640],
+      "cruise_speed": 160.0,
+      "pause_time": 0.85,
+      "spawn_distance": 700.0,
+      "trigger_distancia": 900.0,
+      "texture": "res://assets/kenney/cars/car_yellow_5.png"
+    }
+  ],
+  "rotas": [
+    {"name": "RotaLeste", "points": [[-1000, 170], [1000, 170]]},
+    {"name": "RotaOeste", "points": [[1000, -170], [-1000, -170]]}
+  ],
+  "setas": [
+    {"pos": [-500, 170], "direcao": 0.0},
+    {"pos": [500, 170], "direcao": 0.0},
+    {"pos": [-500, -170], "direcao": 3.1416},
+    {"pos": [500, -170], "direcao": 3.1416}
+  ]
+}

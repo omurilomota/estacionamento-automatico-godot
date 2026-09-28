@@ -5,13 +5,9 @@ class_name Fases
 ## Important: renomear nós ou rotas NAS CENAS não quebra este script;
 ## a ordem das rotas vem da ordem dos filhos no nó `Rotas` (Carro.gd).
 
-const FASES := [
-	"res://scenes/fases/Fase1.tscn",
-	"res://scenes/fases/Fase2.tscn",
-	"res://scenes/fases/Fase3.tscn",
-	"res://scenes/fases/Fase4.tscn",
-	"res://scenes/fases/Fase5.tscn",
-]
+## Canonical list lives in LevelRegistry; this shim keeps legacy call sites
+## working without a second copy drifting from it.
+const FASES := LevelRegistry.LEVELS
 
 const NOMES_ESTADO := {
 	"BUSCANDO": "Buscando vaga",

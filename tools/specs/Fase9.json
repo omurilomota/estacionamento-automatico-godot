@@ -1,0 +1,65 @@
+{
+  "id": "Fase9",
+  "mapa": "res://estacionamento/gen_fase9.png",
+  "art": "estacionamento/gen_fase9.png",
+  "import_size": [2200, 1800],
+  "escala_mapa": 1.0,
+  "zoom_camera": 0.62,
+  "car_scale": 1.4,
+  "keep_right_shift": 300.0,
+  "posicao_aleatoria": true,
+  "car_pos": [-950, 0],
+  "output": "scenes/fases/Fase9.tscn",
+  "sidewalks": [
+    {"name": "CalcadaNorte", "rect": [0, -865, 2200, 70]},
+    {"name": "CalcadaSul", "rect": [0, 865, 2200, 70]},
+    {"name": "CalcadaOeste", "rect": [-1065, 0, 70, 1800]},
+    {"name": "CalcadaLeste", "rect": [1065, 0, 70, 1800]},
+    {"name": "MuroOeste", "rect": [-450, 120, 60, 380]},
+    {"name": "MuroLeste", "rect": [450, -120, 60, 380]}
+  ],
+  "rows": [
+    {
+      "name": "N",
+      "side": "north",
+      "y_edge": -830,
+      "dir": 1,
+      "depth": 439.08,
+      "from": -900,
+      "to": 900,
+      "count": 5,
+      "bay_scale": [2.2227, 3.659],
+      "rot": -1.5708,
+      "parked": [0, 4]
+    },
+    {
+      "name": "S",
+      "side": "south",
+      "y_edge": 830,
+      "dir": -1,
+      "depth": 439.08,
+      "from": -900,
+      "to": 900,
+      "count": 5,
+      "bay_scale": [2.2227, 3.659],
+      "rot": 1.5708,
+      "parked": [2]
+    }
+  ],
+  "cones": [
+    {"pos": [-950, -865]},
+    {"pos": [950, -865]},
+    {"pos": [-950, 865]},
+    {"pos": [950, 865]}
+  ],
+  "rotas": [
+    {"name": "RotaNorte", "points": [[-700, -250], [700, -250]]},
+    {"name": "RotaSul", "points": [[700, 250], [-700, 250]]}
+  ],
+  "setas": [
+    {"pos": [-700, -250], "direcao": 0.0},
+    {"pos": [700, -250], "direcao": 0.0},
+    {"pos": [-700, 250], "direcao": 3.1416},
+    {"pos": [700, 250], "direcao": 3.1416}
+  ]
+}
