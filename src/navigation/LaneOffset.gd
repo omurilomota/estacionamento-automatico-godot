@@ -126,72 +126,19 @@ static func apply(route: Array, desired: float, probe: Callable, keep_clear: flo
 ## first obstacle (collision_mask, walls = 2) toward `right`. Returns `max_dist`
 ## when the side is open — the caller caps the shift with `desired` anyway.
 ## Direction-aware: pass `-right` to measure the OTHER side with the same ray.
-##
-## `body_radius` > 0 turns it into a SHAPE probe: the free distance is how far
-## the swept CIRCLE of that radius can travel before it touches anything, not
-## how far a zero-width ray can see. This is the difference that decides
-## Fase3 seed 2 (the gate_seeds judge): a ray only hits what is EXACTLY along
-## `right`, so the corner of an obstacle sat at an angle was invisible, the
-## lane was shifted as if it were clear, and the CORNER of the rotated hull
-## (the half-diagonal, 114 px in Fase3) caught it 22 px away — the kinematic
-## model could not back out of a corner it had already entered and the car
-## slid at 7 px/s until the run ended (AGENTS, `docs/tasks_backlog.md` §1.16.2).
-## The circle contains the hull at EVERY rotation (it is its half-diagonal), so
-## probing with it is conservative by construction: it can only move the lane
-## away from a corner, never into one. The safety invariant is untouched —
-## `apply()` still receives `keep_clear` and still enforces `free_r >= keep_clear`.
 static func wall_probe(space: PhysicsDirectSpaceState2D, mask: int = 2,
-		max_dist: float = 600.0, body_radius: float = 0.0) -> Callable:
+		max_dist: float = 600.0) -> Callable:
 	if space == null:
 		return Callable()
-	if body_radius <= 0.0:
-		return func(p: Vector2, right: Vector2) -> float:
-			var q := PhysicsRayQueryParameters2D.create(p, p + right * max_dist)
-			q.collision_mask = mask
-			q.collide_with_bodies = true
-			q.collide_with_areas = false
-			var hit := space.intersect_ray(q)
-			if hit.is_empty():
-				return max_dist
-			return p.distance_to(hit["position"])
-	# Shape probe: first distance along `right` where the swept circle overlaps.
-	# Linear march on `body_radius` steps to keep FIRST-BLOCKED semantics (a
-	# bisection alone would stop at a near gap instead of the real wall), then a
-	# short bisection between the last free and the first blocked sample.
-	var forma := CircleShape2D.new()
-	forma.radius = body_radius
-	var q := PhysicsShapeQueryParameters2D.new()
-	q.shape = forma
-	q.collision_mask = mask
-	q.collide_with_bodies = true
-	q.collide_with_areas = false
-	var passo := maxf(body_radius, 24.0)
 	return func(p: Vector2, right: Vector2) -> float:
-		q.transform = Transform2D(0.0, p)
-		if not space.intersect_shape(q, 1).is_empty():
-			return 0.0  # the body already touches here: nowhere to shift
-		var livre := 0.0
-		var bloqueou := false
-		var d := passo
-		while d <= max_dist:
-			q.transform = Transform2D(0.0, p + right * d)
-			if not space.intersect_shape(q, 1).is_empty():
-				bloqueou = true
-				break
-			livre = d
-			d += passo
-		if not bloqueou:
+		var q := PhysicsRayQueryParameters2D.create(p, p + right * max_dist)
+		q.collision_mask = mask
+		q.collide_with_bodies = true
+		q.collide_with_areas = false
+		var hit := space.intersect_ray(q)
+		if hit.is_empty():
 			return max_dist
-		var lo := livre
-		var hi := minf(livre + passo, max_dist)
-		for _i in 6:
-			var meio := (lo + hi) * 0.5
-			q.transform = Transform2D(0.0, p + right * meio)
-			if space.intersect_shape(q, 1).is_empty():
-				lo = meio
-			else:
-				hi = meio
-		return lo
+		return p.distance_to(hit["position"])
 
 
 ## Unit tangent at index i over a +/-w window: the DIRECTION OF THE LEG instead
