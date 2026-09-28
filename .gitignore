@@ -35,3 +35,7 @@ estacionamento/
 # Ferramenta local de IA (nao versionar)
 .kilo/
 .freebuff/
+# ...nem os logs de chat/sessao que ela deixa na raiz (3,8 MB de transcricao).
+freebuff-chat-*.md
+session*.md
+summary.md
