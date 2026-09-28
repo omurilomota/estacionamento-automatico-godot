@@ -51,11 +51,17 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext, _delt
 		pursuit.reverse = true
 		pursuit.speed = -60.0
 	elif absf(angular_error) > 2.2 and context.distance_to_target > 80.0 \
-			and not (is_finite(context.cte) and context.cte < 80.0):
+			and not (is_finite(context.cte) and context.cte <= 80.0):
 		# So da RE se o carro esta mesmo perdido. Com o caminho suavizado, um
 		# erro de proa > 126 graus quase sempre e' o PONTO DE MIRA que ficou para
 		# tras (o carro esta colado na rota, `cte` pequeno) — e dar re nesse caso
 		# produz a ida-e-volta de meia-volta que o usuario viu (ate 51 frames).
+		# O `cte` e' <= 80 (e nao < 80) porque o limite era uma fronteira
+		# ABERTA: num boot da Fase8 o carro parou em cte=80.0 exatos, o guarda
+		# acima deu `not(false) = true` e a RE disparou no caso que o proprio
+		# comentario manda nao reverter (12 frames de re, gate_boot reprovado por
+		# NEG_FRAMES=12 num boot de 5). O carro ESTACIONOU em todas as 5
+		# observacoes, entao o defeito era so a re indevida, nao o estacionamento.
 		pursuit.reverse = true
 		pursuit.speed = -60.0
 		pursuit.steering = -pursuit.steering
