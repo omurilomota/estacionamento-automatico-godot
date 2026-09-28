@@ -9,6 +9,8 @@
 *.pck
 *.x86_64
 *.sh
+# ...but the repo's own gate runner IS source (see tools/run_gates.sh).
+!tools/*.sh
 export_presets.cfg
 .tmp_analise/
 
@@ -32,3 +34,4 @@ estacionamento/
 
 # Ferramenta local de IA (nao versionar)
 .kilo/
+.freebuff/
