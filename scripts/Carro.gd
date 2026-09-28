@@ -5,12 +5,39 @@ const CerebroML = preload("res://scripts/CerebroML.gd")
 const SensorArrayRef = preload("res://src/vehicle/SensorArray.gd")
 const LocomotionRef = preload("res://src/vehicle/Locomotion.gd")
 const DatasetRecorderRef = preload("res://src/vehicle/DatasetRecorder.gd")
+const RouteShapeRef = preload("res://src/navigation/RouteShape.gd")
+
+## Geometria da rota (RouteShape): raio maximo do arredondamento, em px, e passo
+## de reamostragem. 0 desliga e volta a polilinha de vertices duros (que e o
+## que fazia o pure-pursuit cortar a quina e o carro andar torto).
+## Iteracoes de Chaikin na escadaria do A*. 0 desliga a suavizacao. 3 limpa a
+## quina sem encurtar o caminho a ponto de o carro mudar de lado da via.
+@export var suavizacoes_rota: int = 3
+## Raio de arredondamento por vertice (RouteShape.round_corners). 0 = desligado:
+## arredondar hairpin cria laco (oito de meia-volta na Fase2).
+@export var raio_curva: float = 0.0
+@export var passo_rota: float = 30.0
+
+## Ganho do termo lateral do Stanley (PurePursuit.solve_error). Maior = o carro
+## cola na faixa mais rapido, ao custo de oscilar em baixa velocidade.
+@export var ganho_erro_lateral: float = 1.4
+
+## Segundos de manobra FINAL sem movimento antes de desistir da vaga. Sem isto
+## o carro pode ficar parado indefinidamente em ALINHANDO: a Fase5 travava 68 s
+## a 73 px do centro, com um obstaculo 97 px a frente, porque o detector de
+## travamento so roda no caminho de busca (`_processar_rota`).
+@export var manobra_travada_s: float = 6.0## Teto de desistencias por fase. Sem ele a Fase5 (89 vagas sobrepostas, zero
+## obstaculos) entrava em laco: desiste, pega outra, trava, desiste — 828 frames
+## de RE em 70 s, PIOR do que ficar parado esperando (que era o estado antes).
 const DriveContextRef = preload("res://src/vehicle/DriveContext.gd")
 const DriveCommandAdapterRef = preload("res://src/vehicle/DriveCommandAdapter.gd")
 const FsmProfilesRef = preload("res://src/vehicle/FsmProfiles.gd")
 const TrailFollowerRef = preload("res://src/vehicle/TrailFollower.gd")
 const AutonomousDriverRef = preload("res://src/vehicle/AutonomousDriver.gd")
 const MlDriverRef = preload("res://src/vehicle/MlDriver.gd")
+const LaneOffsetRef = preload("res://src/navigation/LaneOffset.gd")
+const VehicleCatalogRef = preload("res://src/vehicle/VehicleCatalog.gd")
+const CrosserGateRef = preload("res://src/vehicle/CrosserGate.gd")
 ## O movimento imita um motorista real:
 ##  - O volante (estercamento) vira aos poucos e o carro faz ARCO, não pivota.
 ##  - Acelera e freia com rampa (frenagem mais forte que aceleração).
@@ -52,10 +79,23 @@ enum Estado { BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO }
 # --- NAVEGAÇÃO GLOBAL (o "GPS"): planejamento A* sobre o mapa de ocupação.
 # auto_navegacao = false mantém o modo manual (waypoints definidos na cena).
 @export var auto_navegacao: bool = true
+## Pure pursuit: quanto longe o carro mira NA ROTA. REDUZIR (testado 90 px)
+## nao tira o carro do canto: ele assentou 5 px a mais e a rota ficou
+## instavel (8 violacoes de raio varrido). O erro e' do SOLVER, nao do
+## look-ahead, e o que resolve e' a Pursuit lateral — ver backlog.
 @export var distancia_lookahead: float = 180.0
 @export var vaga_prioritaria: NodePath
+## Right-hand traffic (mão à direita): the autonomous A* route is shifted up to
+## this many px to the RIGHT of its direction of travel, limited by the real
+## clearance to the wall on that side (see src/navigation/LaneOffset.gd).
+## 0 disables the shift. Only A* routes are shifted — authored trail routes stay
+## exactly where the teacher drew them.
+@export var keep_right_shift: float = 110.0
 @export var planejador_path: NodePath = NodePath("../Planejador")
 @export var vagas_path: NodePath = NodePath("../Vagas")
+## Node que carrega a textura do carro (menu de carros — VehicleCatalog).
+## English name on purpose: new symbols follow AGENTS §1 even in this PT-BR file.
+@export var sprite_path: NodePath = NodePath("Sprite2D")
 
 # --- MODO TRILHA (simplificado): segue linha pré-calculada e só PARA ao ver obstáculo ---
 @export var modo_trilha: bool = true
@@ -94,10 +134,21 @@ var _shadow_speed_drifts: int = 0
 # Opt-in decoupled brain. The legacy FSM remains the default and fallback.
 @export var brain_enabled: bool = false
 var driver_brain = null
+var _brain_re_recente: bool = false
 var _brain_command = null
 var _brain_context: DriveContextRef = null
 var _legacy_steering_target: float = 0.0
 var _legacy_speed_target: float = 0.0
+# C2b: the brain was re-allocated EVERY FRAME (`AutonomousDriverRef.new()` per
+# `_brain_for_current_mode()` call) when no brain was injected — exactly the
+# case in Fase2/Fase3. Any per-brain state (crosser gate latch, timers) was
+# discarded at 60 Hz. One instance per kind, invalidated on every mode change.
+var _brain_cache: Object = null
+var _brain_cache_kind: int = -1
+# Yield gate shared with the autonomous brain (C2): crossing traffic is
+# BODY-LESS (src/world/Crosser.gd), so a latch with hysteresis is the only
+# thing that keeps the car from creeping through it.
+var _crosser_gate: CrosserGateRef = null
 
 # Comportamento agêntico (quando o carro fica "preso")
 @export var limite_tempo_preso: float = 30.0
@@ -130,6 +181,7 @@ const ESTRATEGIAS := {
 @onready var ray_lateral_esq: RayCast2D = $RayLateralEsq
 @onready var ray_lateral_dir: RayCast2D = $RayLateralDir
 @onready var ray_seta: RayCast2D = $RaySeta
+@onready var audio_motor: Node = get_node_or_null("EngineAudio")
 @onready var planejador: Node2D = get_node_or_null(planejador_path)
 @onready var container_vagas: Node2D = get_node_or_null(vagas_path)
 
@@ -146,6 +198,64 @@ var _sem_vagas: bool = false
 var _posicao_anterior: Vector2 = Vector2.ZERO
 var _deslocamento_total: float = 0.0
 var _tempo_parado: float = 0.0
+## Detector de travamento por DESLOCAMENTO (2026-09-26). A velocidade
+## COMANDADA não serve: encostado numa parede o carro mantém
+## `velocidade_atual` em ~22 px/s (o modelo cinemático não sabe que está
+## travado), e com o cérebro no comando o `_physics_process` retorna antes do
+## `_atualizar_progresso`/`_detectar_travamento` — os dois legacy ficavam
+## cegos. Medido na Fase3 seed 2: parado em (349, -1108) por 70 s em
+## BUSCANDO. O teste certo é "andei algum px nos últimos N segundos".
+var _ancora_deslocamento: Vector2 = Vector2.ZERO
+var _travado_ha: float = 0.0
+## Quando o detector de deslocamento dispara, a proxima `_iniciar_recuperacao`
+## ja vai direto a ultima estrategia (replanejar) — uma manobra de ré contra
+## uma parede nao resolve nada e custava 3 tentativas de 12 s cada.
+var _tentativa_travada: int = 0
+## Replanejamentos por travamento sem sair do lugar. Depois de
+## `TRAVA_MAX_TENTATIVAS` o problema nao e' a rota, e' o ALVO: pede outra vaga
+## em vez de reconstruir a grade para sempre.
+const TRAVA_MAX_TENTATIVAS := 3
+var _travado_tentativas: int = 0
+## A re de emergencia (degrau 3 da escada) reorienta o carro ao terminar:
+## ver `_orientar_para_rota()`. Sem isso o carro sai do solido e volta para ele.
+var _reorientar_pos_reversao: bool = false
+
+## CAUTELA POS-RE. Mesmo desencravado, o carro reentra no MESMO trecho a
+## ~120 px/s e volta a encravar (medido na Fase3 seed 2: 3 ciclos de re +
+## recravamento em 20 s, `inside=true` a cada volta). O vao estreito exige
+## precisao de seguimento que a 120 px/s o carro nao tem, entao depois de cada
+## re ele roda alguns segundos com velocidade limitada. Custo zero nos níveis
+## saudáveis: sem re, o cronômetro nunca liga (medido: NEG_FRAMES=0).
+const CAUTELA_S := 6.0
+const CAUTELA_VEL := 55.0
+var _cautela_tempo: float = 0.0
+## Deslocamento que ZERA a escada de fuga. Tem que ser bem maior que
+## `TRAVA_MIN_PX`: a ré de emergência (degrau 3) anda ~26 px e, com o reset
+## em 26 px, zerava o contador logo depois de disparar — a escada voltava ao
+## degrau 1 e nunca chegava ao degrau que desiste da vaga. Medido na Fase1:
+## anda 2 s -> trava -> ré -> zera -> anda 2 s ... 75 s em laço, 1136 frames
+## de ré, nenhuma vaga conquistada.
+const TRAVA_RESET_PX := 78.0
+## Minutos que o carro pode ficar parado em cima do comando antes de recuperar.
+const TRAVA_MIN_S := 2.0
+## Progresso mínimo em px durante esse tempo (abaixo disso = travado).
+const TRAVA_MIN_PX := 26.0
+## Vagas que o carro JA desistiu nesta corrida. Sem isso o degrau final da
+## escada era inutil: `pedir_nova_vaga` -> `_planejar_rota` -> `_escolher_vaga`
+## e o custo do A* e DETERMINISTICO, entao ele reescolhia a MESMA vaga e
+## voltava a encravar no mesmo ponto (Fase1: vaga alcancavel em gate_reach,
+## carro preso em ALINHANDO a 359 px do centro por 75 s).
+var _vagas_recusadas: Array[Node] = []
+## TEMPO em ALINHANDO sem fechar a manobra. `_processar_alinhando()` nao tem
+## prazo: se o portao `_esta_100_dentro_da_vaga()` nunca abre (carro torto, ou
+## a Boca disparou longe e ha um carro estacionado no caminho reto), o carro
+## manobra para sempre. E o mesmo "mandou estacionar e nao estacionou" do
+## detector por deslocamento, so que na manobra final (o detector so olha
+## BUSCANDO/DESVIANDO de proposito: em ALINHANDO o carro gira parado).
+const ALINHA_MAX_S := 25.0
+var _tempo_alinhando: float = 0.0
+## 1 = ja replanejou uma vez; 2 = larga a vaga (a manobra nao tem solucao).
+var _alinhando_tentativas: int = 0
 var _rota_trilha_anterior: Array[Vector2] = []
 
 # Direção e velocidade atuais (acumuladas com rampa, não "teleportam")
@@ -182,7 +292,50 @@ func definir_trilha(pontos: Array) -> void:
 
 func _ready() -> void:
 	_posicao_anterior = global_position
+	# Contrato de grupo: e' assim que o Crosser (sensor-only, sem corpo) sabe
+	# que tem um veiculo na faixa e segura o carro que cruza. Sem isso ele
+	# simplesmente atravessava o jogador (Crosser._conflito).
+	add_to_group(&"veiculo")
 	pedir_nova_vaga.connect(_ao_pedir_nova_vaga_interna)
+	_garantir_folga_do_planejador()
+	# A escolha do menu vive num static (sobrevive a change_scene), então cada
+	# fase reaplica a pele escolhida sem precisar guardar nada na cena.
+	aplicar_skin(VehicleCatalogRef.current_id)
+
+
+## Margem (em células) somada ao raio varrido: cobre a intrusão das quinas
+## das células vizinhas, que a checagem por CENTRO de célula não vê.
+const FOLGA_EXTRA_CELULAS := 1.5
+
+
+## Raio varrido pela carroceria (meia diagonal, já com a escala do nível).
+func raio_varrido() -> float:
+	var forma := $CollisionShape2D.shape as RectangleShape2D
+	if forma == null:
+		return 0.0
+	return (forma.size * global_scale * 0.5).length()
+
+
+## Garante que a folga do planejador cubra o raio varrido do carro + margem.
+## Medido em Fase2: inflar 110 com raio varrido 126.5 -> 91 de 173 amostras da
+## rota violavam a folga e o carro empurrava a calçada por 5.4 s seguidos.
+## Fase3 (inflar 150 >= 115) tinha 0 violações e 0.08 s. O export `inflar` do
+## nível continua valendo como MÍNIMO declarativo.
+func _garantir_folga_do_planejador() -> void:
+	if planejador == null:
+		return
+	var varrido := raio_varrido()
+	if varrido <= 0.0:
+		return
+	var necessario := varrido
+	if "resolucao" in planejador:
+		necessario += float(planejador.resolucao) * FOLGA_EXTRA_CELULAS
+	if float(planejador.get("inflar")) >= necessario:
+		return
+	planejador.set("inflar", necessario)
+	if planejador.has_method("invalidar_grade"):
+		planejador.call("invalidar_grade")
+	print("[FOLGA] inflar=%.1f (raio varrido %.1f + margem de célula)" % [necessario, varrido])
 
 
 # Inicia a navegação GLOBAL: constrói o mapa de ocupação e calcula a rota
@@ -203,7 +356,89 @@ func iniciar_modo_trilha() -> void:
 	tempo_ignorar_sensor = 1.0
 
 
+## Modo de condução (F6): TRILHA segue a rota Line2D sequencial autorada;
+## AUTONOMO planeja a própria rota A* e dirige pelo brain injetado.
+## A troca vale em runtime (tecla T ou o checkbox "Auto Navegação").
+enum Modo { TRILHA, AUTONOMO }
+
+signal modo_mudou(modo: int)
+
+
+func modo_atual() -> int:
+	return Modo.TRILHA if modo_trilha else Modo.AUTONOMO
+
+
+## Troca de modo em runtime. Limpa rota/vaga/alinhamento do modo anterior e
+## replaneja do zero: sem isso o carro herda a cauda de rota antiga e trava
+## no ALINHANDO (bug observado ao alternar no meio da corrida).
+## `manter_rota`: a UI (ComboRotas) injeta a rota escolhida logo depois;
+## então não deixamos o replanejamento pendente sobrescrevê-la.
+func definir_modo(modo: int, manter_rota: bool = false) -> void:
+	if modo_ml:
+		return
+	modo_trilha = false
+	brain_enabled = false
+	driver_brain = null
+	_invalidar_brain()
+	_sem_vagas = false
+	waypoints.clear()
+	indice_waypoint = 0
+	_vaga_alvo = null
+	estrategia = 0
+	_tempo_parado = 0.0
+	tempo_ignorar_sensor = 0.0
+	_rota_trilha_anterior.clear()
+	# Recomeca do zero: as desistencias valem por corrida, nao para sempre.
+	_vagas_recusadas.clear()
+	_travado_tentativas = 0
+	_travado_ha = 0.0
+	_ancora_deslocamento = global_position
+	_alinhando_tentativas = 0
+	_tempo_alinhando = 0.0
+	_cautela_tempo = 0.0
+	_reorientar_pos_reversao = false
+	if modo == Modo.TRILHA:
+		iniciar_modo_trilha()
+	else:
+		brain_enabled = true
+		iniciar_navegacao()
+	if manter_rota:
+		_plano_pendente = false
+	_mudar_estado(Estado.BUSCANDO)
+	modo_mudou.emit(modo_atual())
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# T alterna TRILHA <-> AUTONOMO em qualquer nível (Mundo.tscn ou FaseN).
+	# C cicla o carro do menu (VehicleCatalog) — o HUD só mostra o nome.
+	if event is InputEventKey and event.pressed and not event.echo:
+		var key := (event as InputEventKey).keycode
+		if key == KEY_T:
+			definir_modo(Modo.AUTONOMO if modo_atual() == Modo.TRILHA else Modo.TRILHA)
+			get_viewport().set_input_as_handled()
+		elif key == KEY_C:
+			aplicar_skin(VehicleCatalogRef.cycle(1))
+			get_viewport().set_input_as_handled()
+
+
+## Gate de cruzamento compartilhado com o piloto autônomo (C2). Uma instância
+## por carro: o latch precisa sobreviver entre frames, por isso o cérebro é
+## cacheado (C2b) e este gate também.
+func gate_cruzamento() -> CrosserGateRef:
+	if _crosser_gate == null:
+		_crosser_gate = CrosserGateRef.new()
+	return _crosser_gate
+
+
+## Troca a "pintura" do carro (menu de 5 modelos Kenney). Todas têm a mesma
+## resolução, então `scale`/colisão continuam válidos (VehicleCatalog).
+func aplicar_skin(id: String) -> bool:
+	return VehicleCatalogRef.apply(self, id)
+
+
 func _planejar_rota() -> void:
+	# A folga da grade precisa cobrir o carro antes de qualquer A*.
+	_garantir_folga_do_planejador()
 	# MODO ML: sem rota desenhada — só escolhe a vaga livre mais próxima.
 	# A rede neural (CerebroML) dirige usando apenas os sensores.
 	if modo_ml:
@@ -274,31 +509,216 @@ func _planejar_rota() -> void:
 		return
 	_sem_vagas = false
 	_vaga_alvo = escolha["vaga"]
+	posicao_alvo = (_vaga_alvo as Node2D).global_position
+	rotacao_alvo = float(_vaga_alvo.get("rotacao_alvo")) if "rotacao_alvo" in _vaga_alvo else 0.0
 	_aplicar_rota(escolha["rota"])
 	tentativa_mudou.emit(0, "Rota A* para a vaga")
 	_tempo_parado = 0.0
 func _escolher_vaga() -> Dictionary:
-	# Vaga prioritária (marcada na cena) e livre ganha sempre.
+	# Vaga prioritária (marcada na cena) e livre ganha sempre — MENOS se o
+	# carro já desistiu dela nesta corrida (_vagas_recusadas). Sem essa
+	# exceção, a vaga prioritária reintroduzia o laço do AGENTS: desiste ->
+	# `_escolher_vaga` -> mesma vaga de novo.
 	if not vaga_prioritaria.is_empty():
 		var prioritaria := get_node_or_null(vaga_prioritaria)
-		if prioritaria != null and not prioritaria.ocupada:
-			var rota_p: Array = planejador.achar_rota(global_position, prioritaria.global_position)
+		if prioritaria != null and not prioritaria.ocupada \
+				and not _vaga_esta_recusada(prioritaria):
+			var rota_p: Array = _rota_ate_vaga(prioritaria)
 			if rota_p.size() >= 2:
 				return {"vaga": prioritaria, "rota": rota_p}
-	# Senão: a vaga livre ALCANÇÁVEL mais próxima (menor rota).
+	# Senão: a vaga livre ALCANÇÁVEL mais barata (A* + rumo compatível).
+	# Entrada é sempre DE FRENTE (locked A2): vagas cujo nariz exige
+	# chegada de ré (|yaw_err no fim da rota| > ~100°) são puladas.
 	var melhor: Dictionary = {}
 	var melhor_custo: float = INF
 	for vaga in container_vagas.get_children():
-		if vaga.ocupada:
+		if vaga.ocupada or _vaga_esta_recusada(vaga):
 			continue
-		var rota: Array = planejador.achar_rota(global_position, vaga.global_position)
-		if rota.size() < 2:
+		var prep: Vector2 = _ponto_prep_da_vaga(vaga)
+		var rota_prep: Array = planejador.achar_rota(global_position, prep)
+		if rota_prep.size() < 2:
 			continue
-		var custo := _comprimento_rota(rota)
+		# Custo e rumo são medidos na CHEGADA ao ponto de preparação: é lá
+		# que o carro precisa já estar apontado para a boca. O trecho final
+		# (prep -> centro) é reto no eixo do nariz por construção.
+		var custo := _comprimento_rota(rota_prep)
+		custo += _penalidade_rumo(rota_prep, float(vaga.rotacao_alvo))
 		if custo < melhor_custo:
 			melhor_custo = custo
-			melhor = {"vaga": vaga, "rota": rota}
+			melhor = {"vaga": vaga, "rota": _rota_ate_vaga(vaga)}
 	return melhor
+
+
+## A vaga esta na lista de desistencias desta corrida?
+func _vaga_esta_recusada(vaga: Node) -> bool:
+	return vaga != null and (_vagas_recusadas as Array).has(vaga)
+
+
+## Penalidade de rumo: 0 quando a rota chega alinhada ao nariz da vaga,
+## INF quando exigiria entrada de ré (não fazemos baliza — locked A2).
+func _penalidade_rumo(rota: Array, rot_vaga: float) -> float:
+	if rota.size() < 2:
+		return INF
+	var dir_fim: Vector2 = (rota[rota.size() - 1] as Vector2) - (rota[rota.size() - 2] as Vector2)
+	if dir_fim.length_squared() < 1.0:
+		return 0.0
+	var nariz := Vector2.RIGHT.rotated(rot_vaga)
+	var desalinhado: float = absf(angle_difference(dir_fim.angle(), nariz.angle()))
+	if desalinhado > deg_to_rad(100.0):
+		return INF
+	return desalinhado * 200.0
+
+
+## Ponto de preparação no eixo do nariz, na frente da boca (mesma ideia do
+## `preparar_estacionamento` do modo trilha), já escalado como o carro.
+## Alcance do ponto de preparação além do centro da vaga — MESMA fórmula de
+## `_ponto_prep_da_vaga()`. A fase usa este número para dimensionar a grade do
+## planejador: a grade precisa cobrir a vaga E o ponto de aproximação, senão o
+## A* cai fora da região, `achar_rota` devolve vazio e o carro fica em
+## BUSCANDO com zero waypoints (Fase1, 2026-09-26).
+func alcance_preparo() -> float:
+	var escala: float = maxf((global_scale.x + global_scale.y) * 0.5, 1.0)
+	return entre_eixos * escala * 2.5 + 80.0
+
+
+func _ponto_prep_da_vaga(vaga: Node2D) -> Vector2:
+	var rot_v: float = float(vaga.get("rotacao_alvo")) if "rotacao_alvo" in vaga else 0.0
+	var dir_nariz := Vector2.RIGHT.rotated(rot_v)
+	var escala: float = maxf((global_scale.x + global_scale.y) * 0.5, 1.0)
+	var d: float = entre_eixos * escala * 2.5 + 80.0
+	return vaga.global_position - dir_nariz * d
+
+
+## Rota de estacionamento AUTÔNOMA terminando alinhada ao nariz:
+## A* até o ponto de preparação e depois o trecho reto prep -> centro.
+## Sem isso o A* termina no CENTRO da vaga e o carro chega atravessado
+## (41° em Fase2), travando no limiar |erro| > 0.7 dentro da vaga — a
+## entrada é sempre DE FRENTE (locked A2).
+func _rota_ate_vaga(vaga: Node2D) -> Array:
+	if planejador == null or vaga == null or not is_instance_valid(vaga):
+		return []
+	var prep: Vector2 = _ponto_prep_da_vaga(vaga)
+	var rota: Array = _rota_a_star_ate(prep)
+	if rota.size() < 2:
+		return []
+	# Regra da mão à direita só na MALHA planejada; o trecho final (prep ->
+	# centro) entra exato, senão o alvo da vaga sai de eixo.
+	if (rota[rota.size() - 1] as Vector2).distance_to(prep) > 1.0:
+		rota.append(prep)
+	rota.append(vaga.global_position)
+	return rota
+
+
+## ÚNICO ponto de entrada para rotas A* autonomousas: planeja E aplica a regra
+## da mão à direita. Antes, 3 de 5 call sites (replanejamento, fallback da
+## trilha, tentativa 3) pulavam `_deslocar_para_direita()` e o carro voltava
+## a dirigir pela esquerda assim que replanejava.
+## Linhas 395 (medição de custo), os trails Line2D e os snapshots ficam de
+## fora por projeto: são rotas de leitura, não o caminho dirigido (AGENTS §3).
+func _rota_a_star_ate(alvo: Vector2) -> Array:
+	if planejador == null:
+		return []
+	# Deslocar a rota CRUA (escadaria de células) antes de decimar foi tentado e
+	# REVERTIDO em 2026-09-26: cada degrau passa a encostar na guia da direita e
+	# o segmento entre dois degraus corta quina de parede — o carro travava a
+	# (−632, 1479) a 23 px/s. A ordem que funciona é decimar, depois deslocar.
+	# ORDEM (tres tentativas medidas em 2026-09-26; a que funciona):
+	#   1. A* cru, 2. decima (8 vertices), 3. ARREDONDA (RouteShape), 4. desloca
+	#      para a faixa da direita (LaneOffset).
+	#   - deslocar a escadaria CRUA: cada degrau encosta na guia e o segmento
+	#     entre degraus corta quina de parede — o carro travava a 23 px/s;
+	#   - deslocar e so DEPOIS arredondar: o arredondamento encurta o caminho em
+	#     ~17% cortando a quina para dentro, e isso tira a rota da faixa em cada
+	#     curva (medido: 24% dentro do box);
+	#   - arredondar ANTES de deslocar: a polilinha ja e suave, entao o
+	#     deslocamento a aplica sem Ondular e a faixa fica continua.
+	var crua: PackedVector2Array = planejador.achar_rota_crua(global_position, alvo)
+	if crua.size() < 2:
+		return []
+	# 1. CHAIKIN na escadaria de celulas (nunca cria laco, so limpa a quina);
+	# 2. reamostra no passo, para a lista de waypoints ter tamanho util;
+	# 3. desloca para a faixa da direita (agora sobre um caminho de verdade
+	#    suave, entao a faixa nao ondula);
+	# 4. garante a folga do raio varrido.
+	var suave: Array = RouteShapeRef.resample(
+		RouteShapeRef.smooth(Array(crua), suavizacoes_rota), passo_rota)
+	return _garantir_folga(_deslocar_para_direita(suave))
+
+
+## GARANTIA DE FOLGA (o invariante do AGENTS #18, agora no ponto onde ele podia
+## quebrar): o arredondamento tira a quina PARA DENTRO, e perto de obstaculo
+## isso encosta a linha na parede. A sonda empurra cada ponto para fora ate o
+## raio varrido. Sem esta passagem a Fase2 dava 3 violacoes (min 97 px contra
+## 126,5 do raio) logo na saida do spawn.
+func _garantir_folga(rota: Array) -> Array:
+	if rota.size() < 2 or planejador == null:
+		return rota
+	var espaco := _espaco_de_fisica()
+	if espaco == null:
+		return rota
+	var varrido: float = raio_varrido()
+	if varrido <= 1.0:
+		return rota
+	var saida: Array = rota.duplicate()
+	for i in range(saida.size()):
+		# Os extremos NAO se movem: o primeiro e onde o carro esta agora e o
+		# ultimo e o ponto de preparacao da vaga (AGENTS #18). Mover o primeiro
+		# criava um erro lateral de ~1 raio varrido no instante seguinte, o
+		# termo Stanley saturava e o carro dava meia-volta (42 frames de RE).
+		if i == 0 or i == saida.size() - 1:
+			continue
+		var p: Vector2 = saida[i]
+		var guarda := 0
+		while guarda < 4:
+			var d_min: float = varrido
+			var n_para: Vector2 = Vector2.ZERO
+			for k in range(12):
+				var ang: float = TAU * float(k) / 12.0
+				var dir := Vector2.RIGHT.rotated(ang)
+				var d: float = _distancia_parede(espaco, p, dir, varrido + 4.0)
+				if d < d_min:
+					d_min = d
+					n_para = -dir
+			if d_min >= varrido - 0.5:
+				break
+			p += n_para * (varrido - d_min + 2.0)
+			guarda += 1
+		saida[i] = p
+	return saida
+
+
+func _espaco_de_fisica() -> PhysicsDirectSpaceState2D:
+	var mundo := get_world_2d()
+	return mundo.direct_space_state if mundo != null else null
+
+
+func _distancia_parede(espaco: PhysicsDirectSpaceState2D, de: Vector2, dir: Vector2, max_dist: float) -> float:
+	var q := PhysicsRayQueryParameters2D.create(de, de + dir * max_dist)
+	q.collision_mask = 2
+	q.collide_with_bodies = true
+	q.collide_with_areas = false
+	var r: Dictionary = espaco.intersect_ray(q)
+	if r.is_empty():
+		return max_dist
+	return de.distance_to(r.get("position") as Vector2)
+
+
+## Desloca a rota A* para a direita de quem dirige (mão à direita), o quanto a
+## folga real permitir. Medido em Fase2/Fase3: o A* sem isso corria ~40 px à
+## esquerda do eixo do corredor em média e até ~160 px nas curvas (cortando a
+## quina por dentro). O offset zera no primeiro e no último ponto da malha.
+## `sonda` é DIRECIONAL: o LaneOffset pergunta o lado esquerdo passando
+## `-right`, então uma única sonda de física responde os dois lados.
+func _deslocar_para_direita(rota: Array) -> Array:
+	if keep_right_shift <= 0.0 or rota.size() < 3 or planejador == null:
+		return rota
+	var varrido := raio_varrido()
+	if varrido <= 0.0:
+		return rota
+	var espaco := get_world_2d().direct_space_state
+	var sonda := LaneOffsetRef.wall_probe(espaco, 2, varrido + keep_right_shift * 3.0)
+	var fade: float = maxf(varrido * 2.0, 200.0)
+	return LaneOffsetRef.apply(rota, keep_right_shift, sonda, varrido, fade, fade)
 
 
 func _comprimento_rota(rota: Array) -> float:
@@ -321,11 +741,37 @@ func _aplicar_rota(rota: Array) -> void:
 		for ponto in waypoints:
 			_rota_trilha_anterior.append(ponto)
 		tempo_ignorar_sensor = 0.8
-		# Só orienta na primeira rota (spawn) — snap completo para não começar de lado
+		# Só orienta na primeira rota (spawn) — usa o primeiro ponto a >80px
+		# para não mirar num micro-blend (ex. Fase3 spawn->blend = sudoeste
+		# enquanto o lookahead de 180px já mira leste; o snap curto causava
+		# curva aberta para a parede sul e deadlock cinemático vel<1 sem virar).
 		if era_vazia and rota.size() >= 2:
-			var dir_ini: Vector2 = (rota[1] as Vector2) - (rota[0] as Vector2)
+			var origem_ini: Vector2 = rota[0]
+			var dir_ini: Vector2 = (rota[1] as Vector2) - origem_ini
+			for k in range(2, rota.size()):
+				var cand: Vector2 = (rota[k] as Vector2) - origem_ini
+				if cand.length() > 80.0:
+					dir_ini = cand
+					break
 			if dir_ini.length_squared() > 1.0:
 				rotation = dir_ini.angle()
+	# v2 (F3): anti-deadlock orientation, shared by A* and trail routes.
+	# A fresh route may start BEHIND the car; the brain then commands a
+	# reverse that the rear-wall safety zeroes -> full-lock steering at
+	# zero speed = frozen forever (turning needs movement). So: when the
+	# car is stopped and the first real leg (first point >80px) points
+	# away (>~108 deg), orient the car to that leg before driving.
+	if absf(velocidade_atual) < 5.0 and rota.size() >= 2:
+		var origem0: Vector2 = rota[0]
+		var dir0: Vector2 = (rota[1] as Vector2) - origem0
+		for k in range(2, rota.size()):
+			var cand0: Vector2 = (rota[k] as Vector2) - origem0
+			if cand0.length() > 80.0:
+				dir0 = cand0
+				break
+		if dir0.length_squared() > 1.0 and \
+				absf(angle_difference(rotation, dir0.angle())) > PI * 0.6:
+			rotation = dir0.angle()
 	if planejador != null:
 		planejador.definir_rota(rota)
 
@@ -335,9 +781,27 @@ func _ao_pedir_nova_vaga_interna() -> void:
 		_plano_pendente = true
 
 
+## v2 (F3 fix): in autonomous mode the PLANNER owns the target — spots must
+## NOT retarget the vehicle (AGENTS §3). Fase2 bays are 689x314 with a mouth
+## band ~567 px from the centre (AGENTS #17), so simply driving north past
+## Vaga4 fired its triggers and rewrote posicao_alvo/rotacao_alvo to Vaga4
+## while _vaga_alvo stayed Vaga2: _processar_alinhando then aligned to one
+## spot and gated on the other (_esta_100_dentro_da_vaga() false forever) ->
+## the car jittered forever inside Vaga4 and never parked (Fase2 autonomous).
+## Manual/legacy driving keeps the old behaviour: that is how a human picks.
+func _aceita_pedido_de_vaga(posicao_da_vaga: Vector2) -> bool:
+	if not brain_enabled and driver_brain == null:
+		return true
+	if _vaga_alvo == null or not is_instance_valid(_vaga_alvo):
+		return true
+	return (_vaga_alvo as Node2D).global_position.distance_to(posicao_da_vaga) < 1.0
+
+
 func preparar_estacionamento(rotacao_da_vaga: float, posicao_da_vaga: Vector2) -> void:
 	# Humano: cria waypoint de preparação à frente da vaga para ter espaço de manobra
 	if estado == Estado.ALINHANDO or estado == Estado.ESTACIONADO:
+		return
+	if not _aceita_pedido_de_vaga(posicao_da_vaga):
 		return
 	rotacao_alvo = rotacao_da_vaga
 	posicao_alvo = posicao_da_vaga
@@ -360,6 +824,8 @@ func preparar_estacionamento(rotacao_da_vaga: float, posicao_da_vaga: Vector2) -
 
 
 func entrar_estado_alinhando(rotacao_da_vaga: float, posicao_da_vaga: Vector2) -> void:
+	if not _aceita_pedido_de_vaga(posicao_da_vaga):
+		return
 	rotacao_alvo = rotacao_da_vaga
 	posicao_alvo = posicao_da_vaga
 	_mudar_estado(Estado.ALINHANDO)
@@ -367,10 +833,21 @@ func entrar_estado_alinhando(rotacao_da_vaga: float, posicao_da_vaga: Vector2) -
 
 func set_driver_brain(brain) -> void:
 	driver_brain = brain
+	_invalidar_brain()
 
 
 func set_brain_enabled(enabled: bool) -> void:
 	brain_enabled = enabled
+	_invalidar_brain()
+
+
+## Drops the cached fallback brain (C2b) and the crosser latch: a mode change
+## must never inherit the previous brain's state.
+func _invalidar_brain() -> void:
+	_brain_cache = null
+	_brain_cache_kind = -1
+	if _crosser_gate != null:
+		_crosser_gate.reset()
 
 
 func _build_brain_perception() -> PerceptionSnapshot:
@@ -382,7 +859,25 @@ func _build_brain_perception() -> PerceptionSnapshot:
 	var ang_t := 0.0
 	if dist_t > 0.001:
 		ang_t = angle_difference(rotation, global_position.direction_to(alvo).angle())
-	return SensorArrayRef.snapshot(rays, velocidade_atual, dist_t, ang_t)
+	# v2 (F1): yaw_error to the spot heading + stuck watchdog. Crosser
+	# fields come from the F5 group broadcast (INF = none until then).
+	var rot_v: float = rotacao_alvo
+	if _vaga_alvo != null and "rotacao_alvo" in _vaga_alvo:
+		rot_v = _vaga_alvo.rotacao_alvo
+	var cross_dist := INF
+	var cross_bear := 0.0
+	if get_tree() != null:
+		for n in get_tree().get_nodes_in_group("crosser"):
+			var c := n as Node2D
+			if c == null:
+				continue
+			var d := global_position.distance_to(c.global_position)
+			if d < cross_dist:
+				cross_dist = d
+				cross_bear = angle_difference(rotation,
+					global_position.direction_to(c.global_position).angle())
+	return SensorArrayRef.snapshot_full(rays, velocidade_atual, dist_t, ang_t,
+		angle_difference(rotation, rot_v), cross_dist, cross_bear, _tempo_parado)
 
 
 func _build_drive_context(perception: PerceptionSnapshot) -> DriveContextRef:
@@ -439,9 +934,16 @@ func _brain_for_current_mode() -> Object:
 		return driver_brain
 	if modo_ml:
 		return null
-	if modo_trilha:
-		return TrailFollowerRef.new()
-	return AutonomousDriverRef.new()
+	# v2 (F3): brain_enabled means "drive autonomously" — the injected
+	# brain (or AutonomousDriver here) replaces the legacy FSM paths.
+	# Trail mode stays only for the legacy proof scenes.
+	# C2b: ONE instance per kind, cached — a fresh RefCounted every frame
+	# threw away every latch/timer the brain keeps.
+	var kind: int = 1 if (not brain_enabled and modo_trilha) else 0
+	if _brain_cache == null or _brain_cache_kind != kind:
+		_brain_cache = TrailFollowerRef.new() if kind == 1 else AutonomousDriverRef.new()
+		_brain_cache_kind = kind
+	return _brain_cache
 
 
 func _brain_speed_limit(brain: Object) -> float:
@@ -455,6 +957,16 @@ func _brain_speed_limit(brain: Object) -> float:
 func _apply_brain_command() -> void:
 	if estado == Estado.ESTACIONADO or estado == Estado.RECUPERANDO:
 		return
+	# v2 (F3 fix): ALINHANDO is the FSM's parking maneuver. The brain used to
+	# overwrite estercamento_alvo/velocidade_desejada every frame (because
+	# _aplicar_movimento_trilha() calls this first), so the alignment commands
+	# never reached the wheels: in Fase2 the car sat 80 px inside Vaga2 with
+	# 89 deg of yaw error, alternating +37/-60 forever and never parking.
+	if estado == Estado.ALINHANDO:
+		return
+	# v2 (F3): with an injected/autonomous brain, the DriveCommand OWNS
+	# BUSCANDO steering+speed — the legacy FSM paths below only run when
+	# NO brain is active (trail proof scenes with brain disabled, ML mode).
 	var perception := _build_brain_perception()
 	var context := _build_drive_context(perception)
 	var brain: Object = _brain_for_current_mode()
@@ -467,12 +979,24 @@ func _apply_brain_command() -> void:
 	var legacy_speed := velocidade_desejada
 	if shadow_brains:
 		_shadow_check_command(cmd, legacy_steering, legacy_speed)
-	if not brain_enabled:
+	if not brain_enabled and driver_brain == null:
 		return
 	var targets := DriveCommandAdapterRef.to_legacy_targets(
 		cmd, max_estercamento, _brain_speed_limit(brain))
 	estercamento_alvo = float(targets["steering"])
 	velocidade_desejada = float(targets["speed"])
+	# Log enxuto das RÉS comandadas pelo brain (causa da "ré/giro estranho no
+	# meio do caminho"): só na borda (primeiro frame da ré), com o motivo.
+	var re_agora: bool = cmd.throttle < -0.05
+	if re_agora and not _brain_re_recente:
+		print("[RE-BRAIN] estado=%d pos=%s rot=%.2f vel=%.0f/%.0f cte=%.0f dist_alvo=%.0f" % [
+			int(estado), global_position, rotation, velocidade_atual,
+			velocidade_desejada, context.cte, context.distance_to_target])
+	_brain_re_recente = re_agora
+	_brain_command = cmd
+	_brain_context = context
+	_legacy_steering_target = legacy_steering
+	_legacy_speed_target = legacy_speed
 
 
 func _shadow_check_command(cmd, legacy_steering: float, legacy_speed: float) -> void:
@@ -551,6 +1075,57 @@ func _physics_process(delta: float) -> void:
 	if tempo_ignorar_sensor > 0.0:
 		tempo_ignorar_sensor -= delta
 
+	# CAUTELA pos-re (ver CAUTELA_S): conta para tras sozinha.
+	if _cautela_tempo > 0.0:
+		_cautela_tempo -= delta
+
+	# TRAVAMENTO POR DESLOCAMENTO — fora dos ramos, para valer com QUALQUER dono
+	# do comando. Ate 2026-09-27 esta checagem vivia dentro de `_processar_rota`
+	# e, com o cérebro no comando, `_processar_buscando` NUNCA chama
+	# `_processar_rota` (o brain tem a palavra) — entao o detector estava MORTO
+	# exactamente no caminho autónomo. Medido na Fase3 seed 2: o carro ficou
+	# 45 s a 7,4 px/s, preso na mesma celula, com 74 -> 58 waypoints e ZERO
+	# replanejamentos. O watchdog do proprio cerebro nao cobre isso: ele exige
+	# `distancia_frente() < 90`, e aqui o carro escorregava de LADO numa parede,
+	# sem nada a frente. A checagem so vale nos estados que DIRIGEM: em ALINHANDO
+	# o carro gira parado de proposito e em ESTACIONADO ele nao anda.
+	if not modo_trilha and not modo_ml \
+			and (estado == Estado.BUSCANDO or estado == Estado.DESVIANDO):
+		if _cravou(delta):
+			_travado_tentativas += 1
+			# ESCADA DE FUGA (medida na Fase3 seed 2): replanejar sozinho NAO tira
+			# um carro encostado na parede — a rota nova comeca apontando para a
+			# mesma parede e o carro volta a escorregar a 7 px/s. Medido: o
+			# replanejamento com inflacao 227 disparava a cada 2 s, devolvia a
+			# MESMA rota de 58 waypoints e nao movia o carro um pixel em 45 s.
+			# Entao a escada e': replanejar (1-2) -> dar RE (3) -> largar a vaga (4).
+			if _travado_tentativas <= 2:
+				if not _replanejar_com_Inflacao_maior():
+					_comecar_reversao_de_emergencia()
+			elif _travado_tentativas == 3:
+				_comecar_reversao_de_emergencia()
+			else:
+				_recusar_vaga_atual()
+			queue_redraw()
+			return
+
+	# MANOBRA FINAL COM PRAZO — a outra fonte de "mandou estacionar e nao
+	# estacionou". Ver ALINHA_MAX_S. Vale para os DOIS ramos de alinhamento
+	# (A* e trilha) porque fica antes do despacho de modo.
+	if estado == Estado.ALINHANDO:
+		_tempo_alinhando += delta
+		if _tempo_alinhando > ALINHA_MAX_S:
+			_tempo_alinhando = 0.0
+			_alinhando_tentativas += 1
+			if _alinhando_tentativas <= 1 and _replanejar_com_Inflacao_maior():
+				queue_redraw()
+				return
+			_recusar_vaga_atual()
+			queue_redraw()
+			return
+	else:
+		_tempo_alinhando = 0.0
+
 	# MODO ML (imitação): a rede neural dirige pelos sensores — sem trilha.
 	# A FSM continua sendo o "juiz" (vaga/ESTACIONADO/ALINHANDO).
 	if modo_ml:
@@ -595,6 +1170,12 @@ func _physics_process(delta: float) -> void:
 
 	queue_redraw()
 
+	# ÁUDIO: o motor segue a velocidade comandada (o carro parado continua com
+	# motor em marcha lenta; ESTACIONADO é o único caso silencioso).
+	if audio_motor != null:
+		audio_motor.call("set_engine", velocidade_atual, velocidade_atual < -1.0,
+			estado == Estado.ESTACIONADO, delta)
+
 	# GRAVAÇÃO (professor): cada frame de BUSCANDO vira uma linha do dataset
 	if ml_gravar and estado == Estado.BUSCANDO:
 		_ml_gravar_linha()
@@ -618,6 +1199,16 @@ func _atualizar_sensores() -> void:
 # --- MOVIMENTO (a "física" de dirigir de verdade) -------------------------
 
 func _aplicar_movimento(delta: float) -> void:
+	# v2 (F3): in autonomous mode (brain enabled, or modo_trilha=false),
+	# delegate locomotion to _aplicar_movimento_trilha (the kinematic
+	# solver). The legacy physics path calls move_and_slide(), which
+	# friction-clamps the body when grazing a wall parallel to the heading
+	# (Godot #94928 normal-filtering reduces velocity to 0-2 px/s while
+	# desired is 130+). The kinematic path glides along walls smoothly,
+	# and Locomotion/FsmProfiles safety still vetos real collisions.
+	if brain_enabled or not modo_trilha:
+		_aplicar_movimento_trilha(delta)
+		return
 	_apply_brain_command()
 	if not global_position.is_finite() or not is_finite(rotation) or not is_finite(estercamento):
 		estercamento = 0.0
@@ -701,8 +1292,98 @@ func _aplicar_movimento(delta: float) -> void:
 		velocidade_atual = velocity.dot(dir_drift)
 
 
+## Travamento por deslocamento: true quando o carro mandou andar e não andou.
+## Replaneja da posicao atual com a inflacao ACIMA do raio varrido, para o
+## A* parar de escolher breches que a carroceria nao atravessa. True se achou
+## rota nova.
+func _replanejar_com_Inflacao_maior() -> bool:
+	if planejador == null:
+		return false
+	var alvo := posicao_alvo
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo):
+		alvo = (_vaga_alvo as Node2D).global_position
+	elif waypoints.size() > 0:
+		alvo = waypoints[waypoints.size() - 1]
+	var original: float = float(planejador.get("inflar"))
+	var necessario: float = maxf(original, raio_varrido() * 1.8)
+	if necessario <= original + 1.0:
+		necessario = original * 1.5   # ja estava folgado: ainda mais
+	planejador.set("inflar", clampf(necessario, 60.0, 240.0))
+	planejador.call("invalidar_grade")
+	planejador.construir()
+	var nova: Array = _rota_a_star_ate(alvo)
+	planejador.set("inflar", original)
+	planejador.call("invalidar_grade")
+	planejador.construir()
+	if nova.size() < 2:
+		return false
+	_aplicar_rota(nova)
+	tentativas = 0
+	tempo_no_waypoint = 0.0
+	_mudar_estado(Estado.BUSCANDO)
+	return true
+
+
+## Larga a vaga atual: marca como recusada (para `_escolher_vaga` nao
+## reescolher a MESMA e cair no mesmo laço), zera o orcamento da manobra e
+## pede outra vaga. Chamado pelo ultimo degrau da escada de fuga e pelo
+## timeout de ALINHANDO.
+func _recusar_vaga_atual() -> void:
+	if _vaga_alvo != null and is_instance_valid(_vaga_alvo) and not (_vaga_alvo in _vagas_recusadas):
+		_vagas_recusadas.append(_vaga_alvo)
+	_alinhando_tentativas = 0
+	_tempo_alinhando = 0.0
+	_travado_tentativas = 0
+	_ancora_deslocamento = global_position
+	_sem_vagas = true
+	pedir_nova_vaga.emit()
+	_mudar_estado(Estado.BUSCANDO)
+
+
+## Reversao curta de emergencia: `estrategia 2` e' a re prolongada de
+## `_processar_recuperando` (1 s, freia sozinha se houver algo atras).
+## Só o deslocamento REAL limpa `_travado_tentativas` (ver `_cravou`): se
+## `_aplicar_rota` zerasse o contador, a escada nunca chegaria ao degrau que
+## desiste da vaga e o carro ficaria replanejando para sempre.
+func _comecar_reversao_de_emergencia() -> void:
+	_reorientar_pos_reversao = true
+	_cautela_tempo = CAUTELA_S
+	estrategia = 2
+	tempo_estrategia = 0.0
+	fase_manobra = 0
+	tentativas = 0
+	tempo_no_waypoint = 0.0
+	estercamento_alvo = 0.0
+	_mudar_estado(Estado.RECUPERANDO)
+
+
+func _cravou(delta: float) -> bool:
+	if _ancora_deslocamento == Vector2.ZERO:
+		_ancora_deslocamento = global_position
+		return false
+	# Andar um tanto NAO zera a escada (ver TRAVA_RESET_PX): quem zera e' o
+	# progresso na ROTA (`_avancar_indice_rota`). Medido na Fase1: entre dois
+	# engasgos o carro anda 100-200 px e volta a encravar no mesmo lugar, entao
+	# o reset por deslocamento degradava a escada para "replanejar" para sempre
+	# (75 s, 1167 frames de ré, nenhuma vaga conquistada).
+	if global_position.distance_to(_ancora_deslocamento) >= TRAVA_RESET_PX:
+		_ancora_deslocamento = global_position
+		_travado_ha = 0.0
+		return false
+	_travado_ha += delta
+	if _travado_ha < TRAVA_MIN_S:
+		return false
+	_ancora_deslocamento = global_position
+	_travado_ha = 0.0
+	return true
+
+
 func _aplicar_movimento_trilha(delta: float) -> void:
 	_apply_brain_command()
+	# CAUTELA pos-re: ver CAUTELA_S. Unico ponto por onde o comando do cerebro
+	# passa, entao vale para o piloto autonomo E para o modo trilha.
+	if _cautela_tempo > 0.0:
+		velocidade_desejada = clampf(velocidade_desejada, -CAUTELA_VEL, CAUTELA_VEL)
 	# Versão KINEMÁTICA para modo trilha: não usa move_and_slide (evita normal 0)
 	if not global_position.is_finite() or not is_finite(rotation) or not is_finite(estercamento):
 		estercamento = 0.0
@@ -760,6 +1441,10 @@ func _aplicar_movimento_trilha(delta: float) -> void:
 		return
 	var col := move_and_collide(movimento)
 	if col != null:
+		# ÁUDIO: batida de carroceria — a força escala com a velocidade que o
+		# carro tinha no impacto (o próprio gate de folga já evita a maioria).
+		if audio_motor != null:
+			audio_motor.call("play_bump", clampf(absf(prev_vel) / 160.0, 0.0, 1.0))
 		var n := col.get_normal()
 		if not n.is_finite() or n.length_squared() < 0.25 or not n.is_normalized():
 			velocity = Vector2.ZERO
@@ -841,8 +1526,27 @@ func _processar_buscando(delta: float) -> void:
 	# O carro não mira no waypoint exato: mira num ponto à FRENTE do caminho,
 	# o que faz as curvas saírem suaves (como um motorista real). Se travar,
 	# replaneja a rota do ponto atual em vez de "tentar na sorte".
+	# v2 (F3): an active brain OWNS the command (see _aplicar_movimento ->
+	# _apply_brain_command, called first). Skip the legacy solver so the
+	# two do not fight over estercamento_alvo/velocidade_desejada.
 	if auto_navegacao and _vaga_alvo != null:
-		_processar_rota(delta)
+		if _brain_command == null:
+			_processar_rota(delta)
+		else:
+			_aplicar_movimento(delta)
+			_avancar_indice_rota()
+			# v2 (F3) watchdog: brain grinding against something (slow with
+			# a close front ray) for >2.5s -> hand over to the FSM recovery
+			# (reverse/turn-around) instead of pushing forever. The legacy
+			# 30s travamento detector is far too slow for this failure.
+			if absf(velocidade_atual) < 15.0 and distancia_frente() < 90.0:
+				_tempo_parado += delta
+				if _tempo_parado > 2.5:
+					_tempo_parado = 0.0
+					_iniciar_recuperacao()
+			else:
+				_tempo_parado = 0.0
+		_brain_command = null
 		return
 
 	_atualizar_progresso(delta)
@@ -875,13 +1579,9 @@ func _processar_buscando(delta: float) -> void:
 		return
 
 	# Aponta o volante para o waypoint. Humano vira até o fim quando precisa.
+	# v2 (locked B5): floor arrows are IGNORED — no 35% seta blend.
 	var alvo: Vector2 = waypoints[indice_waypoint]
 	var angulo_erro: float = angle_difference(rotation, global_position.direction_to(alvo).angle())
-	# Preferência por seta (se houver, mistura 35% da direção da seta)
-	var dir_seta := _obter_direcao_seta()
-	if dir_seta != INF:
-		var erro_seta := angle_difference(rotation, dir_seta)
-		angulo_erro = lerp(angulo_erro, erro_seta, 0.35)
 	# Deadband reta: não oscila se já está quase reto e perto da linha
 	var cte_b: float = INF
 	for i in range(waypoints.size() - 1):
@@ -917,6 +1617,14 @@ func _processar_rota(delta: float) -> void:
 	_deslocamento_total += global_position.distance_to(_posicao_anterior)
 	_posicao_anterior = global_position
 	_atualizar_progresso(delta)
+	# Travamento por DESLOCAMENTO. Um detector so no ramo de colisao nao
+	# funciona: encostado na parede o carro ESCORREGA (v = 3..7 px/s, colisao
+	# intermitente) e nunca acumula 2 s. Medido na Fase3 seed 4: 50 s em RE-BRAIN
+	# sem recuperar. A checagem vai no topo porque TODOS os ramos de
+	# `_processar_rota` passam aqui.
+	# MOVIDO para `_physics_process` em 2026-09-27: aqui dentro ele nao valia com
+	# o cerebro no comando (que e' o caso das fases 2..7). Ver o comentario no
+	# topo de `_physics_process` para a medicao.
 	if _detectar_travamento_rota():
 		_replanejar_ou_recuperar()
 		return
@@ -932,19 +1640,26 @@ func _processar_rota(delta: float) -> void:
 		return
 
 	# Pure pursuit sobre a rota A*
+	# v2 (locked B5): floor arrows are IGNORED — no 30% seta blend.
 	var alvo := _ponto_lookahead(distancia_lookahead)
 	var erro: float = angle_difference(rotation, global_position.direction_to(alvo).angle())
-	var dir_seta2 := _obter_direcao_seta()
-	if dir_seta2 != INF:
-		var erro_s := angle_difference(rotation, dir_seta2)
-		erro = lerp(erro, erro_s, 0.3)
 	# Deadband para não oscilar em reta: se CTE <20 e erro pequeno, suaviza
+	# ERRO LATERAL COM SINAL: desvio do carro ate a rota, POSITIVO quando o carro
+	# esta a DIREITA dela. `dir.orthogonal()` aponta para a direita do veiculo
+	# (y para baixo), entao o produto escalar abaixo e o desvio com sinal. E o
+	# termo do Stanley dentro de solve_error.
 	var cte: float = INF
+	var cte_dir: float = 0.0
+	var dir := Vector2.RIGHT.rotated(rotation)
 	for i in range(waypoints.size() - 1):
 		var p := Geometry2D.get_closest_point_to_segment(global_position, waypoints[i], waypoints[i + 1])
-		cte = minf(cte, global_position.distance_to(p))
+		var d: float = global_position.distance_to(p)
+		if d < cte:
+			cte = d
+			cte_dir = (global_position - p).dot(dir.orthogonal())
 	var deadband: bool = cte < 20.0 and absf(erro) < 0.15
-	estercamento_alvo = PurePursuit.solve_error(erro, max_estercamento, 2.8, deadband).steering
+	estercamento_alvo = PurePursuit.solve_error(erro, max_estercamento, 2.8, deadband,
+		cte_dir, velocidade_atual, ganho_erro_lateral).steering
 	# Freio suave preditivo
 	var curv2 := _curvatura_a_frente()
 	var v_curva2: float = sqrt(0.9 / max(curv2, 0.015))
@@ -1023,6 +1738,19 @@ func _avancar_indice_rota() -> void:
 	# Passou do vértice (está mais perto do próximo) ou chegou bem perto.
 	if dist_atual < tolerancia_chegada or (dist_proximo < dist_atual and dist_atual < distancia_lookahead * 1.5):
 		indice_waypoint += 1
+		# PROGRESSO REAL: unico evento que zera a escada de fuga (AGENTS: o
+		# contador nao pode ser zerado por "andar um pouco", senao o degrau que
+		# desiste da vaga nunca acontece).
+		# MEDIDO (Fase3 seed 2, 2026-09-27): "avancou o indice" NAO e' progresso
+		# por si so. A rota replanejada nasce NA CELULA DO CARRO, entao os 4
+		# primeiros waypoints ficam a 0,02 px um do outro e o indice andava 1->4
+		# com o carro parado, zerando a escada depois de CADA degrau: 50 s preso
+		# a 7,4 px/s, 0 re, 0 vaga recusada. O gate agora e' o DESLOCAMENTO
+		# (`TRAVA_RESET_PX`), o mesmo criterio de `_cravou`.
+		if global_position.distance_to(_ancora_deslocamento) >= TRAVA_RESET_PX:
+			_travado_tentativas = 0
+			_travado_ha = 0.0
+			_ancora_deslocamento = global_position
 		_resetar_tentativa()
 
 
@@ -1040,7 +1768,7 @@ func _replanejar_ou_recuperar() -> void:
 		alvo = waypoints[waypoints.size() - 1]
 	else:
 		alvo = global_position
-	var rota: Array = planejador.achar_rota(global_position, alvo)
+	var rota: Array = _rota_a_star_ate(alvo)
 	if rota.size() >= 2:
 		_aplicar_rota(rota)
 		tentativa_mudou.emit(0, "Replanejou rota (A*)")
@@ -1080,7 +1808,7 @@ func _replanejar_ou_recuperar_trilha() -> void:
 		return
 	if _rotas_iguais(fb, _rota_trilha_anterior):
 		if planejador != null:
-			var rota: Array = planejador.achar_rota(global_position, _alvo_trilha())
+			var rota: Array = _rota_a_star_ate(_alvo_trilha())
 			if rota.size() >= 2 and not _rotas_iguais(rota, _rota_trilha_anterior):
 				_aplicar_rota(rota)
 				tentativa_mudou.emit(0, "Trilha: fallback repetido; replanejamento A*")
@@ -1310,11 +2038,38 @@ func _processar_trilha(delta: float) -> void:
 		_replanejar_ou_recuperar_trilha()
 		return
 	# --- PARADA por obstáculo: no modo trilha o carro NÃO desvia, só PARA ---
+	# v2 (F5 fix): re-enabled for crosser safety. When a crosser (or
+	# obstacle) enters the front safety zone (df < seg), the car stops
+	# instead of plowing through.
 	var escala_media_trilha := (global_scale.x + global_scale.y) * 0.5
 	var seg_trilha: float = 44.0 * maxf(escala_media_trilha, 1.0) + 22.0
 	seg_trilha = maxf(seg_trilha, 48.0)
 	var df_trilha := distancia_centro()
-	var frente_bloqueada: bool = false # df_trilha < seg_trilha # disabled for test
+	# C2: mesmo gate de cruzamento do piloto autônomo (histerese + hold
+	# mínimo). A banda de 140 px solta no mesmo instante em que entra, e o
+	# carro "engatinhava" pelo trânsito; o crosser é BODY-LESS, então a decisão
+	# é o único lugar onde a parada acontece. Distâncias menores que as do
+	# gate autônomo porque a trilha legacy roda em corredores mais estreitos
+	# (um exit de 340 px segurava o carro até a rota passar fome).
+	var cross_near := false
+	if get_tree() != null:
+		var cross_dist := INF
+		var cross_bear := 0.0
+		for n in get_tree().get_nodes_in_group("crosser"):
+			var c := n as Node2D
+			if c == null:
+				continue
+			var d := global_position.distance_to(c.global_position)
+			if d < cross_dist:
+				cross_dist = d
+				cross_bear = angle_difference(rotation,
+					global_position.direction_to(c.global_position).angle())
+		var gate := gate_cruzamento()
+		gate.enter_distance = 140.0
+		gate.exit_distance = 220.0
+		gate.min_hold = 0.5
+		cross_near = gate.should_yield(cross_dist, cross_bear, delta)
+	var frente_bloqueada: bool = (df_trilha < seg_trilha or cross_near)
 	if frente_bloqueada and tempo_ignorar_sensor <= 0.0:
 		_tempo_parado += delta
 		if _tempo_parado < 0.7:
@@ -1391,6 +2146,20 @@ func _processar_trilha(delta: float) -> void:
 
 
 func _processar_alinhando_trilha(delta: float) -> void:
+	# Sem vaga alvo nao existe manobra: o gatilho de AREA da vaga entrou em
+	# ALINHANDO e fijou `posicao_alvo` sem que `_escolher_vaga` tivesse escolhido
+	# nada (o cross-trigger do AGENTS #15b). O carro entonces dirigia para um
+	# alvo fantasma e passeava pela fase (Fase4: 70 s sem estacionar, com
+	# `_vaga_alvo` nulo o tempo todo). Volta para BUSCANDO e deixa o A* escolher.
+	if _vaga_alvo == null or not is_instance_valid(_vaga_alvo):
+		# Tenta descobrir QUAL vaga o gatilho de area marcou em
+		# `posicao_alvo`. Se nao houver vaga a menos de 200 px, segue
+		# manobrando para `posicao_alvo` mesmo assim (era assim que a
+		# Fase4 estacionava em 9 s). Bloquear aqui deixava a fase
+		# inteira sem rota, porque o _escolher_vaga dela falha em TODAS
+		# as vagas (ponto de preparacao bloqueado) e so o gatilho de
+		# area oferece alvo.
+		_resolver_vaga_alvo()
 	if _esta_100_dentro_da_vaga() and _perto_da_vaga_para_snap():
 		# 100% dentro da vaga E perto do centro: PARA imediatamente.
 		# Nao continua nem vira para evitar bater. Rotaciona em lugar se desalinhado.
@@ -1462,7 +2231,12 @@ func _processar_alinhando_trilha(delta: float) -> void:
 		if distancia_centro() < distancia_seguranca:
 			velocidade_desejada = 0.0
 	else:
-		if _esta_100_dentro_da_vaga() and absf(erro) > 0.08:
+		# Perto do centro (mesmo com o casco ainda fora da vaga, o que acontece
+		# quando o carro chega TORTO): gira parado para alinhar primeiro. Sem
+		# isso o carro chegava a 13 px do centro com o casco atravessando a
+		# borda, o portao "100% dentro" nunca abria e ele voltava a manobrar para
+		# sempre (Fase4, 2026-09-26).
+		if distancia < maxf(160.0, tolerancia_chegada * 4.0) and absf(erro) > 0.08:
 			# Dentro da vaga: gira parado suave para alinhar (único lugar permitido)
 			estercamento_alvo = 0.0
 			velocidade_desejada = 0.0
@@ -1493,6 +2267,115 @@ func _processar_alinhando_trilha(delta: float) -> void:
 			_vaga_alvo.marcar_ocupada()
 		_mudar_estado(Estado.ESTACIONADO)
 	elif distancia < 9.0 and absf(erro) < 0.22 and _esta_100_dentro_da_vaga():
+		if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
+			_vaga_alvo.marcar_ocupada()
+		_mudar_estado(Estado.ESTACIONADO)
+
+
+## Adota como `_vaga_alvo` a vaga livre mais proxima de `posicao_alvo` (dentro de
+## 200 px). E o que conserta o cross-trigger: o gatilho de AREA sabe QUAL vaga o
+## carro esta entrando, mesmo que o A* nao a tenha escolhido.
+func _resolver_vaga_alvo() -> bool:
+	if container_vagas == null:
+		return false
+	var cand: Node2D = null
+	var cand_d: float = 200.0
+	for v in container_vagas.get_children():
+		if v.ocupada:
+			continue
+		var d: float = global_position.distance_to((v as Node2D).global_position)
+		if d < cand_d:
+			cand_d = d
+			cand = v as Node2D
+	if cand == null:
+		return false
+	_vaga_alvo = cand
+	posicao_alvo = cand.global_position
+	rotacao_alvo = float(cand.get("rotacao_alvo")) if "rotacao_alvo" in cand else 0.0
+	print("[VAGA-RESOLVIDA] alvo=%s dist=%.0f" % [cand.name, cand_d])
+	return true
+
+
+func _processar_alinhando(delta: float) -> void:
+	# Sem vaga alvo nao existe manobra: o gatilho de AREA da vaga entrou em
+	# ALINHANDO e fijou `posicao_alvo` sem que `_escolher_vaga` tivesse escolhido
+	# nada (o cross-trigger do AGENTS #15b). O carro entonces dirigia para um
+	# alvo fantasma e passeava pela fase (Fase4: 70 s sem estacionar, com
+	# `_vaga_alvo` nulo o tempo todo). Volta para BUSCANDO e deixa o A* escolher.
+	if _vaga_alvo == null or not is_instance_valid(_vaga_alvo):
+		# Tenta descobrir QUAL vaga o gatilho de area marcou em
+		# `posicao_alvo`. Se nao houver vaga a menos de 200 px, segue
+		# manobrando para `posicao_alvo` mesmo assim (era assim que a
+		# Fase4 estacionava em 9 s). Bloquear aqui deixava a fase
+		# inteira sem rota, porque o _escolher_vaga dela falha em TODAS
+		# as vagas (ponto de preparacao bloqueado) e so o gatilho de
+		# area oferece alvo.
+		_resolver_vaga_alvo()
+	# RECONSTRUIDA em 2026-09-26: um script meu de remocao apagou esta funcao e a
+	# restauracao veio do HEAD, que e a versao ANTIGA (sem o portao de distancia
+	# do AGENTS #16 e sem o giro parado dentro da vaga). Com ela a Fase3 subia
+	# 431 frames de RE e a Fase4 nao estacionava. A logica abaixo espelha a irma
+	# `_processar_alinhando_trilha`, que sobreviveu e e a referencia de manobra.
+	if _esta_100_dentro_da_vaga() and _perto_da_vaga_para_snap():
+		# 100% dentro da vaga E perto do centro: PARA e desliza ate o centro.
+		# O gate de distancia existe porque a vaga e' grande e "100% dentro"
+		# dispara ainda longe (slide fantasma, AGENTS #16).
+		var _err := angle_difference(rotation, rotacao_alvo)
+		var _dist := global_position.distance_to(posicao_alvo)
+		estercamento_alvo = 0.0
+		velocidade_desejada = 0.0
+		velocity = Vector2.ZERO
+		velocidade_atual = 0.0
+		global_position = global_position.lerp(posicao_alvo, delta * 6.0)
+		rotation = lerp_angle(rotation, rotacao_alvo, delta * 6.0)
+		if absf(_err) < tolerancia_alinhamento and _dist < 12.0:
+			if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
+				_vaga_alvo.marcar_ocupada()
+			_mudar_estado(Estado.ESTACIONADO)
+		return
+	var distancia: float = global_position.distance_to(posicao_alvo)
+	var erro: float = angle_difference(rotation, rotacao_alvo)
+	if distancia > tolerancia_chegada * 2.0:
+		# Aproximacao: mira no centro, freia perto e muito devagar na boca.
+		var erro_approach := angle_difference(rotation, global_position.direction_to(posicao_alvo).angle())
+		estercamento_alvo = clampf(erro_approach * 1.8, -max_estercamento, max_estercamento)
+		velocidade_desejada = _velocidade_aproximacao_vaga(75.0)
+		if absf(erro_approach) > 0.6:
+			velocidade_desejada = _velocidade_aproximacao_vaga(45.0)
+		if distancia_centro() < distancia_seguranca:
+			velocidade_desejada = 0.0
+	else:
+		# Perto do centro (mesmo com o casco ainda fora da vaga, o que acontece
+		# quando o carro chega TORTO): gira parado para alinhar primeiro. Sem
+		# isso o carro chegava a 13 px do centro com o casco atravessando a
+		# borda, o portao "100% dentro" nunca abria e ele voltava a manobrar para
+		# sempre (Fase4, 2026-09-26).
+		if distancia < maxf(160.0, tolerancia_chegada * 4.0) and absf(erro) > 0.08:
+			# Dentro da vaga: o UNICO lugar onde gira parado e permitido.
+			estercamento_alvo = 0.0
+			velocidade_desejada = 0.0
+			rotation = lerp_angle(rotation, rotacao_alvo, delta * 2.0)
+		elif absf(erro) > 0.7:
+			# Muito torto: sobe devagar em arco, sem mergulhar em reta (a re da
+			# versao antiga era o que gerava as centenas de frames de RE).
+			estercamento_alvo = -sign(erro) * max_estercamento * 0.75
+			velocidade_desejada = velocidade_alinhamento * 0.35
+			if distancia_tras() < distancia_seguranca:
+				velocidade_desejada = 0.0
+		elif absf(erro) > 0.35:
+			estercamento_alvo = clampf(erro * 1.8, -max_estercamento, max_estercamento)
+			velocidade_desejada = velocidade_alinhamento * 0.65
+		else:
+			estercamento_alvo = clampf(erro * 2.2, -max_estercamento, max_estercamento)
+			var alinhado: bool = absf(erro) < tolerancia_alinhamento
+			if alinhado:
+				velocidade_desejada = velocidade_alinhamento * 0.5
+				if distancia < 12.0:
+					velocidade_desejada *= 0.45
+			else:
+				velocidade_desejada = velocidade_alinhamento * 0.18
+	_aplicar_movimento(delta)
+	if _esta_100_dentro_da_vaga() and absf(erro) < tolerancia_alinhamento and distancia < 12.0:
 		if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
 			_vaga_alvo.marcar_ocupada()
 		_mudar_estado(Estado.ESTACIONADO)
@@ -1530,60 +2413,17 @@ func _processar_desviando(delta: float) -> void:
 		_mudar_estado(Estado.BUSCANDO)
 
 
-func _processar_alinhando(delta: float) -> void:
-	# Estacionamento humano: aproxima, se torto faz ré esterçada, ajuste fino
-	var distancia: float = global_position.distance_to(posicao_alvo)
-	var erro: float = angle_difference(rotation, rotacao_alvo)
-	if distancia > tolerancia_chegada * 2.5:
-		var angulo: float = global_position.direction_to(posicao_alvo).angle()
-		var erro_approach := angle_difference(rotation, angulo)
-		estercamento_alvo = clampf(erro_approach * 1.8, -max_estercamento, max_estercamento)
-		# Freia para virar — habilidade de frear quando quer
-		var base_a := _velocidade_por_sensor() * 0.6
-		if absf(erro_approach) > 0.7:
-			base_a *= 0.45
-		elif absf(erro_approach) > 0.4:
-			base_a *= 0.7
-		velocidade_desejada = base_a
-		var lat := distancia_lateral()
-		if lat < 35.0:
-			velocidade_desejada *= 0.5
-	else:
-		# Perto da vaga: precisa ficar reto
-		if absf(erro) > 0.7:
-			# Muito torto: ré esterçada como humano (manobra 3 tempos simplificada)
-			estercamento_alvo = -sign(erro) * max_estercamento * 0.9
-			velocidade_desejada = -_velocidade_reversa() * 0.7
-			if distancia_tras() < distancia_seguranca + 12.0:
-				estercamento_alvo = sign(erro) * max_estercamento * 0.5
-				velocidade_desejada = _velocidade_por_sensor() * 0.3
-		else:
-			estercamento_alvo = clampf(erro * 2.2, -max_estercamento, max_estercamento)
-			var alinhado: bool = absf(erro) < tolerancia_alinhamento
-			if alinhado:
-				# Reto: entra devagar
-				velocidade_desejada = velocidade_alinhamento * 0.6
-				if distancia < 12.0:
-					velocidade_desejada *= 0.5
-			else:
-				# Quase: pequeno ajuste frente/ré
-				if distancia > 14.0:
-					velocidade_desejada = velocidade_alinhamento * 0.35
-				else:
-					velocidade_desejada = -_velocidade_reversa() * 0.4
-
-	_aplicar_movimento(delta)
-
-	# Só estaciona se 100% dentro da vaga (humano) e não em cima de calçada
-	if _esta_100_dentro_da_vaga() and absf(erro) < tolerancia_alinhamento and distancia < 12.0:
-		if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
-			_vaga_alvo.marcar_ocupada()
-		_mudar_estado(Estado.ESTACIONADO)
-	elif distancia < 10.0 and absf(erro) < tolerancia_alinhamento and _esta_100_dentro_da_vaga():
-		if _vaga_alvo != null and _vaga_alvo.has_method("marcar_ocupada"):
-			_vaga_alvo.marcar_ocupada()
-		_mudar_estado(Estado.ESTACIONADO)
-
+## A MANOBRA final travou? true = o carro esta manobrando, se mexe, mas nao
+## consegue entrar na vaga.
+##
+## Distingue dois casos que pareciam iguais (Fase5, 2026-09-26):
+##   - manobra falha: o carro se mexe e nao entra -> DESISTE da vaga e pede
+##     outra (e a blacklist impede que receba a mesma de volta);
+##   - carro ENCAIXADO: o carro nao sai do lugar em absoluto -> aqui nao e' a
+##     vaga que esta ruim, e' a posicao; responder dando manobras de re aqui
+##     produzia 828 frames de re em 70 s, PIOR do que ficar parado.
+## Por isso o teste exige movimento real na janela.
+const _MANOBRA_MOV_MIN := 60.0
 
 func _processar_estacionado(delta: float) -> void:
 	# Trava bonitinho: interpola até o centro exato da vaga com rotação perfeita
@@ -1648,11 +2488,20 @@ func _detectar_travamento() -> bool:
 
 
 func _iniciar_recuperacao() -> void:
+	# Manobra de três tempos (ré + giro): log para localizar o gatilho em jogo.
+	print("[RECUPERACAO] estado=%d tentativas=%d estrategia=%d pos=%s rot=%.2f vel=%.0f wp=%d/%d" % [
+		int(estado), tentativas + 1, estrategia, global_position, rotation,
+		velocidade_atual, indice_waypoint, waypoints.size()])
 	tentativas += 1
 	tempo_no_waypoint = 0.0
 	distancia_inicio_waypoint = global_position.distance_to(waypoints[indice_waypoint]) if indice_waypoint < waypoints.size() else 0.0
 	contador_oscilacao = 0
 
+	# Travamento detectado por DESLOCAMENTO: pula direto para a ultima
+	# estrategia (replanejar), que e a unica que resolve "encostou na parede".
+	if _tentativa_travada > 0:
+		_tentativa_travada = 0
+		tentativas = 2  # o proximo `if` cai na 3a (replanejamento)
 	if tentativas == 1:
 		# Paralelo por manobra: avalia 3 estratégias via corrotina com snapshot
 		_tentar_manoabras_paralelo()
@@ -1680,7 +2529,7 @@ func _iniciar_recuperacao() -> void:
 			planejador.inflar = 50.0
 			planejador.construir()
 			var alvo: Vector2 = _vaga_alvo.global_position if _vaga_alvo != null else waypoints[waypoints.size()-1]
-			var nova_rota: Array = planejador.achar_rota(global_position, alvo)
+			var nova_rota: Array = _rota_a_star_ate(alvo)
 			planejador.inflar = inflar_original
 			planejador.construir()
 			if nova_rota.size() >= 2:
@@ -1850,7 +2699,36 @@ func _desistir_waypoint() -> void:
 
 func _fim_recuperacao() -> void:
 	tempo_ignorar_sensor = 0.5
+	if _reorientar_pos_reversao:
+		_reorientar_pos_reversao = false
+		_orientar_para_rota()
 	_mudar_estado(Estado.BUSCANDO)
+
+
+## Vira o nariz para a primeira PERNA REAL da rota (o primeiro waypoint a mais
+## de 80 px), se ela apontar para tras (>~108 graus). Mesma regra que
+## `_aplicar_rota` usa para um carro parado.
+##
+## Por que: na Fase3 seed 2 a re de emergencia tira o carro do solido
+## (`inside` true -> false) mas o carro continua apontando para dentro do canto
+## e volta a encravar. Medido nesse seed: a perna da rota saiu a apenas 18 graus
+## do nariz, entao nao houve snap (o ganho ali e' zero) — a funcao existe para o
+## caso em que a re deixa o carro virado para TRAS da rota, que e' o mesmo
+## criterio que `_aplicar_rota` ja usa com o carro parado.
+func _orientar_para_rota() -> void:
+	if waypoints.size() < 2 or indice_waypoint >= waypoints.size() - 1:
+		return
+	var origem: Vector2 = global_position
+	var dir: Vector2 = (waypoints[indice_waypoint] as Vector2) - origem
+	for k in range(indice_waypoint, waypoints.size()):
+		var cand: Vector2 = (waypoints[k] as Vector2) - origem
+		if cand.length() > 80.0:
+			dir = cand
+			break
+	if dir.length_squared() > 1.0 \
+			and absf(angle_difference(rotation, dir.angle())) > PI * 0.6:
+		rotation = dir.angle()
+		velocidade_atual = 0.0
 
 
 func _chegou_no_waypoint() -> void:
@@ -1894,6 +2772,33 @@ func distancia_lateral() -> float:
 		_distancia_ray(rays, SensorArrayRef.LATERAL_RIGHT))
 
 
+## O casco do carro (encolhido 35%) encosta em algum obstaculo solido?
+## Buffer menor que a colisao real de proposito: o portão de estacionar nao pode
+## reprovar o carro por estar PERTO da guia, so por estar SOBRE ela.
+func _casco_em_cima_de_obstaculo() -> bool:
+	var mundo := get_world_2d()
+	if mundo == null:
+		return false
+	var forma: Shape2D = $CollisionShape2D.shape
+	if forma == null:
+		return false
+	var rect := RectangleShape2D.new()
+	rect.size = (forma as RectangleShape2D).size * global_scale * 0.65
+	var xf := Transform2D(rotation, global_position)
+	var q := PhysicsShapeQueryParameters2D.new()
+	q.shape = rect
+	q.transform = xf
+	q.collision_mask = 2
+	q.collide_with_bodies = true
+	q.collide_with_areas = false
+	q.margin = 0.0
+	for r in mundo.direct_space_state.intersect_shape(q, 1):
+		if r.is_empty():
+			continue
+		return true
+	return false
+
+
 func _esta_100_dentro_da_vaga() -> bool:
 	if _vaga_alvo == null or not is_instance_valid(_vaga_alvo):
 		return false
@@ -1920,12 +2825,13 @@ func _esta_100_dentro_da_vaga() -> bool:
 		var half_vaga := size_vaga * 0.5
 		if absf(local_vec.x) > half_vaga.x + 2.0 or absf(local_vec.y) > half_vaga.y + 2.0:
 			return false
-	# Proibir estar em cima de obstáculo (calçada) — grade sólida
-	if planejador != null and planejador.grade_pronta():
-		var cel = planejador._celula_de(global_position)
-		if planejador._grade.is_point_solid(cel):
-			return false
-	return true
+	# Proibir estar EM CIMA da calçada. A versao anterior consultava a celula da
+	# grade, que ja vem com a inflacao do raio varrido (137 px na Fase4): como a
+	# vaga cola na guia, estar a poucos metros dela ja dava "solido" e o portao
+	# NUNCA abria — a Fase4 ficava a 13 px do centro sem conseguir estacionar.
+	# Agora e' a forma do casco encolhida contra a fisica (mask 2), que e' o que
+	# a frase diz: o carro esta em cima da calçada, nao a 30 cm dela.
+	return not _casco_em_cima_de_obstaculo()
 
 
 func distancia_tras() -> float:
@@ -2018,12 +2924,8 @@ func _quase_apontando_ao_waypoint() -> bool:
 # ================= MACHINE LEARNING (imitação) ===============================
 
 func _ml_features() -> PackedFloat64Array:
-	# 18 entradas da rede, todas normalizadas:
-	#   [0..10]  distância dos 11 raios (0 = colado, 1 = livre)
-	#   [11]     velocidade atual / velocidade_maxima
-	#   [12]     distância até a vaga / 2500
-	#   [13,14]  sin/cos do erro angular até a vaga
-	#   [15..17] seta do piso: achou?(0/1) e cos/sin da direção relativa
+	# v2 recorder contract (F1): 22 features, arrow slots DEAD (0.0).
+	# See DatasetRecorder header for the column order.
 	var f := PackedFloat64Array()
 	# Column order is the DatasetRecorder contract (see its header doc).
 	var rays := _rays_dict()
@@ -2044,20 +2946,30 @@ func _ml_features() -> PackedFloat64Array:
 	f.append(clampf(global_position.distance_to(alvo_v) / 2500.0, 0.0, 1.0))
 	f.append(sin(erro_v))
 	f.append(cos(erro_v))
-	var dir_s: float = _obter_direcao_seta()
-	if dir_s != INF:
-		f.append(1.0)
-		f.append(cos(dir_s - rotation))
-		f.append(sin(dir_s - rotation))
-	else:
-		f.append(0.0)
-		f.append(0.0)
-		f.append(0.0)
+	# [15..17] arrow slots: DEAD (setas ignored, locked B5) — always 0.0.
+	f.append(0.0)
+	f.append(0.0)
+	f.append(0.0)
+	# [18] yaw error to the spot heading, normalized by pi.
+	var rot_v: float = rotacao_alvo
+	if _vaga_alvo != null and "rotacao_alvo" in _vaga_alvo:
+		rot_v = _vaga_alvo.rotacao_alvo
+	f.append(clampf(angle_difference(rotation, rot_v) / PI, -1.0, 1.0))
+	# [19] corridor width (px -> 0..1 over 2000px).
+	var larg: float = minf(_distancia_ray(rays, SensorArrayRef.SIDE_LEFT),
+			_distancia_ray(rays, SensorArrayRef.LATERAL_LEFT)) \
+		+ minf(_distancia_ray(rays, SensorArrayRef.SIDE_RIGHT),
+			_distancia_ray(rays, SensorArrayRef.LATERAL_RIGHT))
+	f.append(clampf(larg / 2000.0, 0.0, 1.0))
+	# [20] crosser distance (1.0 = none; crosser lands in F5).
+	f.append(1.0)
+	# [21] stuck time: progress watchdog, 0..1 over 10s.
+	f.append(clampf(_tempo_parado / 10.0, 0.0, 1.0))
 	return f
 
 
 func _ml_gravar_linha() -> void:
-	# Uma linha = (18 entradas, 2 ações do professor neste mesmo frame)
+	# Uma linha = (22 entradas v2, 2 ações do professor neste mesmo frame)
 	if _ml_arquivo == null:
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://ml/dados"))
 		_ml_arquivo = FileAccess.open(ml_gravar_caminho, FileAccess.WRITE)
@@ -2066,7 +2978,10 @@ func _ml_gravar_linha() -> void:
 			ml_gravar = false
 			return
 	var f := _ml_features()
-	# Row layout is the DatasetRecorder contract (18 feats + 2 labels).
+	if not DatasetRecorderRef.valid_row(f):
+		push_warning("ML: linha descartada (%d feats, esperado %d)" % [f.size(), DatasetRecorderRef.FEATURE_COUNT])
+		return
+	# Row layout is the DatasetRecorder contract (22 feats + 2 labels).
 	var steering_norm: float = clampf(estercamento_alvo / max_estercamento, -1.0, 1.0)
 	var speed_norm: float = clampf(velocidade_desejada / velocidade_maxima, 0.0, 1.0)
 	_ml_arquivo.store_line(DatasetRecorderRef.format_row(f, steering_norm, speed_norm))
@@ -2164,6 +3079,9 @@ func _mudar_estado(novo: Estado) -> void:
 		(estado == Estado.DESVIANDO and novo == Estado.BUSCANDO):
 		contador_oscilacao += 1
 	estado = novo
+	# ÁUDIO: campainha de vaga conquistada (uma vez, na transição).
+	if novo == Estado.ESTACIONADO and audio_motor != null:
+		audio_motor.call("play_park")
 	estado_mudou.emit(nome_estado())
 
 
