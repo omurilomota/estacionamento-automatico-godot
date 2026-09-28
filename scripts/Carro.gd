@@ -716,7 +716,15 @@ func _deslocar_para_direita(rota: Array) -> Array:
 	if varrido <= 0.0:
 		return rota
 	var espaco := get_world_2d().direct_space_state
-	var sonda := LaneOffsetRef.wall_probe(espaco, 2, varrido + keep_right_shift * 3.0)
+	# `varrido` no 4o argumento: sonda de FORMA, nao de raio. Um raio de largura
+	# zero so ve o que esta exatamente na direcao `right`, entao a QUINA de um
+	# obstaculo em angulo ficava invisivel e a faixa era deslocada como se
+	# estivesse livre — a quina da carroceria girada (a meia diagonal = `varrido`)
+	# batia 22 px depois. Era o travamento da Fase3 seed 2 (gate_seeds 44/45).
+	# O circulo contem a carroceria em QUALQUER rotacao, entao a sonda e
+	# conservadora por construcao: afasta a faixa da quina, nunca a empurra
+	# contra ela. O invariante `free_r >= keep_clear` segue valendo em `apply`.
+	var sonda := LaneOffsetRef.wall_probe(espaco, 2, varrido + keep_right_shift * 3.0, varrido)
 	var fade: float = maxf(varrido * 2.0, 200.0)
 	return LaneOffsetRef.apply(rota, keep_right_shift, sonda, varrido, fade, fade)
 
