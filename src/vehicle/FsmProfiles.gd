@@ -28,10 +28,17 @@ static func reverse_speed(rear_distance: float, max_speed: float,
 	return clampf((rear_distance - safety_distance) / maxf(brake_distance - safety_distance, 0.001), 0.0, 1.0) * max_speed
 
 
+## Cruise profile for A* routes. v2 (F3 fix): the old mapping used
+## sqrt(0.9 / max(curv, 0.015)) which treated ANY mild bend (A* decimated
+## points are ~18px apart) as curvature 0.015+ and capped speed at ~8 px/s
+## — the A* pilot crawled. Now it mirrors the proven trail profile:
+## only real curves slow the car, down to a 45 px/s floor.
 static func route_speed(base_speed: float, curvature: float, angular_error: float,
 		max_steer: float, max_speed: float) -> float:
-	var curve_speed := sqrt(0.9 / max(curvature, 0.015))
-	var speed := minf(base_speed, curve_speed * 1.1)
+	var curve_limit := max_speed
+	if curvature > 0.05:
+		curve_limit = maxf(sqrt(30.0 / curvature), 45.0)
+	var speed := minf(base_speed, curve_limit * 1.1)
 	var factor := 1.0 - minf(absf(angular_error) / maxf(max_steer, 0.001), 1.0) * 0.4
 	speed *= factor
 	if absf(angular_error) > 0.7:

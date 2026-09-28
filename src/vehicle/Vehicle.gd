@@ -139,6 +139,23 @@ func set_brain_enabled(value: bool) -> void:
 	super.set_brain_enabled(value)
 
 
+# --- Car menu (VehicleCatalog) -------------------------------------------
+
+## Swaps the skin of the exported `sprite_path` node. Returns false for an
+## unknown id or a missing sprite.
+func set_skin(id: String) -> bool:
+	return aplicar_skin(id)
+
+
+func current_skin() -> String:
+	return VehicleCatalog.current_id
+
+
+## Ids of every selectable car, in menu order.
+func skin_options() -> Array[String]:
+	return VehicleCatalog.ids()
+
+
 func build_drive_context() -> DriveContext:
 	return _build_drive_context(build_perception())
 

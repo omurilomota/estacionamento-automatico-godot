@@ -43,3 +43,13 @@ func find_free_spawn(excluded_rects: Array[Rect2] = []) -> Vector2:
 
 func set_route(route: Array) -> void:
 	definir_rota(route)
+
+
+## v2 (F2) pure-service contract: inject hints once (empty = ignore).
+## LevelManager calls this instead of letting the planner crawl scenes.
+func apply_hints(hints: RouteHints) -> void:
+	if hints == null or hints.is_empty():
+		aplicar_hints([], [], 70.0)
+		return
+	aplicar_hints(hints.lane_polylines, hints.preferred_points,
+		hints.preferred_radius)

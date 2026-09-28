@@ -45,7 +45,18 @@ static func collect_from(vehicle: Node) -> Dictionary:
 
 
 ## Folds raw rays + mission data into the snapshot brains consume.
+## v2 (F1): yaw_error/crosser/stuck are injected by the caller (Vehicle);
+## arrow inputs are dead (setas ignored) so this keeps the v1 signature
+## and fills the new fields with neutral defaults.
 static func snapshot(rays: Dictionary, speed: float, dist_target: float, angle_target: float) -> PerceptionSnapshot:
+	return snapshot_full(rays, speed, dist_target, angle_target, 0.0, INF, 0.0, 0.0)
+
+
+## Full v2 snapshot: same rays + yaw_error to target_yaw, crosser
+## (dist/bearing, INF = none) and stuck seconds.
+static func snapshot_full(rays: Dictionary, speed: float, dist_target: float,
+		angle_target: float, yaw_err: float, cross_dist: float,
+		cross_bearing: float, stuck_s: float) -> PerceptionSnapshot:
 	var s := PerceptionSnapshot.new()
 	s.front_center = distance_of(rays.get(FRONT_CENTER) as RayCast2D)
 	s.front_left = distance_of(rays.get(FRONT_LEFT) as RayCast2D)
@@ -61,4 +72,8 @@ static func snapshot(rays: Dictionary, speed: float, dist_target: float, angle_t
 	s.speed = speed
 	s.distance_to_target = dist_target
 	s.angle_to_target = angle_target
+	s.yaw_error = yaw_err
+	s.crosser_distance = cross_dist
+	s.crosser_bearing = cross_bearing
+	s.stuck_time = stuck_s
 	return s
