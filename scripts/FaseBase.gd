@@ -13,6 +13,9 @@ const NOMES_ESTADO := Fases.NOMES_ESTADO
 @export var zoom_camera: float = 0.8
 # Sorteia uma posição de partida para o carro (nunca em cima de uma vaga).
 @export var posicao_aleatoria: bool = true
+## Painel único de HUD (scenes/Hud.tscn, instanciado como UI/Control). Esta
+## cena não escreve mais em labels: quem escreve é o `Hud`, via sinais.
+@export var hud_path: NodePath = NodePath("UI/Control")
 
 @onready var sprite_mapa: Sprite2D = $Mapa
 @onready var paredes: Node2D = $Paredes
@@ -21,10 +24,7 @@ const NOMES_ESTADO := Fases.NOMES_ESTADO
 @onready var waypoints: Node2D = $Waypoints
 @onready var planejador: Node2D = $Planejador
 @onready var camera: Camera2D = $Camera
-@onready var minimapa: Control = $UI/Control/Minimapa
-@onready var label_status: Label = $UI/Control/StatusLabel
-@onready var label_sensor: Label = $UI/Control/SensorLabel
-@onready var label_tentativa: Label = $UI/Control/TentativaLabel
+@onready var hud: Control = get_node_or_null(hud_path)
 
 # Tamanho do mundo em pixels (centrado na origem).
 var largura_mundo: float = 1280.0
@@ -39,12 +39,16 @@ func _ready() -> void:
 	_configurar_camera()
 
 	# O minimapa acompanha o tamanho real do mundo (mapa * escala).
-	minimapa.mundo_centro = Vector2.ZERO
-	minimapa.mundo_tamanho = Vector2(largura_mundo, altura_mundo)
+	if hud != null and hud.has_method("set_world_size"):
+		hud.call("set_world_size", Vector2(largura_mundo, altura_mundo))
 
-	# O planejador global cobre o mapa inteiro (grade de ocupação + A*).
-	planejador.origem = Vector2(-largura_mundo / 2.0, -altura_mundo / 2.0)
-	planejador.tamanho = Vector2(largura_mundo, altura_mundo)
+	# O planejador global precisa cobrir a GEOMETRIA REAL da fase, não só o
+	# retângulo do mapa: o ponto de preparação de uma vaga fica ~2,5 entre-eixos
+	# além do centro dela, e em Fase1 esse ponto caía FORA da grade — o A* erro,
+	# `achar_rota` voltava vazio e o carro ficava em BUSCANDO com 0 waypoints.
+	var limites := _limites_de_planejamento()
+	planejador.origem = limites.position
+	planejador.tamanho = limites.size
 
 	var pontos: Array = []
 	for wp in waypoints.get_children():
@@ -70,9 +74,15 @@ func _ready() -> void:
 	carro.estado_mudou.connect(_ao_mudar_estado)
 	carro.tentativa_mudou.connect(_ao_mudar_tentativa)
 	carro.pedir_nova_vaga.connect(_ao_pedir_nova_vaga)
-	label_status.text = "STATUS: " + NOMES_ESTADO.get(carro.nome_estado(), carro.nome_estado())
-	label_sensor.text = "SENSOR: " + carro.get_sensor_text()
-	label_tentativa.text = "TENTATIVA: 0"
+	if carro.has_signal("modo_mudou"):
+		carro.modo_mudou.connect(_ao_mudar_modo)
+	# HUD é o DONO dos textos: esta cena só entrega as referências.
+	if hud != null and hud.has_method("bind_vehicle"):
+		hud.call("bind_vehicle", carro)
+	if hud != null and hud.has_method("bind_world"):
+		hud.call("bind_world", planejador, vagas)
+	if hud != null and hud.has_method("bind_routes"):
+		hud.call("bind_routes", get_node_or_null("Rotas"))
 
 
 func _physics_process(_delta: float) -> void:
@@ -93,7 +103,10 @@ func _posicionar_carro_aleatorio() -> void:
 	for vaga in vagas.get_children():
 		var forma: RectangleShape2D = vaga.get_node("Area").shape
 		proibidos.append(Rect2(vaga.global_position - forma.size * 0.5, forma.size).grow(50.0))
-	var posicao: Vector2 = planejador.achar_posicao_livre(proibidos)
+	# O spawn vem do retângulo do MAPA, nunca da grade inteira: a grade cobre
+	# também o anel de preparação, e esse anel tem células livres fora do lote.
+	var limite_mapa := Rect2(-largura_mundo / 2.0, -altura_mundo / 2.0, largura_mundo, altura_mundo)
+	var posicao: Vector2 = planejador.achar_posicao_livre(proibidos, limite_mapa)
 	if posicao == Vector2.INF:
 		return
 	carro.global_position = posicao
@@ -101,14 +114,18 @@ func _posicionar_carro_aleatorio() -> void:
 
 
 func _process(_delta: float) -> void:
-	label_sensor.text = "SENSOR: " + carro.get_sensor_text()
 	_seguir_carro()
+
+
+func _ao_mudar_modo(_modo: int) -> void:
+	# O HUD escuta `modo_mudou` diretamente; nada a fazer aqui.
+	pass
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Teclas de teste: 1/2/3/4 trocam de fase, R reinicia a atual.
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode >= KEY_1 and event.keycode <= KEY_5:
+		if event.keycode >= KEY_1 and event.keycode <= KEY_1 + FASES.size() - 1:
 			var indice: int = event.keycode - KEY_1
 			get_tree().change_scene_to_file(FASES[indice])
 		elif event.keycode == KEY_R:
@@ -137,8 +154,45 @@ func _configurar_mapa() -> void:
 	move_child(fundo, 0)
 
 
+## Retângulo que a grade de ocupação precisa cobrir: o mapa, UNIDO à geometria
+## realmente colocada na cena (vagas, obstáculos, ponto de partida) e
+## estendido pelo alcance de preparação do carro. Tudo é declarativo — a fase
+## não fica procurando o carro no mundo, só lê os filhos que ela já tem.
+func _limites_de_planejamento() -> Rect2:
+	var r := Rect2(-largura_mundo / 2.0, -altura_mundo / 2.0, largura_mundo, altura_mundo)
+	if vagas != null:
+		for v in vagas.get_children():
+			r = r.merge(_retangulo_do_no(v))
+	if waypoints != null:
+		for wp in waypoints.get_children():
+			r = r.merge(_retangulo_do_no(wp))
+	var obst: Node2D = get_node_or_null("Obstaculos") as Node2D
+	if obst != null:
+		for o in obst.get_children():
+			r = r.merge(_retangulo_do_no(o))
+	if carro != null:
+		r = r.merge(Rect2(carro.global_position, Vector2.ZERO))
+	# O ponto de preparação vive `alcance_preparo()` além do centro da vaga.
+	var folga: float = 80.0
+	if carro != null and carro.has_method("alcance_preparo"):
+		folga = float(carro.alcance_preparo())
+	return r.grow(folga)
+
+
+## AABB de um nó da cena a partir das CollisionShape2D que ele contém.
+func _retangulo_do_no(no: Node2D) -> Rect2:
+	var r := Rect2(no.global_position, Vector2.ZERO)
+	for filho in no.get_children():
+		if filho is CollisionShape2D:
+			var cs := filho as CollisionShape2D
+			if cs.shape is RectangleShape2D:
+				var tam: Vector2 = (cs.shape as RectangleShape2D).size * no.global_scale
+				var centro: Vector2 = no.global_position + cs.position * no.global_scale
+				r = r.merge(Rect2(centro - tam * 0.5, tam))
+	return r
+
+
 func _criar_paredes() -> void:
-	# Perímetro automático: 4 retângulos logo fora da borda do mapa.
 	var limite := StaticBody2D.new()
 	limite.name = "LimiteAutomatico"
 	limite.collision_layer = 2
@@ -184,12 +238,10 @@ func _seguir_carro() -> void:
 	camera.position = pos
 
 
-func _ao_mudar_estado(nome: String) -> void:
-	# Em modo trilha, DESVIANDO significa "parado por obstáculo"
-	if "modo_trilha" in carro and carro.modo_trilha and nome == "DESVIANDO":
-		label_status.text = "STATUS: Parado (obstáculo à frente)"
-	else:
-		label_status.text = "STATUS: " + NOMES_ESTADO.get(nome, nome)
+func _ao_mudar_estado(_nome: String) -> void:
+	# O HUD escuta `estado_mudou` e monta o texto (inclusive o caso
+	# "parado por obstáculo" do modo trilha).
+	pass
 
 
 func _coletar_pontos_rotas() -> Array:
@@ -234,8 +286,9 @@ func _coletar_pontos_rotas() -> Array:
 	return todas
 
 
-func _ao_mudar_tentativa(tentativas: int, estrategia: String) -> void:
-	label_tentativa.text = "TENTATIVA: %d — %s" % [tentativas, estrategia]
+func _ao_mudar_tentativa(_tentativas: int, _estrategia: String) -> void:
+	# O HUD escuta `tentativa_mudou` e escreve a linha.
+	pass
 
 
 func _ao_pedir_nova_vaga() -> void:
@@ -245,7 +298,9 @@ func _ao_pedir_nova_vaga() -> void:
 	# Modo manual: escolhe a primeira vaga livre.
 	for vaga in vagas.get_children():
 		if not vaga.ocupada:
-			label_tentativa.text = "TENTATIVA: 0 — Procurando outra vaga"
+			if hud != null and hud.has_method("set_attempt"):
+				hud.call("set_attempt", 0, "Procurando outra vaga")
 			carro.definir_waypoints([vaga.global_position])
 			return
-	label_status.text = "STATUS: Sem vagas livres"
+	if hud != null and hud.has_method("set_attempt"):
+		hud.call("set_attempt", 0, "Sem vagas livres")

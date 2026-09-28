@@ -5,14 +5,14 @@ extends Node2D
 # é obtida dinamicamente dentro de Carro.gd a partir da ordem dos filhos no nó Rotas.
 
 @export var posicao_aleatoria: bool = true
+## Painel único de HUD (scenes/Hud.tscn, instanciado como UI/Control).
+@export var hud_path: NodePath = NodePath("UI/Control")
 
 @onready var carro: Node2D = $Carro
 @onready var waypoints: Node2D = $Waypoints
 @onready var vagas: Node2D = $Vagas
 @onready var planejador: Node2D = $Planejador
-@onready var label_status: Label = $UI/Control/StatusLabel
-@onready var label_sensor: Label = $UI/Control/SensorLabel
-@onready var label_tentativa: Label = $UI/Control/TentativaLabel
+@onready var hud: Control = get_node_or_null(hud_path)
 
 var _posicionar_pendente: bool = true
 
@@ -39,9 +39,17 @@ func _ready() -> void:
 	carro.estado_mudou.connect(_ao_mudar_estado)
 	carro.tentativa_mudou.connect(_ao_mudar_tentativa)
 	carro.pedir_nova_vaga.connect(_ao_pedir_nova_vaga)
-	label_status.text = "STATUS: " + Fases.NOMES_ESTADO.get(carro.nome_estado(), carro.nome_estado())
-	label_sensor.text = "SENSOR: " + carro.get_sensor_text()
-	label_tentativa.text = "TENTATIVA: 0"
+	if carro.has_signal("modo_mudou"):
+		carro.modo_mudou.connect(_ao_mudar_modo)
+	# HUD é o DONO dos textos: esta cena só entrega as referências.
+	if hud != null and hud.has_method("bind_vehicle"):
+		hud.call("bind_vehicle", carro)
+	if hud != null and hud.has_method("bind_world"):
+		hud.call("bind_world", planejador, vagas)
+	if hud != null and hud.has_method("bind_routes"):
+		hud.call("bind_routes", get_node_or_null("Rotas"))
+	if hud != null and hud.has_method("set_world_size"):
+		hud.call("set_world_size", Vector2(1280, 720))
 
 
 func _physics_process(_delta: float) -> void:
@@ -60,7 +68,17 @@ func _posicionar_carro_aleatorio() -> void:
 	for vaga in vagas.get_children():
 		var forma: RectangleShape2D = vaga.get_node("Area").shape
 		proibidos.append(Rect2(vaga.global_position - forma.size * 0.5, forma.size).grow(50.0))
-	var posicao: Vector2 = planejador.achar_posicao_livre(proibidos)
+	# Spawn sempre dentro do retangulo do CHAO, nunca da grade inteira: a grade
+	# cobre tambem o anel de preparacao, e esse anel tem celulas livres fora do
+	# lote (ver Planejador.achar_posicao_livre).
+	var chao := get_node_or_null("Chao") as Polygon2D
+	var limite_mapa := Rect2()
+	if chao != null and chao.polygon.size() >= 3:
+		var r := Rect2(chao.polygon[0], Vector2.ZERO)
+		for p in chao.polygon:
+			r = r.expand(p)
+		limite_mapa = Rect2(chao.position + r.position, r.size)
+	var posicao: Vector2 = planejador.achar_posicao_livre(proibidos, limite_mapa)
 	if posicao == Vector2.INF:
 		return
 	carro.global_position = posicao
@@ -68,30 +86,35 @@ func _posicionar_carro_aleatorio() -> void:
 
 
 func _process(_delta: float) -> void:
-	label_sensor.text = "SENSOR: " + carro.get_sensor_text()
+	# O HUD se atualiza sozinho (processa o sensor a cada frame).
+	pass
+
+
+func _ao_mudar_modo(_modo: int) -> void:
+	# O HUD escuta `modo_mudou` diretamente; nada a fazer aqui.
+	pass
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode >= KEY_1 and event.keycode <= KEY_5:
+		if event.keycode >= KEY_1 and event.keycode <= KEY_1 + Fases.FASES.size() - 1:
 			get_tree().change_scene_to_file(Fases.FASES[event.keycode - KEY_1])
 		elif event.keycode == KEY_R:
 			get_tree().reload_current_scene()
 
 
-func _ao_mudar_estado(nome: String) -> void:
-	if "modo_trilha" in carro and carro.modo_trilha and nome == "DESVIANDO":
-		label_status.text = "STATUS: Parado (obstáculo à frente)"
-	else:
-		label_status.text = "STATUS: " + Fases.NOMES_ESTADO.get(nome, nome)
+func _ao_mudar_estado(_nome: String) -> void:
+	# O HUD escuta `estado_mudou` e monta o texto.
+	pass
 
 
 func _coletar_pontos_rotas() -> Array:
 	return Fases.coletar_pontos_rotas(get_node_or_null("Rotas"), carro.global_position, vagas)
 
 
-func _ao_mudar_tentativa(tentativas: int, estrategia: String) -> void:
-	label_tentativa.text = "TENTATIVA: %d — %s" % [tentativas, estrategia]
+func _ao_mudar_tentativa(_tentativas: int, _estrategia: String) -> void:
+	# O HUD escuta `tentativa_mudou` e escreve a linha.
+	pass
 
 
 func _ao_pedir_nova_vaga() -> void:
@@ -99,7 +122,9 @@ func _ao_pedir_nova_vaga() -> void:
 		return
 	for vaga in vagas.get_children():
 		if not vaga.ocupada:
-			label_tentativa.text = "TENTATIVA: 0 — Procurando outra vaga"
+			if hud != null and hud.has_method("set_attempt"):
+				hud.call("set_attempt", 0, "Procurando outra vaga")
 			carro.definir_waypoints([vaga.global_position])
 			return
-	label_status.text = "STATUS: Sem vagas livres"
+	if hud != null and hud.has_method("set_attempt"):
+		hud.call("set_attempt", 0, "Sem vagas livres")

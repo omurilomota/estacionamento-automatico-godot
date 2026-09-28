@@ -1,0 +1,159 @@
+[gd_scene load_steps=6 format=3 uid="uid://bhudshared001"]
+
+[ext_resource type="Script" path="res://src/ui/Hud.gd" id="1_hud"]
+[ext_resource type="Script" uid="uid://b7alvlabsrc8p" path="res://scripts/Minimapa.gd" id="2_minimapa"]
+[ext_resource type="Script" path="res://src/ui/DebugRoutePanel.gd" id="3_rotas"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fundo"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.06, 0.07, 0.09, 0.72)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.18)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+shadow_color = Color(0, 0, 0, 0.45)
+shadow_size = 6
+
+[node name="Control" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_hud")
+
+[node name="Fundo" type="Panel" parent="."]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 520.0
+offset_bottom = 160.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_fundo")
+
+[node name="StatusChip" type="Label" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 20.0
+offset_right = 500.0
+offset_bottom = 58.0
+theme_override_colors/font_color = Color(0.98, 0.85, 0.35, 1)
+theme_override_font_sizes/font_size = 30
+text = "PROCURANDO VAGA"
+
+[node name="InfoLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 62.0
+offset_right = 500.0
+offset_bottom = 86.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 17
+text = "Vaga: - | - | 0 km/h | -"
+
+[node name="CarSelector" type="OptionButton" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 92.0
+offset_right = 240.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 15
+tooltip_text = "Carro (tecla C)"
+
+[node name="DebugToggle" type="Button" parent="."]
+layout_mode = 0
+offset_left = 252.0
+offset_top = 92.0
+offset_right = 500.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 15
+text = "DEBUG (H)"
+
+[node name="LegendLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 128.0
+offset_right = 500.0
+offset_bottom = 150.0
+theme_override_colors/font_color = Color(0.7, 0.75, 0.85, 1)
+theme_override_font_sizes/font_size = 13
+text = "1-7 fase | R reinicia | T modo | C carro | H debug"
+
+[node name="DebugPanel" type="VBoxContainer" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 12.0
+offset_top = 174.0
+offset_right = 520.0
+offset_bottom = 440.0
+theme_override_constants/separation = 6
+
+[node name="SensorLabel" type="Label" parent="DebugPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 0.9)
+theme_override_font_sizes/font_size = 16
+text = "SENSOR: Livre  |  MODO: -"
+autowrap_mode = 2
+
+[node name="TentativaLabel" type="Label" parent="DebugPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
+theme_override_font_sizes/font_size = 16
+text = "TENTATIVA: 0"
+autowrap_mode = 2
+
+[node name="ControleRotas" type="Control" parent="DebugPanel"]
+custom_minimum_size = Vector2(0, 150)
+layout_mode = 2
+script = ExtResource("3_rotas")
+planner_node = NodePath("../../../../Planejador")
+routes_node = NodePath("../../../../Rotas")
+vehicle_node = NodePath("../../../../Carro")
+
+[node name="VBox" type="VBoxContainer" parent="DebugPanel/ControleRotas"]
+layout_mode = 0
+offset_right = 300.0
+offset_bottom = 150.0
+
+[node name="CheckGrade" type="CheckBox" parent="DebugPanel/ControleRotas/VBox"]
+layout_mode = 2
+text = "Mostrar Grade"
+
+[node name="CheckRota" type="CheckBox" parent="DebugPanel/ControleRotas/VBox"]
+layout_mode = 2
+text = "Mostrar Rota A*"
+
+[node name="CheckRotas" type="CheckBox" parent="DebugPanel/ControleRotas/VBox"]
+layout_mode = 2
+text = "Mostrar Rotas Line2D"
+
+[node name="CheckAuto" type="CheckBox" parent="DebugPanel/ControleRotas/VBox"]
+layout_mode = 2
+text = "Auto Navegação"
+
+[node name="ComboRotas" type="OptionButton" parent="DebugPanel/ControleRotas/VBox"]
+layout_mode = 2
+
+[node name="Minimap" type="Control" parent="."]
+anchors_preset = 0
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -272.0
+offset_top = -192.0
+offset_right = -12.0
+offset_bottom = -12.0
+script = ExtResource("2_minimapa")
+carro_path = NodePath("../../../Carro")
+vagas_path = NodePath("../../../Vagas")
+waypoints_path = NodePath("../../../Waypoints")
+obstaculos_path = NodePath("../../../Obstaculos")

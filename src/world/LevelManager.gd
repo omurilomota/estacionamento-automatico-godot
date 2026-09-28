@@ -10,10 +10,10 @@ extends Node2D
 @export var spots_path: NodePath = NodePath("Vagas")
 @export var planner_path: NodePath = NodePath("Planejador")
 @export var camera_path: NodePath = NodePath("Camera")
-@export var status_label_path: NodePath = NodePath("UI/Control/StatusLabel")
-@export var sensor_label_path: NodePath = NodePath("UI/Control/SensorLabel")
-@export var attempt_label_path: NodePath = NodePath("UI/Control/TentativaLabel")
-@export var minimap_path: NodePath = NodePath("UI/Control/Minimapa")
+## The shared panel (scenes/Hud.tscn) owns every visible string; the four
+## `*_label_path` exports it replaces used to be written from here.
+@export var hud_path: NodePath = NodePath("UI/Control")
+@export var routes_path: NodePath = NodePath("Rotas")
 
 var world_size: Vector2 = Vector2(1280, 720)
 var _vehicle: Node = null
@@ -21,16 +21,14 @@ var _waypoints: Node = null
 var _spots: Node = null
 var _planner: Node = null
 var _camera: Camera2D = null
-var _status_label: Label = null
-var _sensor_label: Label = null
-var _attempt_label: Label = null
+var _hud: Control = null
 var _spawn_pending: bool = true
 
 func _ready() -> void:
 	_resolve_nodes()
 	_apply_config()
 	_boot_vehicle()
-	_connect_vehicle()
+	_bind_hud()
 	_update_status(_vehicle_state_name())
 
 func _physics_process(_d: float) -> void:
@@ -40,14 +38,12 @@ func _physics_process(_d: float) -> void:
 			_spawn_random()
 
 func _process(_d: float) -> void:
-	if _sensor_label != null and _vehicle != null:
-		_sensor_label.text = "SENSOR: " + _vehicle_sensor_text()
 	if _camera != null and _vehicle is Node2D:
 		_follow()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode >= KEY_1 and event.keycode <= KEY_5:
+		if event.keycode >= KEY_1 and event.keycode <= KEY_1 + LevelRegistry.LEVELS.size() - 1:
 			get_tree().change_scene_to_file(LevelRegistry.LEVELS[event.keycode - KEY_1])
 		elif event.keycode == KEY_R:
 			get_tree().reload_current_scene()
@@ -58,9 +54,7 @@ func _resolve_nodes() -> void:
 	_spots = _pick([spots_path, NodePath("ParkingSpots")])
 	_planner = _pick([planner_path, NodePath("PathPlanner")])
 	_camera = _pick([camera_path]) as Camera2D
-	_status_label = _pick([status_label_path]) as Label
-	_sensor_label = _pick([sensor_label_path]) as Label
-	_attempt_label = _pick([attempt_label_path]) as Label
+	_hud = _pick([hud_path]) as Control
 
 func _pick(paths: Array) -> Node:
 	for p in paths:
@@ -80,10 +74,6 @@ func _apply_config() -> void:
 			_camera.zoom = Vector2(level_config.camera_zoom, level_config.camera_zoom)
 		if _vehicle is Node2D:
 			_camera.position = (_vehicle as Node2D).global_position
-	var mm := get_node_or_null(minimap_path)
-	if mm != null:
-		mm.set("mundo_centro", Vector2.ZERO)
-		mm.set("mundo_tamanho", world_size)
 	if _planner != null:
 		_planner.set("origem", Vector2(-world_size.x / 2.0, -world_size.y / 2.0))
 		_planner.set("tamanho", world_size)
@@ -91,16 +81,36 @@ func _apply_config() -> void:
 func _boot_vehicle() -> void:
 	if _vehicle == null:
 		return
-	if _vehicle.has_method("start_trail_mode"):
-		_vehicle.call("start_trail_mode")
-	elif _vehicle.has_method("iniciar_modo_trilha"):
-		_vehicle.call("iniciar_modo_trilha")
-	elif _vehicle.has_method("start_navigation"):
+	# v2 (F2/F3): the vehicle is a pure A* pilot — inject EMPTY hints
+	# (arrows ignored, locked B5) and boot AUTONOMOUS, never trail mode.
+	# Trail mode stays available only for the legacy proof scenes.
+	if _planner != null and _planner.has_method("aplicar_hints"):
+		_planner.call("aplicar_hints", [], [], 70.0)
+	if _vehicle.has_method("set_driver_brain") and _vehicle.has_method("set_brain_enabled"):
+		var brain = _autonomous_brain()
+		if brain != null:
+			_vehicle.call("set_driver_brain", brain)
+			_vehicle.call("set_brain_enabled", true)
+	if _vehicle.has_method("start_navigation"):
 		_vehicle.call("start_navigation")
 	elif _vehicle.has_method("iniciar_navegacao"):
 		_vehicle.call("iniciar_navegacao")
+	elif _vehicle.has_method("start_trail_mode"):
+		_vehicle.call("start_trail_mode")
+	elif _vehicle.has_method("iniciar_modo_trilha"):
+		_vehicle.call("iniciar_modo_trilha")
 	else:
 		_vehicle_set_points(_waypoint_points())
+
+
+## Builds the AUTONOMOUS brain without depending on the global class
+## cache (headless-safe): prefers the real AutonomousDriver, falls back
+## to a duck-typed RefCounted when the class is unavailable.
+func _autonomous_brain() -> RefCounted:
+	var cls: GDScript = load("res://src/vehicle/AutonomousDriver.gd")
+	if cls != null and cls.can_instantiate():
+		return cls.new()
+	return null
 
 func _waypoint_points() -> Array:
 	var pts: Array = []
@@ -112,14 +122,29 @@ func _waypoint_points() -> Array:
 func _connect_vehicle() -> void:
 	if _vehicle == null:
 		return
-	_sub(_vehicle, "state_changed", "estado_mudou", _on_state)
-	_sub(_vehicle, "attempt_changed", "tentativa_mudou", _on_attempt)
+	# Only the spot-change REQUEST needs orchestration here; state/attempt
+	# texts belong to the Hud (which binds the same signals on its own).
 	_sub(_vehicle, "spot_change_requested", "pedir_nova_vaga", _on_spot_request)
 
 func _sub(node: Node, en: String, legacy: String, cb: Callable) -> void:
 	var sig := en if node.has_signal(en) else legacy
 	if node.has_signal(sig) and not node.is_connected(sig, cb):
 		node.connect(sig, cb)
+
+func _bind_hud() -> void:
+	# The panel is the single owner of the visible strings; here we only hand
+	# it the references (AGENTS §3 — no label walking).
+	if _hud == null:
+		return
+	if _hud.has_method("set_world_size"):
+		_hud.call("set_world_size", world_size)
+	if _hud.has_method("bind_world"):
+		_hud.call("bind_world", _planner, _spots)
+	if _hud.has_method("bind_routes"):
+		_hud.call("bind_routes", _pick([routes_path]))
+	if _hud.has_method("bind_vehicle"):
+		_hud.call("bind_vehicle", _vehicle)
+	_connect_vehicle()
 
 func _vehicle_state_name() -> String:
 	if _vehicle == null:
@@ -165,30 +190,26 @@ func _update_status(key: String) -> void:
 	_on_state(key)
 
 func _on_state(key) -> void:
-	if _status_label == null:
+	if _hud == null:
 		return
-	var k := str(key)
-	var label: String = LevelRegistry.STATE_LABELS.get(k, k)
-	if _vehicle_is_trail() and (k == "AVOIDING" or k == "DESVIANDO"):
-		_status_label.text = "STATUS: Stopped (obstacle ahead)"
-	else:
-		_status_label.text = "STATUS: " + label
+	# The panel formats the state; LevelManager only reacts to requests that
+	# need orchestration (see _on_spot_request).
+	pass
 
 func _on_attempt(count: int, strategy: String) -> void:
-	if _attempt_label != null:
-		_attempt_label.text = "ATTEMPT: %d - %s" % [count, strategy]
+	pass
 
 func _on_spot_request() -> void:
 	if _vehicle == null or _spots == null or _vehicle_is_auto():
 		return
 	for spot in _spots.get_children():
 		if not bool(spot.get("ocupada")):
-			if _attempt_label != null:
-				_attempt_label.text = "ATTEMPT: 0 - Seeking another spot"
+			if _hud != null and _hud.has_method("set_attempt"):
+				_hud.call("set_attempt", 0, "Procurando outra vaga")
 			_vehicle_set_points([(spot as Node2D).global_position])
 			return
-	if _status_label != null:
-		_status_label.text = "STATUS: No free spots"
+	if _hud != null and _hud.has_method("set_attempt"):
+		_hud.call("set_attempt", 0, "Sem vagas livres")
 
 func _spawn_random() -> void:
 	if _vehicle == null or _planner == null or _spots == null:

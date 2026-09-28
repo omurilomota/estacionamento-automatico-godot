@@ -6,24 +6,63 @@ extends Control
 @onready var check_rotas: CheckBox = $VBox/CheckRotas
 @onready var check_auto: CheckBox = $VBox/CheckAuto
 @onready var combo_rotas: OptionButton = $VBox/ComboRotas
-@onready var planejador: Node = get_node("../../../Planejador")
-@onready var rotas_node: Node = get_node("../../../Rotas")
-@onready var carro: Node = get_node("../../../Carro")
+@onready var planejador: Node = _resolve("Planejador")
+@onready var rotas_node: Node = _resolve("Rotas")
+@onready var carro: Node = _resolve("Carro")
+
+## Injeção opcional de referências (AGENTS #8). Preenchido por
+## `set_routes`/`src/ui/DebugRoutePanel.gd`; quando vazio, vale a busca
+## legada por nome relativo — é o que mantém as cenas antigas funcionando.
+var _injetado: Dictionary = {}
+
+
+## Resolve uma referência da nível pelo NOME, sem depender da PROFUNDIDADE do
+## painel. As `../../../` fixas quebravam assim que a UI ganhasse um nível a
+## mais (o painel agora vive dentro de `UI/Control/DebugPanel/`).
+## A versão base sobe a árvore até achar o nó; subclasses (DebugRoutePanel)
+## sobrescrevem com caminhos declarados na cena.
+func _resolve(nome: String) -> Node:
+	if _injetado.has(nome):
+		return _injetado[nome]
+	var n: Node = self
+	while n != null:
+		var alvo := n.get_node_or_null(nome)
+		if alvo != null:
+			return alvo
+		n = n.get_parent()
+	return null
+
+
+## Injeta uma referência (o HUD chama com o nó `Rotas` da fase).
+func set_routes(node: Node) -> void:
+	_injetado["Rotas"] = node
+	if node == null:
+		return
+	rotas_node = node
+	_preencher_rotas()
+
+
+func _preencher_rotas() -> void:
+	if rotas_node == null or combo_rotas == null:
+		return
+	check_rotas.set_pressed_no_signal(rotas_node.visible)
+	combo_rotas.clear()
+	combo_rotas.add_item("Todas")
+	for c in rotas_node.get_children():
+		if c is Line2D:
+			combo_rotas.add_item(c.name)
 
 func _ready() -> void:
 	if planejador:
 		check_grade.button_pressed = planejador.mostrar_grade
 		check_rota.button_pressed = planejador.mostrar_rota
 	if rotas_node:
-		check_rotas.button_pressed = rotas_node.visible
-		combo_rotas.clear()
-		combo_rotas.add_item("Todas")
-		for c in rotas_node.get_children():
-			if c is Line2D:
-				combo_rotas.add_item(c.name)
+		_preencher_rotas()
 	if carro:
-		# Em modo trilha, o checkbox reflete modo_trilha + auto_navegacao
-		if "modo_trilha" in carro:
+		# O checkbox reflete o modo REAL do carro (autônomo = ligado).
+		if carro.has_method("modo_atual"):
+			check_auto.button_pressed = int(carro.call("modo_atual")) == 1
+		elif "modo_trilha" in carro:
 			check_auto.button_pressed = carro.modo_trilha or carro.auto_navegacao
 		else:
 			check_auto.button_pressed = carro.auto_navegacao
@@ -50,13 +89,20 @@ func _on_rotas_toggled(v: bool) -> void:
 		for c in rotas_node.get_children():
 			c.visible = v
 
+## Checkbox "Auto Navegação": LIGADO = piloto autônomo (rota A* própria),
+## DESLIGADO = modo trilha (segue as Rotas Line2D). Equivale à tecla T.
 func _on_auto_toggled(v: bool) -> void:
-	if carro:
-		carro.auto_navegacao = v
-		if "modo_trilha" in carro:
-			carro.modo_trilha = v
-			if v and carro.has_method("iniciar_modo_trilha"):
-				carro.iniciar_modo_trilha()
+	if carro == null:
+		return
+	if carro.has_method("definir_modo"):
+		carro.call("definir_modo", 1 if v else 0)
+		return
+	# Carro legado (sem definir_modo): comportamento antigo.
+	carro.auto_navegacao = v
+	if "modo_trilha" in carro:
+		carro.modo_trilha = v
+		if v and carro.has_method("iniciar_modo_trilha"):
+			carro.iniciar_modo_trilha()
 
 func _on_rota_selected(idx: int) -> void:
 	if rotas_node == null:
@@ -79,11 +125,13 @@ func _on_rota_selected(idx: int) -> void:
 				var arr: Array[Vector2] = []
 				for p in pts:
 					arr.append(line.to_global(p))
+				# Focar uma rota individual = seguir ESSA linha no modo trilha.
+				# manter_rota=true impede o replanejamento pendente de
+				# sobrescrever a escolha no frame seguinte (bug antigo do combo).
+				if carro.has_method("definir_modo"):
+					carro.call("definir_modo", 0, true)
 				if "modo_trilha" in carro and carro.modo_trilha:
 					carro.definir_trilha(arr)
 				else:
 					carro.definir_waypoints(arr)
-				carro.auto_navegacao = false
-				if "modo_trilha" in carro:
-					carro.modo_trilha = false
-				check_auto.button_pressed = false
+				check_auto.set_pressed_no_signal(false)
