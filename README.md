@@ -77,7 +77,8 @@ a `PerceptionSnapshot` that brains consume — brains never touch rays.
 
 1. Open the project in **Godot 4.x**.
 2. Play `scenes/Mundo.tscn` (legacy demo) — new levels use `LevelManager`.
-3. Keys **1**–**5** switch levels, **R** restarts the current one.
+3. Keys **1**–**9** switch levels, **R** restarts the current one, **C**
+   cycles the 10 car skins, **H** toggles the debug panel.
 4. The vehicle starts `SEEKING`, follows waypoints, avoids obstacles,
    aligns and parks; the spot turns occupied.
 
@@ -90,8 +91,11 @@ scenes/
 ├── Vaga.tscn           # Legacy spot (Area2D). New: ParkingSpot.
 ├── Obstaculo.tscn      # StaticBody2D obstacle / parked car.
 ├── Seta.tscn           # Legacy flow hint. New: DirectionArrow.
+├── Cone.tscn           # Solid cone (layer 2, circle r=18).
+├── Hud.tscn            # The ONE shared HUD, instanced in Mundo + Fase1..9.
 └── fases/
-    ├── Fase1..5.tscn   # Legacy per-level scenes (being unified via LevelConfig)
+    ├── Fase1..4.tscn   # Hand-made per-level scenes (Fase3 is the reference)
+    └── Fase5..9.tscn   # GENERATED: `tools/gen_level.py tools/specs/FaseN.json`
 
 src/
 ├── vehicle/Vehicle.gd        # English facade (IS-A legacy Carro)
