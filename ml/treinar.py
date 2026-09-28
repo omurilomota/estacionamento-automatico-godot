@@ -17,7 +17,11 @@ import numpy as np
 DADOS = os.path.join(os.path.dirname(__file__), "dados")
 SAIDA = os.path.join(os.path.dirname(__file__), "modelo", "pesos.json")
 
-N_ENTRADAS = 18
+# v2 contract (F1/F4): recorders emit 22 features -> 24-col rows.
+# v1 files in ml/dados/*.csv have 20 cols (18 feats); they are kept for
+# the v1 18-32-16-2 net and SKIPPED here (locked C8: retrain, don't mix).
+N_ENTRADAS = 22
+N_V1_ENTRADAS = 18
 N_OCULTA1 = 32
 N_OCULTA2 = 16
 N_SAIDAS = 2
@@ -34,8 +38,29 @@ def carregar_dados(min_vel=0.0):
     xs, ys = [], []
     total, mantidos = 0, 0
     for caminho in sorted(glob.glob(os.path.join(DADOS, "*.csv"))):
-        m = np.loadtxt(caminho, delimiter=",", ndmin=2)
+        try:
+            m = np.loadtxt(caminho, delimiter=",", ndmin=2)
+        except ValueError:
+            # Killed run (timeout) leaves a truncated last line: reload
+            # with genfromtxt, which pads/drops ragged rows instead of dying.
+            try:
+                m = np.genfromtxt(caminho, delimiter=",")
+            except Exception as e2:
+                print(f"PULADO (ilegivel): {os.path.basename(caminho)} ({e2})")
+                continue
+            if m.size == 0 or np.isnan(m).all():
+                print(f"PULADO (vazio): {os.path.basename(caminho)}")
+                continue
+            m = m[~np.isnan(m).any(axis=1)]
+            if m.size == 0:
+                print(f"PULADO (vazio): {os.path.basename(caminho)}")
+                continue
+            if m.ndim == 1:
+                m = m.reshape(1, -1)
         if m.size == 0:
+            continue
+        if m.shape[1] == N_V1_ENTRADAS + N_SAIDAS:
+            print(f"PULADO (v1, 20 cols): {os.path.basename(caminho)} — rode ml/gravar.gd p/ gerar 24 cols")
             continue
         if m.shape[1] != N_ENTRADAS + N_SAIDAS:
             print(f"AVISO: {caminho} tem {m.shape[1]} colunas, ignorado")

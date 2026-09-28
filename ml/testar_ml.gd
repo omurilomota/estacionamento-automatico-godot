@@ -5,7 +5,14 @@ extends SceneTree
 ## Rodar:  godot --headless --path . --script ml/testar_ml.gd
 
 const FASES := ["Fase3"]
-const LIMITE_SEGUNDOS := 110.0
+## 150 s (era 110). O caminho mudou de comprimento E de forma: a rota agora e
+## suavizada (Chaikin) e deslizada para a faixa da direita, entao a rede dirige
+## mais devagar pela via antes de entrar na vaga. O traço de 2026-09-26 mostra o
+## carro na faixa (x ~ 1020) o tempo todo e entrando em ALINHANDO aos 100 s —
+## ele estaciona, so depois do orcamento. O que este gate garante e que a rede
+## CHEGA e estaciona com fallback da FSM, nao um tempo de corrida FIXO: a
+## politica de seguranca do veiculo e o alvo, nao a velocidade.
+const LIMITE_SEGUNDOS := 150.0
 
 
 func _init() -> void:

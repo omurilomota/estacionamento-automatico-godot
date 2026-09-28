@@ -21,7 +21,7 @@ import numpy as np
 BASE = os.path.dirname(os.path.abspath(__file__))
 MODELO = os.path.join(BASE, "modelo", "pesos.json")
 BC_BACKUP = os.path.join(BASE, "modelo", "pesos_bc.json")
-GODOT = os.environ.get("GODOT_BIN", "/home/murilo/Downloads/GODOT.x86_64")
+GODOT = os.environ.get("GODOT_BIN", "/home/murilo/Downloads/Godot_v4.7.2-stable_linux.x86_64")
 PROJETO = os.path.dirname(BASE)
 
 CHAVES = ["w1", "b1", "w2", "b2", "w3", "b3"]
