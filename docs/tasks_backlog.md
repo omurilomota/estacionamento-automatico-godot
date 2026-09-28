@@ -837,10 +837,113 @@ custaram caro:
   não o tira de lá e ele escorrega a 7 px/s. **Não é inflação da grade**: com
   `inflar` 150 → 200 o A* desvia mais, mas o seed que falha apenas MUDOU de lugar
   (revertido). O conserto certo é a folga da rota enxergar a quina do obstáculo
-  (sonda de FORMA, não de raio) — a próxima mudança, com o `gate_seeds` como
-  juiz.
+  (sonda de FORMA, não de raio). **TENTADO em §1.17.2 e revertido**: a sonda de
+  FORMA com o círculo do raio varrido conserta a Fase3 (4/5 → 5/5) mas quebra
+  a Fase1 (5/5 → 3/5), porque o círculo circunscrito tem ~1,4× a largura da
+  carroceria. O que resolve é sondar com a **caixa orientada**, que vê a quina e
+  é mais justa — sessão dedicada, com o `gate_seeds` como juiz.
 - **A rede neural ainda usa o fallback** na manobra final (129,5 s). O dataset v2
   tem 8 das 22 entradas constantes; o caminho é DAgger.
+
+### 1.17 Release v0.4.0: a fronteira do `cte`, a sonda que eu rever­ti, e o alias que mudou (2026-09-27)
+
+O objetivo era gerar a release. Ela virou duas correções, uma **tentativa
+revertida** e uma armadilha de deploy — todas com gate como juiz.
+
+#### 1.17.1 Fase8: ré indevida por 12 frames (CORRIGIDO, no ar)
+
+`gate_boot` reprovou a Fase8 com `NEG_FRAMES=12` (12 frames de ré em `estado=0`).
+O log apontava a linha: `[RE-BRAIN] cte=80 dist_alvo=381`. A causa era o guarda
+da ré do cérebro em `AutonomousDriver.gd`:
+
+```gdscript
+and not (is_finite(context.cte) and context.cte < 80.0)
+```
+
+Com o carro parado em `cte = 80.0` **exatos** esse teste dá `not(false) = true` e
+a ré dispara no caso que o **próprio comentário da linha** manda não reverter (o
+carro colado na rota, mira deixada para trás). Era uma fronteira **aberta**.
+Corrigido para `cte <= 80.0`.
+
+| | antes | depois |
+|---|---|---|
+| Fase8 (5 boots, spawn aleatório) | 1 **FALHA** em 5 (~20%) | **5/5**, `NEG_FRAMES=0` |
+| seed que falhava | `parked=false` ou ré indevida | 13,1 / 44,2 / 53,2 s, ré zero |
+
+`TrailFollower.gd` **não** tinha o mesmo defeito: usa `cte > 90.0` direto, sem
+negação, então não existe fronteira aberta ali.
+
+#### 1.17.2 A sonda de FORMA: tentada, provada regressão, revertida
+
+A §1.16.2 apontava o conserto certo da Fase3 seed 2 — *"a folga da rota
+enxergar a quina do obstáculo (sonda de FORMA, não de raio)"*. Foi implementado
+(`LaneOffset.wall_probe` com `body_radius`: o círculo do raio varrido, que
+contém a carroceria em qualquer rotação).
+
+**Funcionou na Fase3 e quebrou a Fase1.** Medido:
+
+| | Fase1 | Fase3 | total |
+|---|---|---|---|
+| sonda de RAIO (original) | 5/5 | 4/5 | **9/10** |
+| sonda de FORMA (círculo) | **3/5** | 5/5 | 8/10 |
+| forma + margem corrigida | **3/5** | 5/5 | 8/10 |
+| forma "adaptativa" | 3/5 | 5/5 | 8/10 |
+
+Duas descobertas no caminho:
+
+1. **A conta dupla era minha.** Com a sonda de forma, `fr` já desconta o corpo,
+   e o `apply()` ainda subtraía `keep_clear * 1.5` por cima: a faixa perdia
+   exatamente um raio varrido (189 px na Fase2) e o box caía de 100% → 87%/61%.
+   Corrigido por um parâmetro `body_in_probe` (a margem vira só a margem de
+   borda quando a sonda já contém o corpo).
+2. **A versão "adaptativa" não mudou nada** (3/5 igual). A hipótese de que o
+   problema fosse o `return 0` quando o corpo já encosta estava **errada**: a
+   causa é o **círculo ser ~1,4× mais largo que a carroceria** (é a
+   circunferência da caixa), e nos vãos de 380 px da Fase1 ele trava o
+   deslocamento onde o raio via livre.
+
+Depois de corrigida a conta dupla, a faixa ficou até **melhor** que a linha de
+base (Fase2 `x_mediano` 1000 px, 191 px da guia, **100%** no box), mas a Fase1
+continuava 3/5. **Revertido** (`05231fa`): a sonda de forma é perda líquida de
+1 seed, e trocar um defeito conhecido por uma regressão minha não é um conserto.
+
+**O caminho que resolve de verdade** é sondar com a **caixa orientada** (o
+retângulo real, não a circunferência): vê a quina e é ~1,4× mais justo que o
+círculo. É sessão dedicada, com `gate_seeds` como juiz — não passo de release.
+
+#### 1.17.3 Placar da release v0.4.0 (tudo re-rodado no estado final)
+
+| Gate | Resultado |
+|---|---|
+| `verify_scenes` | **16 cenas, 0 falhas** |
+| `ModulesCheck` | **fails=0** |
+| `gate_boot` 9 fases | **9/9**, `NEG_FRAMES=0` em todas |
+| `gate_boot` Fase8 ×3 | **3/3**, `NEG_FRAMES=0` (o fix do `cte` sobrevive ao revert) |
+| `gate_seeds` 5×9 | **44/45** (só a Fase3 seed 2, o defeito pré-existente) |
+| `gate_reach` 9 níveis | **9/9 `GATE_REACH_OK`**, 83/83 vagas |
+| `gate_lane` Fase2 / Fase3 | 978,4 / 888,3 px, **100%** no box, `swept_violations` 0 |
+| `gate_trail` | **39,2 s**, `dist_centro` 10,8, `neg_frames 0` |
+| `ml/testar_ml.gd` | **129,5 s** (fallback) — o número do site continua exato |
+
+O revert devolviu a Fase1 a 5/5 **e** o box a 100%: os números do site não
+precisaram mudar.
+
+#### 1.17.4 O alias do site mudou e nada no repo dizia
+
+Publicar deu um susto honesto: `estacionamento-automatico.vercel.app` responde
+**404** na raiz. O projeto está no time
+`murilohenriquemota935-1958s-projects`, então o alias de produção é **scoped**:
+**https://site-pi-tan-51.vercel.app** (medido 200 em `/`, `/game/index.html`,
+`/game/index.pck`, `/game/index.wasm`; `index.pck` = 6 648 520 B = o build
+local; **0 headers `location`**, AGENTS #33).
+
+A URL morta sobrevive em **mensagens de commit** (`aaaf037`), então o `grep`
+acha e ela parece autoritativa. Duas armadilhas na mesma verificação: a URL por
+deploy responde `302` para `vercel.com/sso-api` (Deployment Protection, **não**
+site quebrado) e o `vercel ls` lista vários "Ready" — o certo é ler `Aliases`
+no `vercel inspect`, nunca o primeiro URL da lista. Registrado no AGENTS §5.
+
+
 
 ## 2. Blockers for the deliverable
 
