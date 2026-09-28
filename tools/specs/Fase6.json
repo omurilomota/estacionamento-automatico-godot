@@ -1,0 +1,57 @@
+{
+  "id": "Fase6",
+  "mapa": "res://estacionamento/gen_fase6.png",
+  "art": "estacionamento/gen_fase6.png",
+  "import_size": [2400, 1400],
+  "escala_mapa": 1.0,
+  "zoom_camera": 0.707,
+  "car_scale": 1.4,
+  "keep_right_shift": 300.0,
+  "posicao_aleatoria": true,
+  "car_pos": [-1000, 120],
+  "output": "scenes/fases/Fase6.tscn",
+  "sidewalks": [
+    {"name": "CalcadaNorte", "rect": [0, -680, 2400, 40]},
+    {"name": "CalcadaSul", "rect": [0, 680, 2400, 40]},
+    {"name": "CalcadaOeste", "rect": [-1180, 0, 40, 1400]},
+    {"name": "CalcadaLeste", "rect": [1180, 0, 40, 1400]}
+  ],
+  "rows": [
+    {
+      "name": "N",
+      "side": "north",
+      "y_edge": -660,
+      "dir": 1,
+      "depth": 439.08,
+      "from": -1050,
+      "to": 1050,
+      "count": 8,
+      "bay_scale": [2.2227, 3.659],
+      "rot": -1.5708,
+      "parked": [1, 5]
+    },
+    {
+      "name": "S",
+      "side": "south",
+      "y_edge": 660,
+      "dir": -1,
+      "depth": 439.08,
+      "from": -1050,
+      "to": 1050,
+      "count": 8,
+      "bay_scale": [2.2227, 3.659],
+      "rot": 1.5708,
+      "parked": [3]
+    }
+  ],
+  "rotas": [
+    {"name": "RotaLeste", "points": [[-950, 120], [950, 120]]},
+    {"name": "RotaOeste", "points": [[950, -120], [-950, -120]]}
+  ],
+  "setas": [
+    {"pos": [-600, 120], "direcao": 0.0},
+    {"pos": [600, 120], "direcao": 0.0},
+    {"pos": [-600, -120], "direcao": 3.1416},
+    {"pos": [600, -120], "direcao": 3.1416}
+  ]
+}

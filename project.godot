@@ -23,6 +23,14 @@ window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[editor]
+
+import/disable_imports_in_paths=["res://ml/dados"]
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/scene_edit/plugin.cfg")
+
 [physics]
 
 3d/physics_engine="Jolt Physics"

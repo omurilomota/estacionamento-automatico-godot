@@ -1,6 +1,6 @@
-[gd_scene uid="uid://gzcqk1b539ry3" load_steps=3 format=3]
+[gd_scene format=3]
 
-[ext_resource type="Script" path="res://scripts/Vaga.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/Vaga.gd" id="1_l7slv"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_vaga"]
 size = Vector2(90, 120)
@@ -8,27 +8,25 @@ size = Vector2(90, 120)
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_boca"]
 size = Vector2(100, 28)
 
-[node name="Vaga" type="Area2D"]
+[node name="Vaga" type="Area2D" unique_id=280831490]
 collision_layer = 4
-collision_mask = 1
-script = ExtResource("1_script")
+script = ExtResource("1_l7slv")
 
-[node name="Fundo" type="Polygon2D" parent="."]
+[node name="Fundo" type="Polygon2D" parent="." unique_id=1569310064]
 color = Color(0.25, 0.9, 0.35, 0.15)
 polygon = PackedVector2Array(-45, -60, 45, -60, 45, 60, -45, 60)
 
-[node name="Contorno" type="Line2D" parent="."]
+[node name="Contorno" type="Line2D" parent="." unique_id=1260943459]
 points = PackedVector2Array(-45, -60, 45, -60, 45, 60, -45, 60, -45, -60)
 width = 4.0
 default_color = Color(0.25, 0.9, 0.35, 1)
 
-[node name="Area" type="CollisionShape2D" parent="."]
+[node name="Area" type="CollisionShape2D" parent="." unique_id=1630452127]
 shape = SubResource("RectangleShape2D_vaga")
 
-[node name="Boca" type="Area2D" parent="."]
+[node name="Boca" type="Area2D" parent="." unique_id=1770427531]
 collision_layer = 8
-collision_mask = 1
 
-[node name="ColisaoBoca" type="CollisionShape2D" parent="Boca"]
-shape = SubResource("RectangleShape2D_boca")
+[node name="ColisaoBoca" type="CollisionShape2D" parent="Boca" unique_id=465602317]
 position = Vector2(0, 74)
+shape = SubResource("RectangleShape2D_boca")

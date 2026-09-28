@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Estacionamento Autônomo — o carro que estaciona sozinho</title>
+<meta name="description" content="Simulação 2D em Godot 4: um carro lê o mundo com 12 RayCast2D, planeja a rota com A*, respeita mão à direita, cede passagem ao carro que cruza e estaciona de frente — sem trilha desenhada, sem humano." />
+<meta property="og:title" content="Estacionamento Autônomo" />
+<meta property="og:description" content="O carro enxerga, decide e estaciona sozinho. A* + FSM + sensores, com mão à direita medida em pixels." />
+<meta property="og:image" content="img/fase2.png" />
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="topo-faixa" aria-hidden="true"></div>
+
+<nav class="nav" aria-label="Seções">
+  <a class="nav-marca" href="#topo">estacionamento<span>·</span>autônomo</a>
+  <ul>
+    <li><a href="#jogar">Jogar</a></li>
+    <li><a href="#como-funciona">Como a IA funciona</a></li>
+    <li><a href="#numeros">Números</a></li>
+    <li><a href="#galeria">Galeria</a></li>
+    <li><a href="#rede-neural">Rede neural</a></li>
+    <li><a href="#arquitetura">Arquitetura</a></li>
+  </ul>
+  <a class="btn mini nav-cta" href="#jogar">▶ jogar</a>
+</nav>
+
+<header class="hero" id="topo">
+  <div class="hero-inner">
+    <p class="kicker">simulação · godot 4.7 · top-down 2D</p>
+    <h1>Ele <span class="rasurado">segue uma trilha</span> <em>decide sozinho</em>.</h1>
+    <p class="lede">Um carro solto num estacionamento. Sem rota desenhada, sem humano no
+    volante. Só sensores, um mapa mental e as regras de trânsito — incluindo a que
+    todo mundo respeita (e o A* ignorava): <strong>dirija pela direita</strong>.
+    Nove lotes, 83 vagas, um carro que descobre sozinho qual delas é a dele.</p>
+    <div class="cta">
+      <a class="btn primary" href="#jogar">▶ Jogar no navegador</a>
+      <a class="btn ghost" href="#como-funciona">como a IA funciona</a>
+      <a class="btn ghost" href="#rede-neural">brincar com a rede</a>
+    </div>
+    <ul class="chips">
+      <li>44 de 45 spawns aleatórios estacionaram</li>
+      <li>9 níveis, 83 vagas — todas alcançáveis pelo A*</li>
+      <li>faixa da direita: 100% dentro do box que você desenhou</li>
+      <li>0 cone tocado, 0 raspada de carroceria</li>
+      <li>sensores + A* visíveis ao vivo</li>
+    </ul>
+  </div>
+  <figure class="hero-shot">
+    <img src="img/fase2.png" alt="Rota A* real do jogo sobre o estacionamento" />
+    <figcaption>a rota real que o carro planejou — capturada da simulação</figcaption>
+  </figure>
+</header>
+
+<main>
+
+<section id="jogar" class="jogar">
+  <h2>Jogue agora <small>(roda no navegador, sem instalar)</small></h2>
+  <p class="sec-sub">Isto é o build de verdade: o mesmo <code>.pck</code> e o mesmo
+  <code>.wasm</code> que o executável Linux carrega. As teclas funcionam porque o
+  <code>iframe</code> tem foco — clique na tela uma vez.</p>
+  <div class="moldura">
+    <iframe id="game-frame" src="game/index.html" title="Estacionamento Autônomo — jogo"
+      allow="autoplay; fullscreen" loading="lazy"></iframe>
+    <div class="moldura-barra">
+      <span class="teclas">
+        <kbd>1</kbd>–<kbd>9</kbd> fases · <kbd>T</kbd> trilha ⇄ autônomo ·
+        <kbd>R</kbd> reinicia · <kbd>C</kbd> troca de carro (10) · <kbd>H</kbd> painel de debug
+      </span>
+      <a class="btn mini" href="game/index.html" target="_blank" rel="noopener">tela cheia ↗</a>
+    </div>
+  </div>
+  <p class="nota">Se o jogo não carregar, abra em
+  <a href="game/index.html" target="_blank" rel="noopener">game/index.html</a>.
+  Teclado físico recomendado no celular.</p>
+</section>
+
+<section id="como-funciona" class="como">
+  <h2>Como a IA funciona <small>nove peças, e onde ver cada uma na simulação</small></h2>
+  <p class="sec-sub">Nada aqui é mágica: são nove decisões pequenas, cada uma com um
+  lugar exato no código e um jeito de conferir no jogo.</p>
+  <div class="cards">
+
+    <article class="card">
+      <h3><span class="card-n">1</span> 12 <code>RayCast2D</code> → 22 números</h3>
+      <p>Onze raios viram distâncias normalizadas (<code>dist/alcance</code>, 0 = colado,
+      1 = livre); o décimo segundo ray existe na cena mas não entra no vetor. Juntando vêm
+      velocidade, distância e ângulo até a vaga, erro de rumo, largura do corredor, carro
+      que cruza e tempo parado: <code>PerceptionSnapshot</code> com 22 campos.</p>
+      <p class="ver"><strong>onde ver:</strong> o painel de debug do HUD (<kbd>H</kbd>) e
+      <code>snapshot</code> no <code>Vehicle</code>.</p>
+    </article>
+
+    <article class="card">
+      <h3><span class="card-n">2</span> A* que não atravessa parede</h3>
+      <p>O <code>PathPlanner</code> varre o mundo com o espaço físico da engine, <strong>infla
+      cada obstáculo pelo raio da carroceria</strong> e só então marca a grade de ocupação.
+      Por isso a rota nunca nasce dentro de uma parede nem raspando numa guia. O spawn
+      aleatório usa <code>find_free_spawn</code>, que nunca nasce dentro de uma vaga.</p>
+      <p class="ver"><strong>onde ver:</strong> a linha ciano desenhada no chão; a grade
+      aparece ligando <code>mostrar_grade</code> no painel.</p>
+    </article>
+
+    <article class="card">
+      <h3><span class="card-n">3</span> Mão à direita, de verdade</h3>
+      <p>A* minimiza <em>distância</em> — e no Brasil se dirige à direita. A regra
+      antiga (meio da metade direita do corredor) só funcionava num corredor de
+      700–1000 px: no corredor de <strong>1470 px</strong> da Fase 2, que tem seis
+      carros de largura, ela deixava o carro no meio da rua — a <strong>0%</strong> das
+      amostras dentro do box que você desenhou. Agora a faixa encosta na
+      <strong>guia direita</strong>, limitada pelo raio varrido
+      (<code>free_r' ≥ raio_varrido</code> por construção, 0 violações medidas), e o
+      volante ganhou o <strong>termo de erro lateral</strong> do controlador Stanley:
+      sem ele o carro assentava 75–130 px a oeste da faixa, porque o
+      pure-pursuit converge só assintoticamente.</p>
+      <p class="ver"><strong>onde ver:</strong> qualquer fase — todas sobem no piloto
+      autônomo, e só aí o deslocamento existe. Rota autorada à mão (as
+      <code>Rotas</code> <code>Line2D</code> do professor) nunca é deslocada.</p>
+    </article>
+
+    <article class="card">
+      <h3><span class="card-n">4</span> O caminho é desenhado, não improvizado</h3>
+      <p>A rota crua do A* é uma escadaria de células; o <code>RDP</code> a
+      reduzia a <strong>8 vértices com quinas de 90°</strong>, e o carro cortava
+      cada uma. Agora ela passa por <strong>Chaikin</strong> (o suavizador que
+      limpa a quina sem nunca criar laço), é reamostrada a cada 40 px,
+      <strong>deslocada para a faixa da direita</strong> e só então guarantee a
+      folga do raio varrido. São 73 pontos, e as <strong>setas amarelas</strong>
+      no chão mostram o rumo.</p>
+      <p class="ver"><strong>onde ver:</strong> as setas ao longo do caminho, em
+      qualquer fase.</p>
+    </article>
+
+    <article class="card">
+      <h3><span class="card-n">5</span> Cone que barra é cone de verdade</h3>
+      <p>Os cones são <code>StaticBody2D</code> na layer 2, com raio 18: param o carro,
+      acendem os raios <em>e</em> entram na grade do A*. Depois que a mão à direita moveu a
+      linha de direção ~200 px para leste, os cones foram reposicionados para ficar
+      <strong>a pelo menos 385 px da rota medida</strong> em 8 spawns aleatórios.</p>
+      <p class="ver"><strong>onde ver:</strong> as guias brancas na Fase 2 e na Fase 3; o
+      carro desvia, não atravessa.</p>
+    </article>
+
+    <article class="card">
+      <h3><span class="card-n">6</span> Ceder passagem com histerese</h3>
+      <p>O <code>CrosserGate</code> trava a 220 px do carro que cruza e só solta depois de
+      340 px <em>ou</em> 1,0 s parado — um limiar puro deixava o carro passar raspando.
+      A Fase 2 tem um cruzamento autoral leste-oeste em y = 700, então a cedência é
+      observável: o carro para na faixa, o trânsito passa, ele retoma. O carro que
+      cruza <strong>entra por fora da tela, atravessa e sai por fora</strong> — sempre
+      para leste, e nunca dá meia-volta no meio do corredor.</p>
+      <p class="ver"><strong>onde ver:</strong> Fase 2, ~13 s de simulação; custa ~2,1 s
+      do tempo total e é o que a prova usa.</p>
+    </article>
+
+    <article class="card">
+      <h3><span class="card-n">7</span> Um HUD só, em dez cenas</h3>
+      <p>Um único <code>Hud.tscn</code> instanciado no mundo e nas 9 fases — status,
+      sensores e tentativa saem sempre do mesmo lugar, em português. A seção de debug
+      (rota, grade, autodiagnóstico) fica <strong>escondida por padrão</strong>: fora do
+      jeito, ninguém sabe o que está olhando. O mesmo painel tem o <strong>seletor de
+      fase</strong> (1–9) e o de carro, os dois lendo o <code>LevelRegistry</code> e o
+      <code>VehicleCatalog</code> — nenhuma cena conhece a lista.</p>
+      <p class="ver"><strong>onde ver:</strong> <kbd>H</kbd> em qualquer fase.</p>
+    </article>
+
+    <article class="card">
+      <h3><span class="card-n">8</span> Menu de 10 carros (é skin, não física)</h3>
+      <p>Dez carros de <strong>dois estilos de arte</strong> (5 Kenney + 5 do time), com
+      tamanhos de textura e proporções diferentes. O que não pode mudar é a caixa
+      visual: o <code>VehicleCatalog</code> recorta cada textura para o mesmo box de
+      70×121 px antes de aplicar a escala, então a caixa de colisão de 88×74 continua
+      valendo para todos — e o <code>ModulesCheck</code> verifica esse produto nos dez.
+      A escolha vive num <code>static var</code>, que sobrevive à troca de cena — sem
+      autoload, sem arquivo em <code>user://</code>.</p>
+      <p class="ver"><strong>onde ver:</strong> <kbd>C</kbd> no jogo, ou o seletor no HUD.</p>
+    </article>
+
+    <article class="card">
+      <h3><span class="card-n">9</span> Mandou andar e não andou: a escada de fuga</h3>
+      <p>O defeito mais chato não é errar a rota — é o carro <em>ficar</em> encostado na
+      parede a 7 px/s com a rota nova apontando para a mesma parede. O detector é por
+      <strong>deslocamento</strong> (2 s sem andar 26 px), não por colisão: "escorregar
+      de lado" não dispara sensor nenhum. Cada disparo sobe um degrau — replanejar com
+      <strong>inflação maior</strong> (1–2), <strong>ré de emergência</strong> (3) e
+      <strong>desistir daquela vaga</strong> (4) — e só progresso REAL na rota zera a
+      escada. O detalhe que fez a diferença: "avançou o índice do waypoint" não é
+      progresso, porque a rota replanejada nasce na célula do carro e os 4 primeiros
+      pontos ficam a 0,02 px um do outro — a escada zerava sozinha a cada degrau.</p>
+      <p class="ver"><strong>onde ver:</strong> <code>RECUPERANDO</code> no HUD quando
+      acontece; as provas contam os frames de ré (a ré da recuperação é separada da ré
+      indevida).</p>
+    </article>
+
+  </div>
+</section>
+
+<section id="fsm" class="linha-do-tempo">
+  <h2>A máquina de estados, de dentro</h2>
+  <p class="sec-sub">O <code>Carro</code> é um <code>CharacterBody2D</code>; o cérebro
+  transforma percepção em comando (direção + acelerador) e a FSM julga se valeu. Rede
+  neural e FSM escrevem no mesmo lugar — nunca se atropelam.</p>
+  <div class="estagio"><h3>BUSCANDO</h3><p>segue a rota com aceleração e estercamento suaves; <em>pure-pursuit</em> mira um ponto à frente, não o próximo vértice.</p></div>
+  <div class="estagio"><h3>DESVIANDO</h3><p>leque frontal fechou? reduz e desvia até liberar; se o beco não existe, o planner traça outra rota.</p></div>
+  <div class="estagio"><h3>ALINHANDO</h3><p>perto da vaga: aproxima devagar, converge, e só estaciona com &lt;12 px do centro e rumo alinhado.</p></div>
+  <div class="estagio"><h3>ESTACIONADO</h3><p>dentro da vaga, vaga marcada, HUD comemora. O placar dos testes: 44/45 spawns aleatórios.</p></div>
+  <div class="estagio"><h3>RECUPERANDO</h3><p>ré de emergência sem raspar, disparada pela escada de fuga quando o carro não anda: replaneja com inflação maior, dá ré e, no último degrau, <strong>desiste daquela vaga</strong>. É logado (<code>[RECUPERACAO]</code>) e a ré da recuperação não conta como ré indevida.</p></div>
+</section>
+
+<section id="numeros" class="numeros">
+  <h2>Números da bancada <small>medidos em trace headless do jogo de verdade</small></h2>
+  <div class="grid-num">
+    <div><strong>9/9</strong><span>fases passam o boot real: estacionou, 0 cone tocado, 0 ré indevida</span></div>
+    <div><strong>44/45</strong><span>spawns aleatórios estacionaram — 9 níveis × 5 seeds, 0–9 s de desvio</span></div>
+    <div><strong>46,9 s</strong><span>Fase 2 do boot ao ESTACIONADO, já com a cedência de passagem</span></div>
+    <div><strong>49,8 s</strong><span>Fase 3 do boot ao ESTACIONADO · Fase 4 em 13,8 s</span></div>
+    <div><strong>7–13 s</strong><span>Fase 5 a Fase 9: 16, 13, 18, 10 e 7 vagas, todas em 13,2 s ou menos</span></div>
+    <div><strong>83 vagas</strong><span>em 9 níveis — e <strong>100%</strong> delas alcançáveis pelo A*</span></div>
+    <div><strong>978 px · 222 px</strong><span>posição mediana do carro e distância até a guia direita (Fase 2)</span></div>
+    <div><strong>0% → 100%</strong><span>das amostras dentro do box da RuaDireita que você desenhou</span></div>
+    <div><strong>0</strong><span>violação de raio varrido: 126,3 px de folga mínima contra 126,5 exigidos</span></div>
+    <div><strong>286–586 px</strong><span>folga mínima até o trânsito que cruza: sobreposição é impossível</span></div>
+    <div><strong>39,2 s</strong><span>Fase 2 em modo trilha (10,8 px do centro, ré zero)</span></div>
+    <div><strong>129,5 s</strong><span>regressão ML: a rede dirige na faixa sozinha e a FSM fecha a manobra</span></div>
+    <div><strong>2,48e-4</strong><span>erro de validação da rede 22-32-16-2 treinada por imitação</span></div>
+    <div><strong>4e-13</strong><span>pior diferença entre o MLP do navegador e o da engine (tolerância 1e-6)</span></div>
+  </div>
+  <div class="honesto">
+    <h3>O que ainda não funciona, e o que já foi consertado</h3>
+    <p><strong>Fase 3</strong> encrava em 1 dos 5 spawns aleatórios (o resto do
+    placar é 44/45). A causa está medida: o carro passa a
+    <strong>22 px</strong> da quina do obstáculo do corredor, e quem encosta ali é a
+    <strong>quina da carroceria girada</strong> — a folga da faixa é um círculo do raio
+    varrido, e um retângulo de 123×104 px a 140° alcança mais longe que esse círculo.
+    O carro entra no sólido, o motor cinemático não o tira de lá e ele fica a 7 px/s.
+    Hoje ele <em>sabe</em> que está preso: 2 s sem andar 26 px sobem um degrau da
+    escada (replanejar com inflação maior → ré de emergência → desistir daquela
+    vaga). O que falta é a folga da rota enxergar a quina do obstáculo, não só a
+    parede à direita — e não dá para resolver inflando mais a grade: testado, o
+    A* com inflação 200 apenas mudou o seed que falha (e foi revertido).</p>
+    <p><strong>Consertadas nesta rodada, com prova:</strong> <strong>Fase 1</strong>
+    (o carro em escala 1,1 caibia nos vãos de 380 px entre os carros estacionados —
+    o raio varrido caiu de 86 para 63 px e as 3 vagas ficaram alcançáveis),
+    <strong>Fase 4</strong> (baias reposicionadas, 8/8 alcançáveis, estaciona em
+    13,8 s), <strong>Fase 5</strong> (reconstruída: 16 vagas derivadas do tamanho do
+    carro; antes eram 89 vagas sobrepostas numa parede) e <strong>Fase 8</strong>
+    (4/5 → 5/5 só movendo um carro estacionado que ficava na quina do corredor de
+    passagem: conserto de cena, nunca de portão).</p>
+    <p><strong>Estado honesto da rede neural:</strong> a rede dirige na faixa
+    sozinha, mas ainda aciona o <em>fallback</em> da FSM na manobra final (a
+    regressão fecha em 129,5 s, não em 49,8 s). O dataset v2 tem 8 das 22 entradas
+    constantes, então a rede enxerga um sinal quase plano. A próxima rodada é
+    DAgger, com o escudo de segurança corrigindo a rede em vez de imitação pura.</p>
+  </div>
+  <p class="nota">Reprodutível com o que está versionado (nada em <code>/tmp</code>):
+  <code>bash tools/run_gates.sh</code> (boot real de cada fase, em sequência),
+  <code>tools/gate_seeds.gd</code> (matriz 5×9), <code>tools/gate_lane.gd</code>
+  (posição absoluta e folga da faixa), <code>tools/gate_reach.gd</code> (dá para
+  chegar na vaga?), <code>tools/gate_trail.gd</code> e <code>tools/gen_level.py</code>
+  (gera nível a partir de um JSON).</p>
+</section>
+
+<section id="galeria" class="galeria">
+  <h2>Galeria <small>tudo aqui é asset real, nada de mockup</small></h2>
+  <p class="sec-sub">As duas primeiras são capturas do jogo rodando, com rota, vagas e
+  carro nas posições reais exportadas pela engine. As demais são os pisos e os sprites
+  que o jogo carrega — exportados do motor a 1× e reduzidos, nunca redesenhados.</p>
+
+  <div class="gal-grid">
+    <figure class="larga">
+      <img src="img/fase2.png" alt="Fase 2 com a rota A* deslocada para a direita" loading="lazy" />
+      <figcaption><strong>Fase 2</strong> — a rota nasce deslocada para a direita do eixo do
+      corredor e o deslocamento morre antes da vaga, para não arrastar a manobra.</figcaption>
+    </figure>
+    <figure class="larga">
+      <img src="img/fase3.png" alt="Fase 3 com corredor estreito e obstáculo" loading="lazy" />
+      <figcaption><strong>Fase 3</strong> — corredor estreito, obstáculo no meio, vagas 2×
+      maiores: o desvio é recalculado a cada replanejamento.</figcaption>
+    </figure>
+  </div>
+
+  <h3>Os pisos dos estacionamentos</h3>
+  <div class="gal-pisos">
+    <figure><img src="img/piso-parking-lot1.jpg" alt="Piso do estacionamento 1" loading="lazy" /><figcaption>parking_lot.jpg — o original, 6001×5201 (Fase 1)</figcaption></figure>
+    <figure><img src="img/piso-parking-lot2.png" alt="Piso do estacionamento 2" loading="lazy" /><figcaption>parking_lot2.svg — vetor de 5,7 MB, rasterizado a 1×</figcaption></figure>
+    <figure><img src="img/piso-parking-lot3.png" alt="Piso do estacionamento 3" loading="lazy" /><figcaption>parking_lot3.svg — 9 MB de vetor, o pior caso de OOM da história</figcaption></figure>
+    <figure><img src="img/piso-parking-lot4.jpg" alt="Piso do estacionamento 4" loading="lazy" /><figcaption>parking_lot4.jpg</figcaption></figure>
+    <figure><img src="img/piso-parking-lot5.jpg" alt="Piso do estacionamento 5" loading="lazy" /><figcaption>Parkinglot5.jpeg — usado no grafo de ruas</figcaption></figure>
+  </div>
+
+  <h3>Quatro pisos que não existiam</h3>
+  <p class="sec-sub">Fases 6 a 9 não foram desenhadas à mão: <code>tools/render_lot.py</code>
+  recorta a arte que já existia e <code>tools/gen_level.py</code> deriva as vagas do
+  <strong>tamanho real do carro</strong> — pintura e colisão saem do mesmo JSON, então
+  elas não podem discordar. As linhas aparecem na captura da Fase 8/9 abaixo.</p>
+  <div class="gal-pisos">
+    <figure><img src="img/piso-fase6.png" alt="Piso gerado da Fase 6" loading="lazy" /><figcaption>Fase 6 — corredor duplo, 13 vagas</figcaption></figure>
+    <figure><img src="img/piso-fase7.png" alt="Piso gerado da Fase 7" loading="lazy" /><figcaption>Fase 7 — grade de 3 fileiras, 18 vagas</figcaption></figure>
+    <figure><img src="img/piso-fase8.png" alt="Piso gerado da Fase 8" loading="lazy" /><figcaption>Fase 8 — cruzamento perpendicular, 10 vagas</figcaption></figure>
+    <figure><img src="img/piso-fase9.png" alt="Piso gerado da Fase 9" loading="lazy" /><figcaption>Fase 9 — paredes internas escalonadas (labirinto), 7 vagas</figcaption></figure>
+  </div>
+
+  <h3>Os dez carros</h3>
+  <p class="sec-sub">Cinco do <a href="https://kenney.nl" rel="noopener" target="_blank">Kenney</a>
+  (CC0) e cinco do time, em estilos de arte diferentes. Nenhum deles muda a física:
+  a caixa de colisão é a mesma, e o catálogo normaliza a escala antes de aplicar.</p>
+  <div class="gal-carros">
+    <figure><img src="img/cars/car_black.png" alt="Carro preto" loading="lazy" /><figcaption>black</figcaption></figure>
+    <figure><img src="img/cars/car_blue.png" alt="Carro azul" loading="lazy" /><figcaption>blue</figcaption></figure>
+    <figure><img src="img/cars/car_green.png" alt="Carro verde" loading="lazy" /><figcaption>green</figcaption></figure>
+    <figure><img src="img/cars/car_red.png" alt="Carro vermelho" loading="lazy" /><figcaption>red</figcaption></figure>
+    <figure><img src="img/cars/car_yellow.png" alt="Carro amarelo" loading="lazy" /><figcaption>yellow</figcaption></figure>
+  </div>
+  <div class="gal-carros">
+    <figure><img src="img/carro-classic.png" alt="Carro clássico" loading="lazy" /><figcaption>clássico</figcaption></figure>
+    <figure><img src="img/carro-sedan.png" alt="Sedan vermelho" loading="lazy" /><figcaption>sedan</figcaption></figure>
+    <figure><img src="img/carro-suv.png" alt="SUV branco" loading="lazy" /><figcaption>suv</figcaption></figure>
+    <figure><img src="img/carro-muscle.png" alt="Muscle amarelo" loading="lazy" /><figcaption>muscle</figcaption></figure>
+    <figure><img src="img/carro-taxi.png" alt="Táxi" loading="lazy" /><figcaption>táxi</figcaption></figure>
+  </div>
+  <p class="nota">Sprites: <a href="https://kenney.nl" rel="noopener" target="_blank">Kenney</a>
+  (CC0). Pisos originais: arte do time, vetores de megabytes. Toda imagem desta página é
+  re-codificada por <code>tools/export_site_images.py</code>, nunca copiada crua.</p>
+</section>
+
+<section id="rede-neural" class="ml">
+  <h2>Rede neural <small>e um playground para você cutucar os 22 pesos de entrada</small></h2>
+  <div class="duas-colunas">
+    <div>
+      <p>Além da FSM existe uma rede <strong>22-32-16-2</strong> treinada por imitação:
+      o carro grava CSV dirigindo, <code>treinar.py</code> roda numpy puro (sem GPU) e a
+      rede devolve o volante. Erro de validação do modelo atual: <strong>2,48e-4</strong>.</p>
+      <ol class="pipeline">
+        <li><span>1</span> <code>gravar.gd</code> — o professor dirige e grava 24 colunas</li>
+        <li><span>2</span> <code>treinar.py</code> — treino + validação por episódio, sem GPU</li>
+        <li><span>3</span> <code>testar_ml.gd</code> — a rede dirige, a FSM julga a manobra</li>
+        <li><span>4</span> <code>evoluir.py</code> — GA sobre a fitness</li>
+      </ol>
+      <p class="honesto-inline"><strong>Estado honesto:</strong> a rede ainda aciona o
+      <em>fallback</em> da FSM na manobra final (é por isso que a regressão marca
+      129,5 s, não 49,8 s). E o dataset v2 tem <strong>8 das 22 entradas constantes</strong>
+      — os slots de seta nunca tiveram dado e os raios laterais nunca variavam — então a
+      rede enxerga um sinal quase plano. A próxima rodada é <strong>DAgger</strong> com o
+      escudo de segurança corrigindo a rede, não mais imitação pura.</p>
+    </div>
+    <div class="quadro">
+      <h3>Uma matemática, uma implementação</h3>
+      <p>O playground abaixo roda <code>site/js/ml.js</code>, que espelha passo a passo
+      <code>scripts/CerebroML.gd</code> — o mesmo arquivo que a engine carrega. Isso é
+      verificado por um gate numérico: um probe headless roda a rede do jogo num vetor
+      fixo de 22 valores e o node roda <em>este</em> arquivo no mesmo vetor com o mesmo
+      <code>pesos.json</code>.</p>
+      <p class="gate-ok">pior diferença observada: <strong>4e-13</strong> (tolerância 1e-6).
+      Se alguém reordenar os pesos ou trocar float32 por float64, o gate quebra.</p>
+    </div>
+  </div>
+
+  <div id="ml-playground" class="ml-playground">
+    <p class="ml-nota">carregando data/pesos.json…</p>
+  </div>
+</section>
+
+<section id="arquitetura" class="arquitetura">
+  <h2>Arquitetura <small>por que esse código não é um <code>Carro.gd</code> de 3000 linhas</small></h2>
+  <div class="duas-colunas">
+    <div>
+      <p>O arquivo do carro começou com tudo dentro: sensores, FSM, planner, HUD, ML e
+      gravação. Funcionava, mas qualquer feature nova exigia um merge de 2600 linhas
+      com ponteiros por nome de nó. O trabalho de 2026-09-25/27 foi <strong>extrair
+      serviços e contratos</strong> sem reescrever a física — e transformar nível em
+      dado (spec → cena + piso):</p>
+      <ul class="balaio">
+        <li><strong> Fachada + núcleo</strong> — cada peça nova vive em <code>src/</code>
+        e estende o script legado, em vez de renomear símbolo em lugar</li>
+        <li><strong> Dependência de abstração</strong> — sinais e contratos, nunca
+        <code>get_node("../../Plano")</code>; quem decide quem estaciona onde é o
+        <code>LevelManager</code>, não o <code>Area2D</code> da vaga</li>
+        <li><strong> Planner como serviço puro</strong> —
+        <code>build_grid()</code>/<code>find_route()</code>/<code>find_free_spawn()</code>;
+        ele não sobe na árvore atrás de nada</li>
+        <li><strong> Um HUD</strong>, um registro de níveis, um catálogo de carros</li>
+      <li><strong> Nível como dado</strong> — <code>tools/specs/*.json</code> gera cena
+      e piso, e um gate (<code>gate_reach</code>) diz se o carro CHEGA em cada vaga
+      antes de a fase entrar no jogo</li>
+      </ul>
+    </div>
+    <div class="quadro">
+      <h3>Mapa do código</h3>
+      <pre class="mapa"><code>src/core/        VehicleState, LevelRegistry
+src/vehicle/     Vehicle, DriverBrain, PerceptionSnapshot,
+                 NeuralBrain, CrosserGate, VehicleCatalog
+src/navigation/  PathPlanner, RouteHints, LaneOffset
+src/parking/     ParkingSpot
+src/world/       LevelManager, LevelConfig, Obstacle
+src/ui/          Hud, DebugRoutePanel
+src/flow/        DirectionArrow
+scripts/         legado em PT-BR (Carro, Vaga, Planejador)
+tools/           gates (boot, seeds, faixa, alcance) + gerador de níveis
+ml/              gravar → treinar → testar → evoluir</code></pre>
+      <p class="nota">Camadas de colisão: 1 carro · 2 obstáculos · 4 vaga · 8 boca da
+      vaga e setas.</p>
+    </div>
+  </div>
+</section>
+
+<section id="roadmap" class="roadmap">
+  <h2>Onde isso está indo</h2>
+  <div class="fase-card done"><h3>✅ Mão à direita</h3><p>rota pós-processada, medida em px, com piso de segurança.</p></div>
+  <div class="fase-card done"><h3>✅ Trânsito</h3><p>carro que cruza o corredor e o cérebro que cede passagem com histerese.</p></div>
+  <div class="fase-card done"><h3>✅ Cones sólidos</h3><p>barreiram o carro, entram nos raios e na grade do A*.</p></div>
+  <div class="fase-card done"><h3>✅ 9 estacionamentos gerados</h3><p>nível novo é um JSON: a pintura e a colisão saem do mesmo lugar, e um gate diz se cada vaga é alcançável antes de entrar no jogo.</p></div>
+  <div class="fase-card done"><h3>✅ Mandou andar e não andou</h3><p>detector por deslocamento + escada de fuga: replanejar, dar ré, desistir da vaga.</p></div>
+  <div class="fase-card now"><h3>🔨 Folga que enxerga a quina</h3><p>último encravamento (1 seed em 45): a quina da carroceria girada encosta na quina do obstáculo porque a folga é um círculo.</p></div>
+  <div class="fase-card"><h3>⏳ DAgger</h3><p>a rede aprende com as correções do escudo de segurança.</p></div>
+  <div class="fase-card"><h3>⏳ Baliza (ré)</h3><p>entrar de ré nas vagas paralelas.</p></div>
+</section>
+
+<section id="time" class="time">
+  <h2>Quem faz</h2>
+  <div class="pessoa"><strong>Gian</strong><span>design &amp; arte — piso, vagas, obstáculos, UI</span></div>
+  <div class="pessoa"><strong>Murilo</strong><span>código — cérebro: sensores, FSM, navegação, ML</span></div>
+  <div class="pessoa"><strong>Matheus</strong><span>código — mundo: cenário, HUD, waypoints</span></div>
+</section>
+
+</main>
+
+<footer>
+  <p>Projeto acadêmico — Godot 4.7, GL Compatibility · código e documentação em inglês,
+  este site em português de propósito.</p>
+  <p><a href="https://github.com/" rel="noopener">repo</a> ·
+  <a href="game/index.html">jogo standalone</a> ·
+  o backlog com todas as medições está no repo (<code>docs/tasks_backlog.md</code>) ·
+  sprites <a href="https://kenney.nl" rel="noopener" target="_blank">Kenney</a> (CC0) ·
+  feito para a banca, jogável por qualquer um.</p>
+</footer>
+<script src="js/ml.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

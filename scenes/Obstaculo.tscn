@@ -1,5 +1,6 @@
-[gd_scene uid="uid://evpwyoxgfdkjf" load_steps=4 format=3]
+[gd_scene uid="uid://evpwyoxgfdkjf" load_steps=5 format=3]
 
+[ext_resource type="Texture2D" path="res://assets/kenney/cars/car_blue_5.png" id="2_kenney"]
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_carro"]
 size = Vector2(88, 190)
 
@@ -10,6 +11,11 @@ collision_mask = 0
 [node name="Desenho" type="Polygon2D" parent="."]
 color = Color(0.35, 0.35, 0.38, 1)
 polygon = PackedVector2Array(-44, -95, 44, -95, 44, 95, -44, 95)
+
+[node name="Sprite" type="Sprite2D" parent="."]
+visible = false
+scale = Vector2(2.5, 2.5)
+texture = ExtResource("2_kenney")
 
 [node name="Contorno" type="Line2D" parent="."]
 points = PackedVector2Array(-44, -95, 44, -95, 44, 95, -44, 95, -44, -95)

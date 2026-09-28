@@ -1,14 +1,14 @@
-[gd_scene uid="uid://s4xzvsgwf5omg" load_steps=13 format=3]
+[gd_scene format=3]
 
-[ext_resource type="Script" path="res://scripts/Mundo.gd" id="1_mundo"]
-[ext_resource type="PackedScene" path="res://scenes/Carro.tscn" id="2_carro"]
-[ext_resource type="PackedScene" path="res://scenes/Vaga.tscn" id="3_vaga"]
-[ext_resource type="Texture2D" path="res://assets/sprites/sedan_vermelho.png" id="4_sedan"]
-[ext_resource type="Texture2D" path="res://assets/sprites/suv_branco.png" id="5_suv"]
-[ext_resource type="Texture2D" path="res://assets/sprites/musclecar_amarelo.png" id="6_musclecar"]
-[ext_resource type="Texture2D" path="res://assets/sprites/taxi.png" id="7_taxi"]
-[ext_resource type="Script" path="res://scripts/Minimapa.gd" id="8_minimapa"]
-[ext_resource type="Script" path="res://scripts/Planejador.gd" id="9_planejador"]
+[ext_resource type="Script" path="res://scripts/Mundo.gd" id="1_qedyn"]
+[ext_resource type="Texture2D" path="res://assets/sprites/sedan_vermelho.png" id="2_0bkcn"]
+[ext_resource type="Texture2D" path="res://assets/sprites/suv_branco.png" id="3_n7bv4"]
+[ext_resource type="Texture2D" path="res://assets/sprites/musclecar_amarelo.png" id="4_htima"]
+[ext_resource type="Texture2D" path="res://assets/sprites/taxi.png" id="5_b7ub3"]
+[ext_resource type="PackedScene" path="res://scenes/Carro.tscn" id="6_udgtd"]
+[ext_resource type="PackedScene" path="res://scenes/Vaga.tscn" id="7_13cr1"]
+[ext_resource type="Script" path="res://scripts/Planejador.gd" id="8_065o1"]
+[ext_resource type="PackedScene" path="res://scenes/Hud.tscn" id="9_qf0fe"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_parede_h"]
 size = Vector2(1360, 40)
@@ -19,211 +19,166 @@ size = Vector2(40, 1360)
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_obstaculo"]
 size = Vector2(62, 108)
 
-[node name="Mundo" type="Node2D"]
-script = ExtResource("1_mundo")
+[node name="Mundo" type="Node2D" unique_id=1298203663]
+script = ExtResource("1_qedyn")
 
-[node name="Chao" type="Polygon2D" parent="."]
+[node name="Chao" type="Polygon2D" parent="." unique_id=1363026047]
 position = Vector2(640, 360)
 color = Color(0.1, 0.1, 0.1, 1)
 polygon = PackedVector2Array(-640, -360, 640, -360, 640, 360, -640, 360)
 
-[node name="Faixas" type="Node2D" parent="."]
+[node name="Faixas" type="Node2D" parent="." unique_id=1620287607]
 visible = false
 
-[node name="Paredes" type="StaticBody2D" parent="."]
+[node name="Paredes" type="StaticBody2D" parent="." unique_id=733136854]
 collision_layer = 2
 
-[node name="VisualTopo" type="Polygon2D" parent="Paredes"]
+[node name="VisualTopo" type="Polygon2D" parent="Paredes" unique_id=44625695]
 position = Vector2(640, -20)
 color = Color(0.27, 0.27, 0.27, 1)
 polygon = PackedVector2Array(-680, -20, 680, -20, 680, 20, -680, 20)
 
-[node name="VisualBase" type="Polygon2D" parent="Paredes"]
+[node name="VisualBase" type="Polygon2D" parent="Paredes" unique_id=1334946998]
 position = Vector2(640, 740)
 color = Color(0.27, 0.27, 0.27, 1)
 polygon = PackedVector2Array(-680, -20, 680, -20, 680, 20, -680, 20)
 
-[node name="VisualEsquerda" type="Polygon2D" parent="Paredes"]
+[node name="VisualEsquerda" type="Polygon2D" parent="Paredes" unique_id=1011183093]
 position = Vector2(-20, 360)
 color = Color(0.27, 0.27, 0.27, 1)
 polygon = PackedVector2Array(-20, -680, 20, -680, 20, 680, -20, 680)
 
-[node name="VisualDireita" type="Polygon2D" parent="Paredes"]
+[node name="VisualDireita" type="Polygon2D" parent="Paredes" unique_id=1693834943]
 position = Vector2(1300, 360)
 color = Color(0.27, 0.27, 0.27, 1)
 polygon = PackedVector2Array(-20, -680, 20, -680, 20, 680, -20, 680)
 
-[node name="ColisaoTopo" type="CollisionShape2D" parent="Paredes"]
+[node name="ColisaoTopo" type="CollisionShape2D" parent="Paredes" unique_id=766636612]
 position = Vector2(640, -20)
 shape = SubResource("RectangleShape2D_parede_h")
 
-[node name="ColisaoBase" type="CollisionShape2D" parent="Paredes"]
+[node name="ColisaoBase" type="CollisionShape2D" parent="Paredes" unique_id=1743409231]
 position = Vector2(640, 740)
 shape = SubResource("RectangleShape2D_parede_h")
 
-[node name="ColisaoEsquerda" type="CollisionShape2D" parent="Paredes"]
+[node name="ColisaoEsquerda" type="CollisionShape2D" parent="Paredes" unique_id=825473910]
 position = Vector2(-20, 360)
 shape = SubResource("RectangleShape2D_parede_v")
 
-[node name="ColisaoDireita" type="CollisionShape2D" parent="Paredes"]
+[node name="ColisaoDireita" type="CollisionShape2D" parent="Paredes" unique_id=2060867158]
 position = Vector2(1300, 360)
 shape = SubResource("RectangleShape2D_parede_v")
 
-[node name="Obstaculos" type="Node2D" parent="."]
+[node name="Obstaculos" type="Node2D" parent="." unique_id=29924284]
 
-[node name="SedanVermelho" type="StaticBody2D" parent="Obstaculos"]
+[node name="SedanVermelho" type="StaticBody2D" parent="Obstaculos" unique_id=446146083]
 position = Vector2(560, 470)
 rotation = 0.6
 collision_layer = 2
 
-[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/SedanVermelho"]
-texture = ExtResource("4_sedan")
+[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/SedanVermelho" unique_id=855273881]
 scale = Vector2(1.6, 1.6)
+texture = ExtResource("2_0bkcn")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/SedanVermelho"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/SedanVermelho" unique_id=1381728733]
 shape = SubResource("RectangleShape2D_obstaculo")
 
-[node name="SuvBranco" type="StaticBody2D" parent="Obstaculos"]
+[node name="SuvBranco" type="StaticBody2D" parent="Obstaculos" unique_id=346958150]
 position = Vector2(920, 520)
 rotation = 1.5708
 collision_layer = 2
 
-[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/SuvBranco"]
-texture = ExtResource("5_suv")
+[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/SuvBranco" unique_id=552266192]
 scale = Vector2(1.6, 1.6)
+texture = ExtResource("3_n7bv4")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/SuvBranco"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/SuvBranco" unique_id=2104497089]
 shape = SubResource("RectangleShape2D_obstaculo")
 
-[node name="MusclecarAmarelo" type="StaticBody2D" parent="Obstaculos"]
+[node name="MusclecarAmarelo" type="StaticBody2D" parent="Obstaculos" unique_id=1390302157]
 position = Vector2(430, 230)
 rotation = 0.3
 collision_layer = 2
 
-[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/MusclecarAmarelo"]
-texture = ExtResource("6_musclecar")
+[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/MusclecarAmarelo" unique_id=1351780559]
 scale = Vector2(1.6, 1.6)
+texture = ExtResource("4_htima")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/MusclecarAmarelo"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/MusclecarAmarelo" unique_id=416587951]
 shape = SubResource("RectangleShape2D_obstaculo")
 
-[node name="Taxi" type="StaticBody2D" parent="Obstaculos"]
+[node name="Taxi" type="StaticBody2D" parent="Obstaculos" unique_id=512971109]
 position = Vector2(820, 430)
-rotation = 0.0
 collision_layer = 2
 
-[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/Taxi"]
-texture = ExtResource("7_taxi")
+[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/Taxi" unique_id=1080739166]
 scale = Vector2(1.6, 1.6)
+texture = ExtResource("5_b7ub3")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/Taxi"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/Taxi" unique_id=1998437940]
 shape = SubResource("RectangleShape2D_obstaculo")
 
-[node name="SedanVermelho2" type="StaticBody2D" parent="Obstaculos"]
+[node name="SedanVermelho2" type="StaticBody2D" parent="Obstaculos" unique_id=159858005]
 position = Vector2(820, 630)
-rotation = 0.0
 collision_layer = 2
 
-[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/SedanVermelho2"]
-texture = ExtResource("4_sedan")
+[node name="Sprite2D" type="Sprite2D" parent="Obstaculos/SedanVermelho2" unique_id=567713789]
 scale = Vector2(1.6, 1.6)
+texture = ExtResource("2_0bkcn")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/SedanVermelho2"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Obstaculos/SedanVermelho2" unique_id=52996630]
 shape = SubResource("RectangleShape2D_obstaculo")
 
-[node name="Waypoints" type="Node2D" parent="."]
+[node name="Waypoints" type="Node2D" parent="." unique_id=684677798]
 
-[node name="W1" type="Marker2D" parent="Waypoints"]
+[node name="W1" type="Marker2D" parent="Waypoints" unique_id=695359304]
 position = Vector2(400, 500)
 
-[node name="W2" type="Marker2D" parent="Waypoints"]
+[node name="W2" type="Marker2D" parent="Waypoints" unique_id=1978040399]
 position = Vector2(620, 400)
 
-[node name="W3" type="Marker2D" parent="Waypoints"]
+[node name="W3" type="Marker2D" parent="Waypoints" unique_id=322682789]
 position = Vector2(700, 510)
 
-[node name="W4" type="Marker2D" parent="Waypoints"]
+[node name="W4" type="Marker2D" parent="Waypoints" unique_id=462198709]
 position = Vector2(860, 520)
 
-[node name="W5" type="Marker2D" parent="Waypoints"]
+[node name="W5" type="Marker2D" parent="Waypoints" unique_id=1681336922]
 position = Vector2(1170, 640)
 
-[node name="W6" type="Marker2D" parent="Waypoints"]
+[node name="W6" type="Marker2D" parent="Waypoints" unique_id=296789984]
 position = Vector2(1100, 545)
 
-[node name="Carro" parent="." instance=ExtResource("2_carro")]
+[node name="Carro" parent="." unique_id=460938809 instance=ExtResource("6_udgtd")]
 position = Vector2(140, 560)
+scale = Vector2(1, 1)
 
-[node name="Vagas" type="Node2D" parent="."]
+auto_navegacao = true
+modo_trilha = false
+brain_enabled = true
+keep_right_shift = 400
+[node name="Vagas" type="Node2D" parent="." unique_id=1895434843]
 
-[node name="Vaga1" parent="Vagas" instance=ExtResource("3_vaga")]
+scale = Vector2(3.484, 1.309)
+[node name="Vaga1" parent="Vagas" unique_id=1686573514 instance=ExtResource("7_13cr1")]
 position = Vector2(1100, 160)
+scale = Vector2(1.745, 2.613)
 rotacao_alvo = -1.5708
 
-[node name="Vaga2" parent="Vagas" instance=ExtResource("3_vaga")]
+[node name="Vaga2" parent="Vagas" unique_id=1952218596 instance=ExtResource("7_13cr1")]
 position = Vector2(1100, 350)
+scale = Vector2(1.745, 2.613)
 rotacao_alvo = -1.5708
 
-[node name="Vaga3" parent="Vagas" instance=ExtResource("3_vaga")]
+[node name="Vaga3" parent="Vagas" unique_id=1944939247 instance=ExtResource("7_13cr1")]
 position = Vector2(1100, 540)
+scale = Vector2(1.745, 2.613)
 rotacao_alvo = -1.5708
 
-[node name="Planejador" type="Node2D" parent="."]
-script = ExtResource("9_planejador")
+[node name="Planejador" type="Node2D" parent="." unique_id=1552868699]
+script = ExtResource("8_065o1")
 origem = Vector2(0, 0)
-tamanho = Vector2(1280, 720)
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=848603449]
 
-[node name="Control" type="Control" parent="UI"]
-anchor_right = 1.0
-anchor_bottom = 1.0
-
-[node name="Fundo" type="ColorRect" parent="UI/Control"]
-offset_left = 12.0
-offset_top = 12.0
-offset_right = 460.0
-offset_bottom = 140.0
-color = Color(0, 0, 0, 0.55)
-
-[node name="StatusLabel" type="Label" parent="UI/Control"]
-offset_left = 28.0
-offset_top = 22.0
-offset_right = 620.0
-offset_bottom = 58.0
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 26
-text = "STATUS: Buscando vaga"
-
-[node name="SensorLabel" type="Label" parent="UI/Control"]
-offset_left = 28.0
-offset_top = 64.0
-offset_right = 620.0
-offset_bottom = 96.0
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 20
-text = "SENSOR: Livre"
-
-[node name="TentativaLabel" type="Label" parent="UI/Control"]
-offset_left = 28.0
-offset_top = 100.0
-offset_right = 620.0
-offset_bottom = 132.0
-theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
-theme_override_font_sizes/font_size = 20
-text = "TENTATIVA: 0"
-
-[node name="Minimapa" type="Control" parent="UI/Control"]
-anchor_left = 1.0
-anchor_top = 1.0
-offset_left = -272.0
-offset_top = -192.0
-offset_right = -12.0
-offset_bottom = -12.0
-script = ExtResource("8_minimapa")
-carro_path = NodePath("../../../Carro")
-vagas_path = NodePath("../../../Vagas")
-waypoints_path = NodePath("../../../Waypoints")
-obstaculos_path = NodePath("../../../Obstaculos")
-mundo_centro = Vector2(640, 360)
-mundo_tamanho = Vector2(1280, 720)
+[node name="Control" parent="UI" unique_id=501950686 instance=ExtResource("9_qf0fe")]

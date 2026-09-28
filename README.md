@@ -1,91 +1,121 @@
-# Estacionamento Autônomo
+# Autonomous Parking — Godot 4.x top-down 2D simulation.
+# The car drives with RayCast2D sensors + a finite-state mission brain
+# (SEEKING / AVOIDING / ALIGNING / PARKED / RECOVERING), planned over an
+# A* occupancy grid (`src/navigation/`).
 
-Simulação 2D (vista de cima) de estacionamento autônomo em Godot 4.x. O carro percorre a pista usando sensores Raycast2D e uma máquina de estados, decidindo sozinho quando buscar a vaga, desviar de obstáculos e alinhar-se para estacionar.
+## Objective
 
-## Objetivo
+Build an autonomous agent: the car is NOT on a fixed script — it reads
+the world in real time (sensors) and decides when to seek a spot, avoid
+a hazard and align to park. Path planning runs on A* (`PathPlanner`).
 
-Criar um robô autônomo onde o carro não segue um script fixo: ele coleta dados do ambiente em tempo real usando sensores Raycast2D e toma decisões baseadas em uma máquina de estados finitos (FSM), aplicando planejamento de trajetória via navegação A*.
+## Team & ownership
 
-## Integrantes e Responsabilidades
+| Member  | Role               | Owns |
+| ------- | ------------------ | ---- |
+| Gian    | Designer / Artist  | Top-down sprites, spot (free/occupied), obstacles, walls, UI. Transparent PNGs, one scale (e.g. 64x64 or 128x128). |
+| Murilo  | Programmer (Brain) | Vehicle scene + `src/vehicle/*`: locomotion (CharacterBody2D), sensor array, state machine (SEEKING, AVOIDING, ALIGNING, PARKED, RECOVERING), navigation. |
+| Matheus | Programmer (World) | Level scene, `ParkingSpot` logic, HUD, waypoints. |
 
-| Integrante | Papel | Responsabilidades |
-| --- | --- | --- |
-| Gian | Designer / Artista | Sprites top-down do carro, vaga (livre/ocupada), obstáculos, paredes e UI. Exportar PNG com fundo transparente e manter a mesma escala (ex: 64x64 ou 128x128). |
-| Murilo | Programador (Cérebro do Carro) | Lógica do carro em `Carro.tscn` e `scripts/Carro.gd`: física (CharacterBody2D), sensores Raycast2D, máquina de estados (BUSCANDO, DESVIANDO, ALINHANDO, ESTACIONADO, RECUPERANDO) e navegação. |
-| Matheus | Programador (Mundo e Interação) | Cenário em `Mundo.tscn`, lógica das vagas em `Vaga.tscn` e `scripts/Vaga.gd`, interface (UI) e waypoints. |
+## Architecture (decoupled, English)
 
-## Arquitetura
+```
+src/
+  core/        VehicleState, LevelRegistry   # enums, level list, labels
+  vehicle/     Vehicle, Locomotion*, SensorArray*, brains/*
+  navigation/  PathPlanner, OccupancyGrid*, RouteHints
+  parking/     ParkingSpot
+  world/       LevelManager, LevelConfig, Obstacle
+  ui/          Hud, Minimap, DebugRoutePanel
+  flow/        DirectionArrow
+scripts/       LEGACY PT-BR shims (Carro, Vaga, Mundo, FaseBase, ...)
+```
 
-### Máquina de Estados (FSM)
+Rules for new code:
 
-O carro passa por estados que refletem o comportamento de direção humano:
+- Depend on ABSTRACTIONS (signals / groups / Resources), never on
+  sibling paths (`get_node("../Rotas")`) or `has_method` bridges.
+- `Vehicle` exposes `state_changed / attempt_changed /
+  spot_change_requested` + `set_waypoints() / start_navigation() /
+  start_trail_mode()` — use these, not `estado_mudou / definir_waypoints`.
+- `ParkingSpot` only exposes `is_occupied / mark_occupied()` + signals;
+  it never calls vehicle methods.
+- `PathPlanner` is a pure service: `build_grid() / find_route() /
+  find_free_spawn()` with injected `RouteHints` — no `get_parent()` lookups.
+- `LevelManager` (one class) replaces the `Mundo.gd + FaseBase.gd`
+  duplication; per-level data lives in `LevelConfig` resources.
 
-| Estado | Descrição |
-| --- | --- |
-| `BUSCANDO` | Segue um waypoint alvo com aceleração e direção suaves. |
-| `DESVIANDO` | Raycast da frente detectou obstáculo: vira o volante até o sensor limpar. |
-| `ALINHANDO` | Perto da vaga: para de andar e gira sobre o próprio eixo até a rotação correta. |
-| `ESTACIONADO` | Dentro da vaga e alinhado: carro parado, vaga marcada como ocupada. |
-| `RECUPERANDO` | Sai da vaga (ré com estercamento) sem bater nas laterais. |
+### Mission states
 
-### Sensores
+| State        | Meaning |
+| ------------ | ------- |
+| `SEEKING`    | Follow the route target with smooth accel/steering. |
+| `AVOIDING`   | Front sensor blocked: steer until the fan is clear. |
+| `ALIGNING`   | Near the spot: stop driving, yaw to the target heading. |
+| `PARKED`     | Inside the spot and aligned: stopped, spot occupied. |
+| `RECOVERING` | Back out (reverse + steering) without scraping sides. |
 
-Três nós `RayCast2D` no carro:
-- **Frente** — freia ao detectar obstáculo à frente.
-- **Esquerda / Direita** — freia ao detectar obstáculo na lateral, influenciando a tomada de curva.
+### Sensors
 
-### Navegação
+Twelve `RayCast2D` nodes on the vehicle (front fan, sides, rear,
+long-range lookahead, floor-arrow reader). `SensorArray` folds them into
+a `PerceptionSnapshot` that brains consume — brains never touch rays.
 
-- **Planejador (A*)** — `scripts/Planejador.gd` calcula a rota entre waypoints.
-- **ControleRotas** — `scripts/ControleRotas.gd` gerencia a lista de waypoints por fase.
-- **Waypoints** — nós `Marker2D` posicionados no cenário por Matheus.
+### Navigation
 
-### Física do Carro
+- **PathPlanner (A\*)** — route between waypoints over the occupancy grid.
+- **RouteHints** — injected lane/arrow preferences (no scene crawling).
+- **Waypoints** — `Marker2D` nodes placed in the level.
 
-- Modelo de bicicleta: o estercamento vira aos poucos e o carro só curva quando em movimento.
-- Entre-eixos escalável conforme o tamanho visual do sprite.
-- Rampa suave de aceleração (0–160 em reta, cai em curva).
+### Locomotion
 
-## Como Executar
+- Bicycle model: steering ramps, cornering only while moving.
+- Wheelbase scales with the visual sprite size.
+- Smooth accel ramp (0–160 on straights, lower in corners).
 
-1. Abra o projeto no **Godot 4.x**.
-2. Execute a cena `scenes/Mundo.tscn`.
-3. Selecione a fase com as teclas **1** a **5** (cada fase tem waypoints e vagas distintas).
-4. Pressione **R** para reiniciar a fase a qualquer momento.
-5. O carro inicia em `BUSCANDO`, segue os waypoints, desvia de obstáculos com os sensores, alinha-se e estaciona na vaga.
+## How to run
 
-## Estrutura de Cenas
+1. Open the project in **Godot 4.x**.
+2. Play `scenes/Mundo.tscn` (legacy demo) — new levels use `LevelManager`.
+3. Keys **1**–**9** switch levels, **R** restarts the current one, **C**
+   cycles the 10 car skins, **H** toggles the debug panel.
+4. The vehicle starts `SEEKING`, follows waypoints, avoids obstacles,
+   aligns and parks; the spot turns occupied.
+
+## Scene layout
 
 ```
 scenes/
-├── Mundo.tscn          # Cena principal: chão, paredes, UI, instância do carro.
-├── Carro.tscn          # CharacterBody2D com sprites, RayCast2D e script Carro.gd.
-├── Vaga.tscn           # Area2D com lógica de ocupação (sprite livre/ocupada).
-├── Obstaculo.tscn      # StaticBody2D representando obstáculos ou carros parados.
-├── Seta.tscn           # Indicador visual (opcional) para direção/alvo.
+├── Mundo.tscn          # Legacy demo: floor, walls, UI, vehicle instance.
+├── Carro.tscn          # Legacy vehicle (CharacterBody2D + rays). New: Vehicle.
+├── Vaga.tscn           # Legacy spot (Area2D). New: ParkingSpot.
+├── Obstaculo.tscn      # StaticBody2D obstacle / parked car.
+├── Seta.tscn           # Legacy flow hint. New: DirectionArrow.
+├── Cone.tscn           # Solid cone (layer 2, circle r=18).
+├── Hud.tscn            # The ONE shared HUD, instanced in Mundo + Fase1..9.
 └── fases/
-    ├── Fase1.tscn
-    ├── Fase2.tscn
-    ├── Fase3.tscn      # Waypoints manuais (auto_navegacao = false).
-    ├── Fase4.tscn
-    └── Fase5.tscn
+    ├── Fase1..4.tscn   # Hand-made per-level scenes (Fase3 is the reference)
+    └── Fase5..9.tscn   # GENERATED: `tools/gen_level.py tools/specs/FaseN.json`
 
-scripts/
-├── Carro.gd            # Lógica do carro, FSM e física.
-├── Vaga.gd             # Estado da vaga e comunicação com o carro.
-├── FaseBase.gd         # Base de fase: câmera, paredes, waypoints, UI.
-├── Planejador.gd       # Navegação A*.
-├── ControleRotas.gd    # Gerenciamento de waypoints.
-├── Mundo.gd            # Orquestração da cena principal.
-└── Minimapa.gd         # Renderização do minimapa (opcional).
+src/
+├── vehicle/Vehicle.gd        # English facade (IS-A legacy Carro)
+├── parking/ParkingSpot.gd    # English facade (IS-A legacy Vaga)
+├── navigation/PathPlanner.gd # English facade (IS-A legacy Planejador)
+├── world/LevelManager.gd     # Unified Mundo+FaseBase orchestrator
+└── ...
 ```
 
-## Regras de Ouro da Equipe
+## Team ground rules
 
-- Não editem a mesma cena (`.tscn`) ao mesmo tempo — o Godot não lida bem com isso.
-- Sempre façam `pull` antes de codar e `push` ao concluir uma funcionalidade.
-- Assets entregues na pasta `res://assets/sprites/` com nomes claros.
+- Don't edit the same `.tscn` at the same time — Godot merges scenes badly.
+- `pull` before coding, `push` when a feature lands.
+- Assets go to `res://assets/sprites/` with clear names.
 
-## 🗣️ Discurso para o Professor
+## 🗣️ Pitch
 
-> "Prof, nosso projeto simula um robô autônomo. O carro não segue um script fixo; ele usa sensores (Raycast2D) para coletar dados do ambiente em tempo real. O código é baseado em uma Máquina de Estados: ele decide sozinho quando buscar a vaga, quando desviar de um risco e quando alinhar para estacionar. É a aplicação prática de tomada de decisão autônoma que vimos em aula."
+> "Our project simulates an autonomous robot. The car is not on a fixed
+> script; it uses sensors (RayCast2D) to read the world in real time.
+> The code is a state machine: it decides when to seek the spot, when to
+> avoid danger and when to align to park — applied autonomous
+> decision-making."
+
