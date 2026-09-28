@@ -24,6 +24,21 @@
 - Questions may be in PT-BR (the user speaks PT-BR); code and docs stay
   English (§1).
 
+## 0.1. Commits (one sentence, maximum)
+
+- **The commit message is AT MOST ONE SENTENCE.** One line, one sentence,
+  no body. If the change needs more explanation, that text goes in the
+  docs (`docs/tasks_*.md`) or in the PR/issue — not in the log.
+- **Commits are small.** One logical change each. Do not mix a bug fix,
+  a refactor and a doc in the same commit.
+- Do NOT write multi-paragraph commit bodies, do NOT paste gate logs or
+  diffs into the message, and do NOT narrate the whole investigation.
+- Subject in the existing house style, e.g.
+  `:bug: fix(vehicle): close the cte boundary that made the brain reverse`
+  (type(scope): short imperative summary).
+- If a commit cannot be summarised in one sentence, the change is
+  probably more than one commit.
+
 ## 1. Language rule
 
 - **New code: English only** — file names, `class_name`, signals, methods,
