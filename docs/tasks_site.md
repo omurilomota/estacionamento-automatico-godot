@@ -70,6 +70,30 @@
 | 2026-09-26 | stale metrics corrected | — | 27,6 s → 32,5 s, "110 px" → 177/151 px, ML wording, key bar (`G` for the grid does not exist) |
 | 2026-09-26 | publish | `vercel --prod --yes` from `site/` | live URL; `/data/pesos.json` and `/game/index.wasm` verified 200 |
 
+## Run log (3 — 2026-09-27, release v0.4.0)
+
+| date | task | command | result |
+|---|---|---|---|
+| 2026-09-27 | data re-synced before deploy | `bash tools/export_site_data.sh` | `EXPORT_DATA_OK`, contract `[22,32,16,2]`; `site/data` byte-identical to `ml/modelo`, so no commit |
+| 2026-09-27 | web export | `bash tools/export_web.sh` | `EXPORT_OK site/game`, `index.pck` 6 648 520 B |
+| 2026-09-27 | publish | `vercel --prod --yes` from `site/` | **https://site-pi-tan-51.vercel.app** |
+| 2026-09-27 | live check | `curl` on the alias | `/` `200`, `/game/index.{html,pck}` `200`, `index.pck` = 6 648 520 B = the local build, **0 `location` headers** (AGENTS #33) |
+
+**The alias moved and nothing in the repo said so.** `estacionamento-automatico.vercel.app`
+answers **404**: the project belongs to the team
+`murilohenriquemota935-1958s-projects`, so the production alias is scoped to
+`site-pi-tan-51.vercel.app`. The dead URL survives in commit messages
+(`aaaf037`), so `grep` finds it and it looks authoritative. Two other traps in
+the same check:
+
+- the per-deployment URL (`estacionamento-automatico-<hash>.vercel.app`) answers
+  `302` to `vercel.com/sso-api` — that is Deployment Protection, **not** a
+  broken site. Test the alias;
+- `vercel ls` prints several "Ready" deployments and the newest one is not
+  necessarily the one behind the alias; read `Aliases` from `vercel inspect`,
+  never the first URL of the list.
+
+
 Honest review (round 2):
 
 - What passed: the cross-language gate is real — the node probe loads the

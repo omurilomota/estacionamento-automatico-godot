@@ -275,6 +275,16 @@ so `estado == 3` still means PARKED during migration.
   (8000 is already taken on this machine), kill by PID afterwards. Publish with
   `vercel --prod --yes` **from inside `site/`** — the project link lives in
   `site/.vercel/project.json` and `vercel.json` must exist ONLY there.
+- **LIVE URL: `https://site-pi-tan-51.vercel.app`** (measured 200 on
+  2026-09-27 for `/`, `/game/index.html`, `/game/index.pck`, `/game/index.wasm`).
+  The project is under the team `murilohenriquemota935-1958s-projects`, so the
+  alias is SCOPED. **`estacionamento-automatico.vercel.app` is NOT an alias of
+  this project and returns 404** — it is in old commit messages, so grep finds
+  it and looks current. After every `vercel --prod`, read the real alias with
+  `vercel inspect <deploy-url> | grep -A2 Aliases`; do not trust a URL written
+  down months ago. The per-deployment URLs answer `302` to
+  `vercel.com/sso-api` (Deployment Protection), which is expected and is NOT a
+  broken site — test the alias, never the per-deployment URL.
 
 
 ## 6. Gotchas learned the hard way
