@@ -24,6 +24,12 @@ size = Vector2(70, 1500)
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaLeste"]
 size = Vector2(70, 1500)
 
+[sub_resource type="RectangleShape2D" id="Rect_MuroChicaneOeste"]
+size = Vector2(60, 300)
+
+[sub_resource type="RectangleShape2D" id="Rect_MuroChicaneLeste"]
+size = Vector2(60, 300)
+
 [node name="Fase8" type="Node2D"]
 script = ExtResource("1_base")
 mapa = ExtResource("2_map")
@@ -65,6 +71,20 @@ collision_layer = 2
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/CalcadaLeste"]
 shape = SubResource("Rect_CalcadaLeste")
 
+[node name="MuroChicaneOeste" type="StaticBody2D" parent="Obstaculos"]
+position = Vector2(-200, -40)
+collision_layer = 2
+
+[node name="Colisao" type="CollisionShape2D" parent="Obstaculos/MuroChicaneOeste"]
+shape = SubResource("Rect_MuroChicaneOeste")
+
+[node name="MuroChicaneLeste" type="StaticBody2D" parent="Obstaculos"]
+position = Vector2(200, 40)
+collision_layer = 2
+
+[node name="Colisao" type="CollisionShape2D" parent="Obstaculos/MuroChicaneLeste"]
+shape = SubResource("Rect_MuroChicaneLeste")
+
 [node name="Estacionado_N1_1" parent="Obstaculos" instance=ExtResource("3_obs")]
 position = Vector2(-1100.0, -460.5)
 scale = Vector2(2.2732, 2.3109)
@@ -93,16 +113,10 @@ scale = Vector2(2.2732, 2.3109)
 rotation = 3.141592653589793
 
 [node name="Cone1" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(-700, -715)
+position = Vector2(-310, 0)
 
 [node name="Cone2" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(700, -715)
-
-[node name="Cone3" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(-700, 715)
-
-[node name="Cone4" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(700, 715)
+position = Vector2(310, 0)
 
 [node name="Setas" type="Node2D" parent="."]
 
@@ -207,9 +221,9 @@ script = ExtResource("10_crosser")
 point_a = Vector2(0, -640)
 point_b = Vector2(0, 640)
 cruise_speed = 160.0
-pause_time = 0.85
+pause_time = 1.5
 spawn_distance = 700.0
-trigger_distancia = 900.0
+trigger_distancia = 550.0
 
 [node name="Sprite" type="Sprite2D" parent="CarroDeTransito"]
 rotation = 1.5708

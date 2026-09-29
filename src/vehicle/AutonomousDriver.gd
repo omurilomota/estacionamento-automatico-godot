@@ -120,7 +120,7 @@ static func solve_route(vehicle_pos: Vector2, vehicle_rot: float,
 ## 180px chord does not cut corners into walls (the classic pure-pursuit
 ## failure that made the A* pilot grind against obstacles).
 func _lookahead_for(context: DriveContext) -> float:
-	var base := 180.0
+	var base := clampf(70.0 + absf(context.speed) * 0.35, 70.0, 150.0)
 	if is_finite(context.front_distance):
 		base = minf(base, maxf(context.front_distance * 0.9, 60.0))
 	# v2 (F3 fix): the front rays do NOT see a corner the body is about to
@@ -128,13 +128,14 @@ func _lookahead_for(context: DriveContext) -> float:
 	# is not enough. Cap the chord to the next sharp bend as well.
 	base = minf(base, turn_cap(context.route, context.waypoint_index,
 		context.vehicle_position))
-	return clampf(base, 60.0, 180.0)
+	return clampf(base, 60.0, 150.0)
 
 
-## Sharper than this (~26 deg) between two route legs counts as a bend the
+## Sharper than this (~18 deg) between two route legs counts as a bend the
 ## pursuit chord must not cut across.
-const TURN_THRESHOLD := 0.45
+const TURN_THRESHOLD := 0.32
 const TURN_CAP_MIN := 60.0
+const LOOKAHEAD_MAX := 150.0
 
 
 ## Lookahead cap for the next sharp bend: aim AT the corner instead of
@@ -142,10 +143,10 @@ const TURN_CAP_MIN := 60.0
 ## 180px chord leaves the aisle leg (y = 1240.5, heading 0) to chase
 ## wp5 (heading -0.675) and drives the hull corner into the sidewalk.
 ## Bends already behind the vehicle are skipped (the hull cannot cut
-## what it has passed). Straight routes keep the full 180px chord.
+## what it has passed). Straight routes keep the full LOOKAHEAD_MAX chord.
 static func turn_cap(route: Array, idx: int, vehicle_pos: Vector2) -> float:
 	if route.size() < 3:
-		return 180.0
+		return LOOKAHEAD_MAX
 	var start := clampi(idx, 0, route.size() - 3)
 	for k in range(start, route.size() - 2):
 		var b: Vector2 = route[k + 1]
@@ -159,7 +160,7 @@ static func turn_cap(route: Array, idx: int, vehicle_pos: Vector2) -> float:
 			continue
 		if absf(angle_difference(leg_in.angle(), leg_out.angle())) > TURN_THRESHOLD:
 			return maxf(vehicle_pos.distance_to(b), TURN_CAP_MIN)
-	return 180.0
+	return LOOKAHEAD_MAX
 
 
 ## Yaw penalty for spot choice (mirrors Carro._penalidade_rumo): 0 when

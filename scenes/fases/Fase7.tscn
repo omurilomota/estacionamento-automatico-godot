@@ -8,6 +8,9 @@
 [ext_resource type="Script" path="res://scripts/Planejador.gd" id="6_plan"]
 [ext_resource type="PackedScene" path="res://scenes/Hud.tscn" id="7_hud"]
 [ext_resource type="PackedScene" path="res://scenes/Seta.tscn" id="8_seta"]
+[ext_resource type="PackedScene" path="res://scenes/Cone.tscn" id="9_cone"]
+[ext_resource type="Script" path="res://src/world/Crosser.gd" id="10_crosser"]
+[ext_resource type="Texture2D" path="res://assets/kenney/cars/car_green_5.png" id="11_tex0"]
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaNorte"]
 size = Vector2(2200, 40)
@@ -66,8 +69,31 @@ shape = SubResource("Rect_CalcadaLeste")
 position = Vector2(-900.0, -740.5)
 scale = Vector2(2.2732, 2.3109)
 
-[node name="Estacionado_M_4" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(0.0, 0.0)
+[node name="Estacionado_N_4" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(0.0, -740.5)
+scale = Vector2(2.2732, 2.3109)
+
+[node name="Estacionado_N_6" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(600.0, -740.5)
+scale = Vector2(2.2732, 2.3109)
+
+[node name="Estacionado_M_2" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-600.0, 0.0)
+scale = Vector2(2.2732, 2.3109)
+rotation = 3.141592653589793
+
+[node name="Estacionado_M_5" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(300.0, 0.0)
+scale = Vector2(2.2732, 2.3109)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_3" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-300.0, 740.5)
+scale = Vector2(2.2732, 2.3109)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_5" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(300.0, 740.5)
 scale = Vector2(2.2732, 2.3109)
 rotation = 3.141592653589793
 
@@ -75,6 +101,12 @@ rotation = 3.141592653589793
 position = Vector2(900.0, 740.5)
 scale = Vector2(2.2732, 2.3109)
 rotation = 3.141592653589793
+
+[node name="Cone1" parent="Obstaculos" instance=ExtResource("9_cone")]
+position = Vector2(-1030, -370)
+
+[node name="Cone2" parent="Obstaculos" instance=ExtResource("9_cone")]
+position = Vector2(-1030, 370)
 
 [node name="Setas" type="Node2D" parent="."]
 
@@ -122,18 +154,8 @@ position = Vector2(-300.0, -740.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
-[node name="N_4" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(0.0, -740.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = -1.5708
-
 [node name="N_5" parent="Vagas" instance=ExtResource("4_vaga")]
 position = Vector2(300.0, -740.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = -1.5708
-
-[node name="N_6" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(600.0, -740.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
@@ -147,18 +169,13 @@ position = Vector2(-900.0, 0.0)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
-[node name="M_2" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-600.0, 0.0)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
 [node name="M_3" parent="Vagas" instance=ExtResource("4_vaga")]
 position = Vector2(-300.0, 0.0)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
-[node name="M_5" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(300.0, 0.0)
+[node name="M_4" parent="Vagas" instance=ExtResource("4_vaga")]
+position = Vector2(0.0, 0.0)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
@@ -182,18 +199,8 @@ position = Vector2(-600.0, 740.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
-[node name="S_3" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-300.0, 740.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
 [node name="S_4" parent="Vagas" instance=ExtResource("4_vaga")]
 position = Vector2(0.0, 740.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
-[node name="S_5" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(300.0, 740.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
@@ -212,6 +219,21 @@ keep_right_shift = 300.0
 
 [node name="Planejador" type="Node2D" parent="."]
 script = ExtResource("6_plan")
+
+[node name="CarroDeTransito" type="Node2D" parent="."]
+position = Vector2(1020, -960)
+script = ExtResource("10_crosser")
+point_a = Vector2(1020, -960)
+point_b = Vector2(1020, 960)
+cruise_speed = 160.0
+pause_time = 0.85
+spawn_distance = 700.0
+trigger_distancia = 900.0
+
+[node name="Sprite" type="Sprite2D" parent="CarroDeTransito"]
+rotation = 1.5708
+scale = Vector2(1.62, 1.62)
+texture = ExtResource("11_tex0")
 
 [node name="Camera" type="Camera2D" parent="."]
 

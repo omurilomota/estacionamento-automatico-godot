@@ -14,7 +14,10 @@
     {"name": "CalcadaNorte", "rect": [0, -680, 2400, 40]},
     {"name": "CalcadaSul", "rect": [0, 680, 2400, 40]},
     {"name": "CalcadaOeste", "rect": [-1180, 0, 40, 1400]},
-    {"name": "CalcadaLeste", "rect": [1180, 0, 40, 1400]}
+    {"name": "CalcadaLeste", "rect": [1180, 0, 40, 1400]},
+    {"name": "EspigaoOeste", "rect": [-600, -110, 60, 221]},
+    {"name": "EspigaoMeio", "rect": [0, 110, 60, 221]},
+    {"name": "EspigaoLeste", "rect": [600, -110, 60, 221]}
   ],
   "rows": [
     {
@@ -28,7 +31,7 @@
       "count": 8,
       "bay_scale": [2.2227, 3.659],
       "rot": -1.5708,
-      "parked": [1, 5]
+      "parked": [4, 6]
     },
     {
       "name": "S",
@@ -41,7 +44,24 @@
       "count": 8,
       "bay_scale": [2.2227, 3.659],
       "rot": 1.5708,
-      "parked": [3]
+      "parked": [5]
+    }
+  ],
+  "cones": [
+    {"pos": [-1050, 0]},
+    {"pos": [1050, 0]}
+  ],
+  "crossers": [
+    {
+      "name": "CarroDeTransito",
+      "pos": [300, -640],
+      "point_a": [300, -640],
+      "point_b": [300, 640],
+      "cruise_speed": 160.0,
+      "pause_time": 0.85,
+      "spawn_distance": 700.0,
+      "trigger_distancia": 900.0,
+      "texture": "res://assets/kenney/cars/car_red_5.png"
     }
   ],
   "rotas": [

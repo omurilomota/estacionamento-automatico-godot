@@ -14,7 +14,9 @@
     {"name": "CalcadaNorte", "rect": [0, -715, 2600, 70]},
     {"name": "CalcadaSul", "rect": [0, 715, 2600, 70]},
     {"name": "CalcadaOeste", "rect": [-1265, 0, 70, 1500]},
-    {"name": "CalcadaLeste", "rect": [1265, 0, 70, 1500]}
+    {"name": "CalcadaLeste", "rect": [1265, 0, 70, 1500]},
+    {"name": "MuroChicaneOeste", "rect": [-200, -40, 60, 300]},
+    {"name": "MuroChicaneLeste", "rect": [200, 40, 60, 300]}
   ],
   "rows": [
     {
@@ -71,10 +73,8 @@
     }
   ],
   "cones": [
-    {"pos": [-700, -715]},
-    {"pos": [700, -715]},
-    {"pos": [-700, 715]},
-    {"pos": [700, 715]}
+    {"pos": [-310, 0]},
+    {"pos": [310, 0]}
   ],
   "crossers": [
     {
@@ -83,9 +83,9 @@
       "point_a": [0, -640],
       "point_b": [0, 640],
       "cruise_speed": 160.0,
-      "pause_time": 0.85,
+      "pause_time": 1.5,
       "spawn_distance": 700.0,
-      "trigger_distancia": 900.0,
+      "trigger_distancia": 550.0,
       "texture": "res://assets/kenney/cars/car_yellow_5.png"
     }
   ],

@@ -15,8 +15,8 @@
     {"name": "CalcadaSul", "rect": [0, 865, 2200, 70]},
     {"name": "CalcadaOeste", "rect": [-1065, 0, 70, 1800]},
     {"name": "CalcadaLeste", "rect": [1065, 0, 70, 1800]},
-    {"name": "MuroOeste", "rect": [-450, 120, 60, 380]},
-    {"name": "MuroLeste", "rect": [450, -120, 60, 380]}
+    {"name": "MuroOeste", "rect": [-450, 175, 60, 270]},
+    {"name": "MuroLeste", "rect": [450, -175, 60, 270]}
   ],
   "rows": [
     {
@@ -30,7 +30,7 @@
       "count": 5,
       "bay_scale": [2.2227, 3.659],
       "rot": -1.5708,
-      "parked": [0, 4]
+      "parked": [0, 2, 4]
     },
     {
       "name": "S",
@@ -43,14 +43,25 @@
       "count": 5,
       "bay_scale": [2.2227, 3.659],
       "rot": 1.5708,
-      "parked": [2]
+      "parked": [1, 3]
     }
   ],
   "cones": [
-    {"pos": [-950, -865]},
-    {"pos": [950, -865]},
-    {"pos": [-950, 865]},
-    {"pos": [950, 865]}
+    {"pos": [-340, 60]},
+    {"pos": [340, -60]}
+  ],
+  "crossers": [
+    {
+      "name": "CarroDeTransito",
+      "pos": [700, -830],
+      "point_a": [700, -830],
+      "point_b": [700, 830],
+      "cruise_speed": 160.0,
+      "pause_time": 3.5,
+      "spawn_distance": 700.0,
+      "trigger_distancia": 550.0,
+      "texture": "res://assets/kenney/cars/car_blue_5.png"
+    }
   ],
   "rotas": [
     {"name": "RotaNorte", "points": [[-700, -250], [700, -250]]},

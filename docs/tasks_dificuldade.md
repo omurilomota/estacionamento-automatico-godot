@@ -162,3 +162,34 @@ bash tools/run_gates.sh --fases=Fase5,Fase6,Fase7,Fase8,Fase9 --secs=75
 
 Toda linha da tabela da §2 sai desses dois comandos. Nada aqui é opinião sem
 lastro — exceto a tese da §1, que é avaliação da equipe.
+
+## 8. Endurecimento das Fases 6–9 + correção da direção (29/09/2026)
+
+Dois pedidos do usuário, atacados juntos: o carro cortava curvas com o volante
+saturado, e as Fases 6–9 eram retas idênticas sem pressão.
+
+**Direção (medido com `/tmp/steer_trace.gd`):** na Fase6 o volante saturava em
+10/29 amostras (~34%) com CTE de até 37 px. Causa: `FsmProfiles.route_speed`
+só freava com curvatura > 0,05, mas as rotas reais têm 0,005–0,04 — nunca
+freava — e o lookahead fixo de 180 px cortava a quina. Correção em
+`src/vehicle/FsmProfiles.gd` (limiar 0,05 → 0,005, mesma fórmula) e
+`src/vehicle/AutonomousDriver.gd` (lookahead adaptativo 70+0,35·v máx 150 px,
+`TURN_THRESHOLD` 0,45 → 0,32). Depois: saturação 6/39, vel nas curvas 45–70
+em vez de 117–128, `gate_lane` Fase2 OK (0 violações), trail OK, boots Fase2
+(67 s) e Fase3 (41 s) OK com `NEG_FRAMES=0`. Custo: ~2× mais lento nas fases
+longas; regressão ML Fase3 estaciona em 108 s com fallback (passa, era 78 s).
+
+**Fases 6–9 (só `tools/specs/*.json`, nunca `.tscn` na mão):** cada uma ganhou
+uma identidade — F6 chicane de 3 esporões + 2 cones + 1 crosser; F7 corredores
+gêmeos de 300 px + 2 cones + 1 crosser no fim + pesado `parked`; F8 chicane
+dupla + 2 cones + 1 crosser; F9 muros desencontrados + 2 cones + 1 crosser +
+5/10 vagas ocupadas. Três armadilhas medidas no caminho: (1) cone na linha
+central sela o corredor (sombra de ~334 px > 442 px do corredor) — cones de
+slalom no meio do corredor são impossíveis com `inflar=110`, viraram chicane
+de parede; (2) F6 2/11 alcançável por ilhas longas + `parked` flanqueando os
+esporões — resolvido encurtando e tirando os flanqueadores (10/13); (3) crosser
+cruzando o funil lento = armadilha de cedência (52 s parado EM CIMA da faixa,
+o gate precisa de 540 px para soltar) — a faixa do crosser foi para água
+aberta (F9 x=225 → x=700). Resultado: `gate_reach` 10/13 + 13/13 + 10/10 +
+5/5, `gate_boot` verde nas 4, `gate_seeds` 5/5 nas 4 (F6 6–16 s, F7 7–53 s,
+F8 9–70 s, F9 7–38 s).

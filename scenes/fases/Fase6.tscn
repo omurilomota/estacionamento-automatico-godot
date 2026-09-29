@@ -8,6 +8,9 @@
 [ext_resource type="Script" path="res://scripts/Planejador.gd" id="6_plan"]
 [ext_resource type="PackedScene" path="res://scenes/Hud.tscn" id="7_hud"]
 [ext_resource type="PackedScene" path="res://scenes/Seta.tscn" id="8_seta"]
+[ext_resource type="PackedScene" path="res://scenes/Cone.tscn" id="9_cone"]
+[ext_resource type="Script" path="res://src/world/Crosser.gd" id="10_crosser"]
+[ext_resource type="Texture2D" path="res://assets/kenney/cars/car_red_5.png" id="11_tex0"]
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaNorte"]
 size = Vector2(2400, 40)
@@ -20,6 +23,15 @@ size = Vector2(40, 1400)
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaLeste"]
 size = Vector2(40, 1400)
+
+[sub_resource type="RectangleShape2D" id="Rect_EspigaoOeste"]
+size = Vector2(60, 221)
+
+[sub_resource type="RectangleShape2D" id="Rect_EspigaoMeio"]
+size = Vector2(60, 221)
+
+[sub_resource type="RectangleShape2D" id="Rect_EspigaoLeste"]
+size = Vector2(60, 221)
 
 [node name="Fase6" type="Node2D"]
 script = ExtResource("1_base")
@@ -62,18 +74,45 @@ collision_layer = 2
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/CalcadaLeste"]
 shape = SubResource("Rect_CalcadaLeste")
 
-[node name="Estacionado_N_2" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(-750.0, -440.5)
+[node name="EspigaoOeste" type="StaticBody2D" parent="Obstaculos"]
+position = Vector2(-600, -110)
+collision_layer = 2
+
+[node name="Colisao" type="CollisionShape2D" parent="Obstaculos/EspigaoOeste"]
+shape = SubResource("Rect_EspigaoOeste")
+
+[node name="EspigaoMeio" type="StaticBody2D" parent="Obstaculos"]
+position = Vector2(0, 110)
+collision_layer = 2
+
+[node name="Colisao" type="CollisionShape2D" parent="Obstaculos/EspigaoMeio"]
+shape = SubResource("Rect_EspigaoMeio")
+
+[node name="EspigaoLeste" type="StaticBody2D" parent="Obstaculos"]
+position = Vector2(600, -110)
+collision_layer = 2
+
+[node name="Colisao" type="CollisionShape2D" parent="Obstaculos/EspigaoLeste"]
+shape = SubResource("Rect_EspigaoLeste")
+
+[node name="Estacionado_N_5" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(150.0, -440.5)
 scale = Vector2(2.2732, 2.3109)
 
-[node name="Estacionado_N_6" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(450.0, -440.5)
+[node name="Estacionado_N_7" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(750.0, -440.5)
 scale = Vector2(2.2732, 2.3109)
 
-[node name="Estacionado_S_4" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(-150.0, 440.5)
+[node name="Estacionado_S_6" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(450.0, 440.5)
 scale = Vector2(2.2732, 2.3109)
 rotation = 3.141592653589793
+
+[node name="Cone1" parent="Obstaculos" instance=ExtResource("9_cone")]
+position = Vector2(-1050, 0)
+
+[node name="Cone2" parent="Obstaculos" instance=ExtResource("9_cone")]
+position = Vector2(1050, 0)
 
 [node name="Setas" type="Node2D" parent="."]
 
@@ -116,6 +155,11 @@ position = Vector2(-1050.0, -440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
+[node name="N_2" parent="Vagas" instance=ExtResource("4_vaga")]
+position = Vector2(-750.0, -440.5)
+scale = Vector2(2.2227, 3.659)
+rotacao_alvo = -1.5708
+
 [node name="N_3" parent="Vagas" instance=ExtResource("4_vaga")]
 position = Vector2(-450.0, -440.5)
 scale = Vector2(2.2227, 3.659)
@@ -126,13 +170,8 @@ position = Vector2(-150.0, -440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
-[node name="N_5" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(150.0, -440.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = -1.5708
-
-[node name="N_7" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(750.0, -440.5)
+[node name="N_6" parent="Vagas" instance=ExtResource("4_vaga")]
+position = Vector2(450.0, -440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
@@ -156,13 +195,13 @@ position = Vector2(-450.0, 440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
-[node name="S_5" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(150.0, 440.5)
+[node name="S_4" parent="Vagas" instance=ExtResource("4_vaga")]
+position = Vector2(-150.0, 440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
-[node name="S_6" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(450.0, 440.5)
+[node name="S_5" parent="Vagas" instance=ExtResource("4_vaga")]
+position = Vector2(150.0, 440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
@@ -186,6 +225,21 @@ keep_right_shift = 300.0
 
 [node name="Planejador" type="Node2D" parent="."]
 script = ExtResource("6_plan")
+
+[node name="CarroDeTransito" type="Node2D" parent="."]
+position = Vector2(300, -640)
+script = ExtResource("10_crosser")
+point_a = Vector2(300, -640)
+point_b = Vector2(300, 640)
+cruise_speed = 160.0
+pause_time = 0.85
+spawn_distance = 700.0
+trigger_distancia = 900.0
+
+[node name="Sprite" type="Sprite2D" parent="CarroDeTransito"]
+rotation = 1.5708
+scale = Vector2(1.62, 1.62)
+texture = ExtResource("11_tex0")
 
 [node name="Camera" type="Camera2D" parent="."]
 

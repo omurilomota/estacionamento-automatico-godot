@@ -28,7 +28,7 @@
       "count": 7,
       "bay_scale": [2.2227, 3.659],
       "rot": -1.5708,
-      "parked": [0]
+      "parked": [0, 3, 5]
     },
     {
       "name": "M",
@@ -41,7 +41,7 @@
       "count": 7,
       "bay_scale": [2.2227, 3.659],
       "rot": 1.5708,
-      "parked": [3]
+      "parked": [1, 4]
     },
     {
       "name": "S",
@@ -54,7 +54,24 @@
       "count": 7,
       "bay_scale": [2.2227, 3.659],
       "rot": 1.5708,
-      "parked": [6]
+      "parked": [2, 4, 6]
+    }
+  ],
+  "cones": [
+    {"pos": [-1030, -370]},
+    {"pos": [-1030, 370]}
+  ],
+  "crossers": [
+    {
+      "name": "CarroDeTransito",
+      "pos": [1020, -960],
+      "point_a": [1020, -960],
+      "point_b": [1020, 960],
+      "cruise_speed": 160.0,
+      "pause_time": 0.85,
+      "spawn_distance": 700.0,
+      "trigger_distancia": 900.0,
+      "texture": "res://assets/kenney/cars/car_green_5.png"
     }
   ],
   "rotas": [

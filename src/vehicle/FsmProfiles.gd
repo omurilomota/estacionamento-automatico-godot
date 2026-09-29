@@ -36,7 +36,7 @@ static func reverse_speed(rear_distance: float, max_speed: float,
 static func route_speed(base_speed: float, curvature: float, angular_error: float,
 		max_steer: float, max_speed: float) -> float:
 	var curve_limit := max_speed
-	if curvature > 0.05:
+	if curvature > 0.005:
 		curve_limit = maxf(sqrt(30.0 / curvature), 45.0)
 	var speed := minf(base_speed, curve_limit * 1.1)
 	var factor := 1.0 - minf(absf(angular_error) / maxf(max_steer, 0.001), 1.0) * 0.4
@@ -51,7 +51,7 @@ static func trail_speed(base_speed: float, curvature: float, angular_error: floa
 		distance_to_spot: float, max_steer: float, max_speed: float,
 		trail_max: float, scale: float) -> float:
 	var curve_limit := max_speed
-	if curvature > 0.05:
+	if curvature > 0.005:
 		curve_limit = maxf(sqrt(30.0 / curvature), 45.0)
 	var speed := minf(base_speed, curve_limit * 1.1)
 	speed = minf(speed, trail_max * maxf(scale, 1.0))
