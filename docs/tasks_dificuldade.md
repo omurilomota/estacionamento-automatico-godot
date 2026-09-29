@@ -73,14 +73,14 @@ carro (88 × 74 na escala 1.0; 123 × 104 na 1.4):
 Ou seja: a Fase 5 é apertada **e** a que tem menos obstáculos. O aperto nunca
 chega a ser testado contra nada.
 
-**e) O defeito que governa a entrada na vaga continua aberto.** `AGENTS #17`:
-`Vaga._atualizar_boca_pos()` escreve `colisao_boca.position = -dir * 74.0` no
-espaço **local**, mas o nó da vaga tem escala. A boca — o trigger que anuncia
-"entre na vaga" — acaba a `74 × escala` do centro: ~140 px na Fase 5 e ~165 px
-nas Fases 6 a 9, em vez dos 74 pretendidos. **Enquanto isso não for corrigido,
-nenhuma das fases geradas estaciona no momento certo**, porque o carro só "vê"
-a vaga no instante errado. É a primeira coisa a atacar se a intenção é que a
-Fase 5 teste percepção de verdade.
+**e) O defeito que governa a entrada na vaga — CORRIGIDO em 28/09/2026
+(issue #6, AGENTS #17).** `Vaga._atualizar_boca_pos()` escrevia
+`colisao_boca.position = -dir * 74.0` no espaço **local**, mas o nó da
+vaga tem escala. A boca — o trigger que anuncia "entre na vaga" — acabava
+a `74 × escala` do centro: ~140 px na Fase 5 e ~165 px nas Fases 6 a 9.
+A boca agora é ancorada na ENTRADA em espaço global (meia-profundidade
+escalada + 29 px, espessura 28 px no mundo); gates 9/9 boot, 9/10 seeds
+(referência) e trail inalterado — ver docs/tasks_backlog.md §1.18.
 
 
 ## 4. Por que as Fases 6 a 9 são simples
@@ -126,8 +126,8 @@ em 6,8 s.
 
 Ordem de ataque sugerida — do que destrava mais pelo menos esforço:
 
-1. **Corrigir o AGENTS #17** (posição da boca em espaço global). Sem isso a
-   detecção de vaga chega atrasada em todas as fases geradas.
+1. ~~**Corrigir o AGENTS #17** (posição da boca em espaço global).~~ **FEITO
+   em 28/09/2026** (issue #6) — ver docs/tasks_backlog.md §1.18.
 2. **Ocupar vagas** no spec (`parked: [...]`), pelo menos metade das 16. Só isso
    cria a decisão que hoje não existe.
 3. **Cones na faixa de circulação**, respeitando a folga medida do AGENTS #19

@@ -407,14 +407,22 @@ so `estado == 3` still means PARKED during migration.
     (which only lerps below 8 px) never pulled it in. The snap gate keeps
     the finish as a short glide instead of a ~250 px "ghost slide".
 
-17. **Latent, NOT fixed — `Vaga._atualizar_boca_pos()` scale**: it writes
-    `colisao_boca.position = -dir * 74.0` in the spot's LOCAL space, but
-    the Vaga node is scaled (Fase2 `7.66×2.62`), so the mouth lands
-    `74 × scale` ≈ 567 px from the centre (and the mouth rect is scaled
-    too). Today it acts as a harmless "prepare early" band (Fase2 triggers
-    prep on Rota3 near `(600, −340)`); dividing the offset by
-    `global_scale` shifts trigger timing in EVERY level, so do it as its
-    own change with per-level validation.
+17. **FIXED (2026-09-28, issue #6) — `Vaga._atualizar_boca_pos()` scale**:
+    it used to write `colisao_boca.position = -dir * 74.0` in the spot's
+    LOCAL space, so a scaled Vaga (Fase2 `7.66×2.62`) landed the mouth
+    `74 × scale` ≈ 567 px out with a 766×73 rect — a "prepare early"
+    blob, not a mouth. The mouth is now anchored to the bay ENTRANCE in
+    WORLD space: `offset_world = -dir * (world_half_depth + 29)` (margin
+    const `MARGEM_BOCA_WORLD`), thickness fixed at 28 world px on the
+    approach axis (`ESPESSURA_BOCA_WORLD`), across-width kept at 28 local
+    (the base design's slit), all divided by `scale` back into local
+    space. The shape is a PER-INSTANCE copy (`_forma_boca_propria`) —
+    the `.tscn` rect resource is shared by every Vaga, so resizing it
+    in place would leak to all of them. The literal "divide 74 by
+    `global_scale`" recipe was REJECTED on purpose: 74 world px from
+    the centre is INSIDE every scaled bay, i.e. after the Area trigger,
+    which would make the mouth dead code. Keep the anchor world-space;
+    any local-space offset is wrong under non-uniform scale.
 
 18. **Right-hand traffic (`Carro.keep_right_shift`, default 110 px)**: A*
     minimizes DISTANCE, so on the measured routes the car ran ~40 px to the

@@ -945,6 +945,38 @@ no `vercel inspect`, nunca o primeiro URL da lista. Registrado no AGENTS §5.
 
 
 
+### 1.18 A boca da vaga em espaço global (2026-09-28, issue #6 — AGENTS #17)
+
+O defeito latente mais antigo do projeto: a boca (o trigger que anuncia
+"preparar para entrar") era `-dir * 74` no espaço LOCAL, então a escala do
+no a esticava — na Fase2 a banda ficava a **567 px** do centro (222 px
+alem da entrada) com um retângulo de **766×73** (766 de espessura no eixo
+de aproximação, 73 de largura). Nas geradas (nariz em ±90°) a boca ja
+quase acertava (~28 px fora da entrada), mas com espessura 2x e largura
+de baia inteira.
+
+A boca agora e ancorada na ENTRADA da baia em espaço GLOBAL:
+`offset_world = -dir * (meia_profundidade_escalada + 29)`, espessura
+fixa de 28 px no mundo, largura proporcional (28 locais, a fresta do
+design base) e copia propria do retângulo (`_forma_boca_propria`) porque
+o resource do `.tscn` e compartilhado por todas as instâncias. A receita
+literal "dividir 74 pela escala" foi rejeitada de proposito: 74 px do
+CENTRO ficam DENTRO de toda baia escalada (depois do trigger da Area) e
+mataria a banda de preparação. Na Fase2 a boca passou de 567 para
+**373,7 px** do centro (entrada + 29).
+
+| Gate | Resultado |
+|---|---|
+| `verify_scenes` / `ModulesCheck` | 16 cenas, 0 falhas / fails=0 |
+| `gate_trail` Fase2 | **PARKED 39,4 s**, dist_centro 10,8, neg_frames 0 (ref 39,2) |
+| `gate_boot` 9 fases | **9/9 PASS**, NEG_FRAMES=0 em todas (Fase1 8,1 / Fase2 45,7 / Fase3 49,8 / Fase4 13,5 / Fase5 7,2 / Fase6 16,6 / Fase7 9,5 / Fase8 11,7 / Fase9 10,5 s) |
+| `gate_seeds` 5×2 | **9/10** = referência (só a Fase3 seed 2, o defeito pré-existente da sonda de raio, §1.17.2) |
+| `ml/testar_ml.gd` | **ESTACIONADO 129,6 s** com fallback (ref 129,5) |
+
+Fase6 apareceu 1 boot com `REC_FRAMES=59` (escada de fuga, 16,6 s):
+3 reboots deram **3/3 PARKED em 6,0–21,5 s** — variação de spawn, não
+regressão.
+
 ## 2. Blockers for the deliverable
 
 ### B1/B2 — autonomous parking in Fase2 + Fase3 — **FIXED** (§1.5: 10/10 seeds)
