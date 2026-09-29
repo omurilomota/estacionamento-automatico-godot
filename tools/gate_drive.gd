@@ -33,6 +33,24 @@ extends SceneTree
 ## anterior e reprova se QUALKER metrica regredir alem da tolerancia.
 ## Sem `--ref` e' SO MEDIDA: sai 0 sempre (um gate que reprova o legado
 ## porque o legado nao sabe pilotar nao serve de linha de base).
+##
+## SEED (obrigatorio para um placar valer como linha de base)
+## -------------------------------------------------------
+## `FaseBase.posicao_aleatoria` é `true` (AGENTS #28), e o spawn sorteado
+## decide TUDOnestas metricas. Medido na Fase7, mesmo commit, 3 processos:
+##   spawn (744, 352) -> sat 58,5%  folga 12,4  t 33,4 s
+##   spawn (583, 383) -> sat 77,4%  folga 148,7 t 10,1 s
+## Um A/B entre "antes" e "depois" com sorteios diferentes mede o SORTEIO, nao
+## o codigo — e foi exatamente assim que um `--all` de 9 fases deu NOT_PARKED
+## na Fase7 e na Fase8 enquanto `gate_boot` (processo novo) dava 7,1 s e 6,6 s
+## nas mesmas duas fases.
+## Por isso `--seed` tem valor PADRAO (9000, a mesma familia do `gate_seeds`)
+## e a seed entra no JSON: um placar sem seed no arquivo nao e reproduzivel e
+## portanto nao serve para nada. `--seed=0` devolve o sorteio livre, que e o
+## que se quer quando o objetivo e robustez e nao comparacao.
+##
+##   --seed=9000   fixo e reproduzivel (PADRAO, use este para o A/B)
+##   --seed=0      sorteio livre (equivale a nao fixar seed)
 
 const SensorArrayRef = preload("res://src/vehicle/SensorArray.gd")
 const LevelRegistryRef = preload("res://src/core/LevelRegistry.gd")
@@ -40,8 +58,12 @@ const LevelRegistryRef = preload("res://src/core/LevelRegistry.gd")
 const METRICAS := [
 	"fase", "t", "cte_medio", "cte_p95", "sat_pct", "folga_min", "replans",
 	"desvios", "ttc_min", "parado_max", "estado", "farol_mode", "lane_cost",
-	"com_fallback",
+	"com_fallback", "seed",
 ]
+
+## Default seed, NOT 0: see the SEED block above. A scoreboard is only a
+## baseline if the same run reproduces it, and `posicao_aleatoria` is on.
+const SEED_PADRAO := 9000
 
 var _fase := "Fase2"
 var _secs := 75.0
@@ -49,6 +71,7 @@ var _todas := false
 var _json := ""
 var _ref := ""
 var _tol := 0.10
+var _seed := SEED_PADRAO
 
 
 func _init() -> void:
@@ -66,6 +89,8 @@ func _init() -> void:
 			_ref = a.split("=")[1]
 		elif a.begins_with("--tol="):
 			_tol = float(a.split("=")[1])
+		elif a.begins_with("--seed="):
+			_seed = int(a.split("=")[1])
 	if _todas:
 		for n in LevelRegistryRef.LEVELS:
 			lista.append(str(n).get_file().get_basename())
@@ -94,6 +119,14 @@ func _init() -> void:
 
 ## Uma fase = um boot real, medido frame a frame.
 func _medir(fase_nome: String) -> Dictionary:
+	# A seed e' fixada AQUI, por fase, e NAO uma vez no `_init`: num `--all` de
+	# 9 fases o mesmo processo sorteia 9 spawns, e o sorteio da Fase8 depende
+	# de quantas vezes o RNG foi consumido antes. Derivar a seed do NOME da fase
+	# faz cada fase depender so de si mesma, entao `--fase=Fase7` mede
+	# exatamente o mesmo boot que a 7a linha de um `--all`. `seed(0)` devolve o
+	# sorteio livre, que e o modo "quero robustez, nao comparacao".
+	if _seed != 0:
+		seed(_seed + int(str(fase_nome).hash()))
 	var cena = load("res://scenes/fases/%s.tscn" % fase_nome).instantiate()
 	root.add_child(cena)
 	await process_frame
@@ -103,6 +136,10 @@ func _medir(fase_nome: String) -> Dictionary:
 		return {"fase": fase_nome, "estado": -1}
 	await physics_frame
 	var espaco := root.get_world_2d().direct_space_state
+	# The spawn IS the input of this measurement: with `posicao_aleatoria` on,
+	# a score without the spawn it came from cannot be reproduced or judged. Read
+	# it AFTER the first physics frames, because the level places the car there.
+	var spawn := Vector2.ZERO
 	var varrido: float = float(carro.call("raio_varrido")) if carro.has_method("raio_varrido") else 60.0
 	var max_est: float = float(carro.get("max_estercamento"))
 
@@ -119,10 +156,15 @@ func _medir(fase_nome: String) -> Dictionary:
 	var prox := 0.0
 	var est := 0
 	var com_fallback := false
+	# Read the spawn on the first sampled frame, once the level has placed it.
+	var spawn_lido := false
 	while t < _secs:
 		await physics_frame
 		t += 1.0 / 60.0
 		est = int(carro.get("estado"))
+		if not spawn_lido:
+			spawn = (carro as Node2D).global_position
+			spawn_lido = true
 		var v: float = float(carro.get("velocidade_atual"))
 		if absf(v) < 5.0:
 			parado += 1.0 / 60.0
@@ -174,11 +216,14 @@ func _medir(fase_nome: String) -> Dictionary:
 		"farol_mode": int(carro.get("farol_mode")) if "farol_mode" in carro else 0,
 		"lane_cost": int(carro.get("lane_cost_mode")) if "lane_cost_mode" in carro else 0,
 		"com_fallback": com_fallback,
+		"seed": _seed,
+		"spawn_x": snappedf(spawn.x, 1.0),
+		"spawn_y": snappedf(spawn.y, 1.0),
 	}
-	print("DRIVE %-7s %-9s t=%5.1f cte_med=%6.1f cte_p95=%6.1f sat=%5.1f%% folga_min=%6.1f ttc_min=%5.1f replans=%d desvios=%d parado_max=%4.1f wp=%d/%d" % [
+	print("DRIVE %-7s %-9s t=%5.1f cte_med=%6.1f cte_p95=%6.1f sat=%5.1f%% folga_min=%6.1f ttc_min=%5.1f replans=%d desvios=%d parado_max=%4.1f wp=%d/%d spawn=(%.0f,%.0f) seed=%d" % [
 		fase_nome, "PARKED" if est == 3 else "NOT_PARKED", linha.t, linha.cte_medio,
 		linha.cte_p95, linha.sat_pct, linha.folga_min, linha.ttc_min, replans,
-		desvios, linha.parado_max, wp, n_wp])
+		desvios, linha.parado_max, wp, n_wp, spawn.x, spawn.y, _seed])
 	root.remove_child(cena)
 	cena.queue_free()
 	await process_frame
@@ -285,6 +330,12 @@ func _compara(antes: Dictionary, agora: Dictionary, chave: String, tol: float) -
 	if chave == "replans" or chave == "desvios":
 		# nao sao "pior quando sobem": sao o registro de que o piloto REAGE.
 		return {"ok": true}
+	if chave == "seed":
+		# A seed e' o QUE ESTAMOS COMPARANDO. Duas seeds diferentes medem dois
+		# boots diferentes, entao um placar obtido com outra seed nao pode ser a
+		# referencia deste A/B — reprovar aqui atribuiria ao codigo uma diferenca
+		# que veio do sorteio do spawn.
+		return {"ok": a == b, "antes": a, "agora": b}
 	if a < 0.0 or b < 0.0:
 		return {"ok": true}
 	var melhor_baixo: Array = ["cte_medio", "cte_p95", "sat_pct", "t", "parado_max"]
