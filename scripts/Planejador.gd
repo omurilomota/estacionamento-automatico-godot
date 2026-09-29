@@ -4,10 +4,20 @@ extends Node2D
 ##  1) PERCEPÇÃO: varre o mundo (PhysicsDirectSpaceState2D) e monta um
 ##     MAPA DE OCUPAÇÃO — grade de células livres/bloqueadas, inflada com
 ##     o tamanho do carro (nunca planeja "espremer" entre obstáculos).
+##     farol_mode >= 1 delega isso ao FAROL · CARTA (`src/farol/Chart.gd`),
+##     que devolve o MESMO conjunto de sólidos 30x mais barato e acrescentando
+##     um campo de FOLGA em pixels (`chart.folga_em`) que o planejador
+##     legacy não tinha.
 ##  2) PLANEJAMENTO GLOBAL: roda A* (AStarGrid2D) na grade, do carro até
 ##     a vaga, e devolve a rota suavizada (vértices, sem zigue-zague).
+##     lane_cost_mode = 1 passa a mão à direita como CUSTO dentro do A*
+##     (FAROL · ROTA) em vez de deslocar os pontos depois.
 ##  3) VISUALIZAÇÃO: desenha a grade ocupada e a rota na tela (overlay de
 ##     raciocínio) — dá para VER o que o carro "enxerga" e o caminho dele.
+
+const ChartRef = preload("res://src/farol/Chart.gd")
+const RouteRef = preload("res://src/farol/Route.gd")
+const FarolSpecRef = preload("res://src/farol/FarolSpec.gd")
 
 @export var origem: Vector2 = Vector2(-640, -360)
 @export var tamanho: Vector2 = Vector2(1280, 720)
@@ -15,6 +25,17 @@ extends Node2D
 @export var inflar: float = 110.0
 @export var mostrar_grade: bool = false
 @export var mostrar_rota: bool = false
+## FAROL rollout: 0 = legado, 1 = sombra (roda e mede, não dirige), 2 = piloto.
+## The vehicle owns the number (a scene declares it once on the Carro node);
+## `Carro._garantir_folga_do_planejador()` pushes it here on the first frame.
+@export_range(0, 2) var farol_mode: int = 0
+## 0 = deslocamento pós-A* (LaneOffset, o legado), 1 = custo de faixa DENTRO
+## do A* (FAROL · ROTA). A trilha nunca entra: rotas autoradas ficam onde o
+## professor as desenhou (AGENTS #18).
+@export_range(0, 1) var lane_cost_mode: int = 0
+## Null = `FarolSpec.default()`. A scene pode apontar para um .tres para
+## re-tunar o FAROL inteiro sem tocar em código.
+@export var farol_spec: Resource = null
 
 var _grade: AStarGrid2D
 var _grade_pronta: bool = false
@@ -22,6 +43,30 @@ var _celulas_bloqueadas: Array[Vector2i] = []
 var _imagem_grade: Image
 var _textura_grade: ImageTexture
 var _rota_desenhar: PackedVector2Array = []
+var _chart: Chart = null
+var _rota: Route = null
+
+
+## The FAROL spec actually in use (never null).
+func spec() -> FarolSpecRef:
+	if farol_spec is FarolSpecRef:
+		return farol_spec as FarolSpecRef
+	return _spec_padrao
+
+
+var _spec_padrao: FarolSpecRef = FarolSpecRef.new()
+
+
+## The Chart built by the last `construir()` (null when farol_mode == 0).
+## Read-only contract for `Pilot`/`Route`/the gates.
+func chart() -> Chart:
+	return _chart
+
+
+## The Route layer built by the last costed plan (null when
+## lane_cost_mode == 0).
+func rota_farol() -> Route:
+	return _rota
 
 
 func _n_cel_x() -> int:
@@ -50,6 +95,11 @@ func grade_pronta() -> bool:
 ## varrido antes de planejar (ver Carro._garantir_folga_do_planejador()).
 func invalidar_grade() -> void:
 	_grade_pronta = false
+	# O Chart carrega a MESMA informação: sem isto ele continuaria servindo
+	# folgas de um `inflar` antigo depois de um replane com raio maior.
+	_chart = null
+	_rota = null
+	_custo_aplicado = ""
 
 
 # Monta o mapa de ocupação do zero (usa os valores atuais de origem/tamanho).
@@ -70,23 +120,12 @@ func construir() -> void:
 	# sidewalk corners. Level scenes tune this declaratively (inflar).
 	var inflar_efetivo: float = clampf(inflar, 60.0, 240.0)
 	var espaco := get_world_2d().direct_space_state
-	var forma := CircleShape2D.new()
-	forma.radius = inflar_efetivo
-	var parametros := PhysicsShapeQueryParameters2D.new()
-	parametros.collision_mask = 2
-	parametros.collide_with_bodies = true
-	parametros.collide_with_areas = false
-	parametros.shape = forma
-
 	_celulas_bloqueadas.clear()
-	for y in range(_n_cel_y()):
-		for x in range(_n_cel_x()):
-			var centro: Vector2 = _centro_de(Vector2i(x, y))
-			parametros.transform = Transform2D(0, centro)
-			var acertos := espaco.intersect_shape(parametros, 1)
-			if not acertos.is_empty():
-				_grade.set_point_solid(Vector2i(x, y), true)
-				_celulas_bloqueadas.append(Vector2i(x, y))
+	_custo_aplicado = ""
+	if farol_mode >= 1:
+		_construir_com_chart(espaco, inflar_efetivo)
+	else:
+		_construir_celula_a_celula(espaco, inflar_efetivo)
 	# Preferência por setas (0.7 a favor — só se houver Node Setas)
 	# v2 (F2/locked B5): arrows are IGNORED. The planner is a pure service
 	# fed by injected RouteHints; legacy scene crawling stays below ONLY
@@ -95,30 +134,55 @@ func construir() -> void:
 	# aplicar_hints / _hints_ativas below).
 	_aplicar_pesos_legado_setas()
 	# v2 (F2): legacy arrow preference, extracted unchanged. Called by
-# construir() ONLY when no RouteHints were injected (empty hints =
-# arrows ignored, locked B5). Kept for unmigrated levels.
-func _aplicar_pesos_legado_setas() -> void:
+	# construir() ONLY when no RouteHints were injected (empty hints =
+	# arrows ignored, locked B5). Kept for unmigrated levels.
 	if _hints_ativas():
-		return
-	var setas_node := get_parent().get_node_or_null("Setas")
-	if setas_node == null:
-		return
-	for seta in setas_node.get_children():
-		if not ("direcao" in seta):
-			continue
-		var pos_seta: Vector2 = seta.global_position
-		for y in range(_n_cel_y()):
-			for x in range(_n_cel_x()):
-				var cel := Vector2i(x, y)
-				if _grade.is_point_solid(cel):
-					continue
-				var centro: Vector2 = _centro_de(cel)
-				var dist_c := centro.distance_to(pos_seta)
-				if dist_c < 70.0:
-					_grade.set_point_weight_scale(cel, 0.7)
-				elif dist_c < 140.0:
-					if _grade.get_point_weight_scale(cel) == 1.0:
-						_grade.set_point_weight_scale(cel, 0.85)
+		_aplicar_hints()
+	else:
+		_aplicar_pesos_legado_rotas()
+	_aplicar_pesos_hdmap()
+	_grade_pronta = true
+	_gerar_imagem_grade()
+	queue_redraw()
+
+
+## FAROL · CARTA (S1): same bit, 30x cheaper. The Chart stamps the obstacle
+## footprints with one world query, runs a chamfer distance transform, and then
+## asks the EXACT same `intersect_shape` question only where a hit is possible.
+## `tools/gate_chart.gd` proves the solid set is identical to the legacy loop
+## on every level, so farol_mode=1 is a performance change, not a behaviour
+## change.
+func _construir_com_chart(espaco: PhysicsDirectSpaceState2D, inflar_efetivo: float) -> void:
+	if _chart == null:
+		_chart = ChartRef.new()
+	_chart.configure(origem, tamanho, float(resolucao), inflar_efetivo)
+	_chart.rebuild(espaco)
+	for cel in _chart.celulas_solidas():
+		_grade.set_point_solid(cel, true)
+		_celulas_bloqueadas.append(cel)
+
+
+## The legacy rasteriser, kept verbatim: one physics query per cell. It is the
+## ORACLE `tools/gate_chart.gd` compares the Chart against, and the fallback
+## whenever `farol_mode == 0`.
+func _construir_celula_a_celula(espaco: PhysicsDirectSpaceState2D,
+		inflar_efetivo: float) -> void:
+	var forma := CircleShape2D.new()
+	forma.radius = inflar_efetivo
+	var parametros := PhysicsShapeQueryParameters2D.new()
+	parametros.collision_mask = 2
+	parametros.collide_with_bodies = true
+	parametros.collide_with_areas = false
+	parametros.shape = forma
+	for y in range(_n_cel_y()):
+		for x in range(_n_cel_x()):
+			var centro: Vector2 = _centro_de(Vector2i(x, y))
+			parametros.transform = Transform2D(0, centro)
+			var acertos := espaco.intersect_shape(parametros, 1)
+			if not acertos.is_empty():
+				_grade.set_point_solid(Vector2i(x, y), true)
+				_celulas_bloqueadas.append(Vector2i(x, y))
+
 
 
 # --- v2 (F2): injected route hints (pure-service contract) ---------------
@@ -165,6 +229,33 @@ func _aplicar_hints() -> void:
 						_grade.set_point_weight_scale(cel, 0.85)
 
 
+## v2 (F2/locked B5): legacy arrow preference, extracted unchanged. Called by
+## `construir()` ONLY when no RouteHints were injected (empty hints = arrows
+## ignored). Kept for unmigrated levels, which still carry a `Setas` node.
+func _aplicar_pesos_legado_setas() -> void:
+	if _hints_ativas():
+		return
+	var setas_node := get_parent().get_node_or_null("Setas")
+	if setas_node == null:
+		return
+	for seta in setas_node.get_children():
+		if not ("direcao" in seta):
+			continue
+		var pos_seta: Vector2 = seta.global_position
+		for y in range(_n_cel_y()):
+			for x in range(_n_cel_x()):
+				var cel := Vector2i(x, y)
+				if _grade.is_point_solid(cel):
+					continue
+				var centro: Vector2 = _centro_de(cel)
+				var dist_c := centro.distance_to(pos_seta)
+				if dist_c < 70.0:
+					_grade.set_point_weight_scale(cel, 0.7)
+				elif dist_c < 140.0:
+					if _grade.get_point_weight_scale(cel) == 1.0:
+						_grade.set_point_weight_scale(cel, 0.85)
+
+
 # Preferência por Rotas Line2D (ruas desenhadas): peso 0.65 perto da linha, 0.85 até 90px
 	# v2 (F2): injected hints win; legacy scene crawl only when NO hints
 	# were injected (empty = ignored, locked B5). Unmigrated levels keep
@@ -205,34 +296,36 @@ func _aplicar_pesos_legado_rotas() -> void:
 						_grade.set_point_weight_scale(cel_r, 0.85)
 
 
-# HD-Map manual: viradas sempre pela faixa (peso 1.0 na faixa, 1.5 fora)
+## HD-Map manual: viradas sempre pela faixa (peso 1.0 na faixa, 1.5 fora).
+## Extracted verbatim from `construir()` — until 2026-09-29 it was orphaned in
+## the middle of `_aplicar_pesos_legado_rotas()`'s body, which meant it only
+## ran on levels that happened to have BOTH a `Setas` node and a `Rotas` node.
+func _aplicar_pesos_hdmap() -> void:
 	var road_graph_res = load("res://resources/RoadGraph.tres")
-	if road_graph_res != null and road_graph_res.get("lanes") != null:
-		for y in range(_n_cel_y()):
-			for x in range(_n_cel_x()):
-				var cel := Vector2i(x, y)
-				if _grade.is_point_solid(cel):
-					continue
-				var centro: Vector2 = _centro_de(cel)
-				var menor_dist := INF
-				var largura_faixa := 60.0
-				for lane in road_graph_res.get("lanes"):
-					var pts: PackedVector2Array = lane.pontos
-					largura_faixa = lane.largura if "largura" in lane else 60.0
-					for i in range(pts.size() - 1):
-						var d := Geometry2D.get_closest_point_to_segment(centro, pts[i], pts[i+1]).distance_to(centro)
-						menor_dist = minf(menor_dist, d)
-						if menor_dist < largura_faixa * 0.5:
-							break
+	if road_graph_res == null or road_graph_res.get("lanes") == null:
+		return
+	for y in range(_n_cel_y()):
+		for x in range(_n_cel_x()):
+			var cel := Vector2i(x, y)
+			if _grade.is_point_solid(cel):
+				continue
+			var centro: Vector2 = _centro_de(cel)
+			var menor_dist := INF
+			var largura_faixa := 60.0
+			for lane in road_graph_res.get("lanes"):
+				var pts: PackedVector2Array = lane.pontos
+				largura_faixa = lane.largura if "largura" in lane else 60.0
+				for i in range(pts.size() - 1):
+					var d := Geometry2D.get_closest_point_to_segment(centro, pts[i], pts[i+1]).distance_to(centro)
+					menor_dist = minf(menor_dist, d)
 					if menor_dist < largura_faixa * 0.5:
 						break
-				if menor_dist > 40.0:
-					var w := _grade.get_point_weight_scale(cel)
-					_grade.set_point_weight_scale(cel, maxf(w, 1.5))
+				if menor_dist < largura_faixa * 0.5:
+					break
+			if menor_dist > 40.0:
+				var w := _grade.get_point_weight_scale(cel)
+				_grade.set_point_weight_scale(cel, maxf(w, 1.5))
 	# _grade.update() aqui limpava sólidos — removido
-	_grade_pronta = true
-	_gerar_imagem_grade()
-	queue_redraw()
 
 
 # A grade vira uma IMAGEM pequena (1 px por célula) esticada no mundo.
@@ -409,10 +502,41 @@ func achar_rota_crua(origem_ponto: Vector2, destino_ponto: Vector2) -> PackedVec
 	var d := _celula_livre_proxima(_celula_de(destino_ponto))
 	if not _grade.region.has_point(o) or not _grade.region.has_point(d):
 		return PackedVector2Array()
+	_garantir_custo_faixa(destino_ponto)
 	var caminho := _grade.get_point_path(o, d)
 	if caminho.size() < 2:
 		return PackedVector2Array()
 	return caminho
+
+
+## lane_cost_mode 1: bake the right-hand lane + clearance + memory cost into
+## the grid before the search. Baked once per (grid, goal-class): the cost of a
+## whole level is a few tens of milliseconds, paid at the first plan, and every
+## replan after it reuses the same field.
+var _custo_aplicado: String = ""
+
+
+func _garantir_custo_faixa(destino_ponto: Vector2) -> void:
+	if lane_cost_mode != 1 or _chart == null:
+		return
+	var chave := "%d|%d" % [_chart.celula_de(destino_ponto).x / 6, _chart.celula_de(destino_ponto).y / 6]
+	if _custo_aplicado == chave:
+		return
+	if _rota == null:
+		_rota = RouteRef.new(_chart, spec())
+	_rota.aplicar_pesos(_grade, destino_ponto, _raio_varrido_cache)
+	_custo_aplicado = chave
+
+
+## The swept radius is pushed here by `Carro` before the first plan; the Route
+## cost has to be expressed in the same units the Chart was inflated with.
+var _raio_varrido_cache: float = 110.0
+
+
+func definir_raio_varrido(r: float) -> void:
+	if absf(r - _raio_varrido_cache) > 0.5:
+		_raio_varrido_cache = r
+		_custo_aplicado = ""
 
 
 ## RDP público: o chamador que compõe o caminho final (deslocado) o simplifica
