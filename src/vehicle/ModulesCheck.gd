@@ -2,6 +2,13 @@ extends SceneTree
 ## Headless sanity checks for the decoupled vehicle modules (no scene).
 ## Run: godot --headless --path . --script src/vehicle/ModulesCheck.gd
 ## Exits 0 when every check passes, 1 otherwise.
+##
+## The FAROL layer is asserted here too: those modules are pure and take no
+## scene tree, so this is where their contract is pinned (see the FAROL block).
+
+const MooringRef = preload("res://src/farol/Mooring.gd")
+const FarolSpecRef = preload("res://src/farol/FarolSpec.gd")
+const FarolShieldRef = preload("res://src/farol/FarolShield.gd")
 
 var _fails: int = 0
 
@@ -218,6 +225,78 @@ func _init() -> void:
 	var hairpin_shifted: Array = LaneOffset.apply(hairpin, 110.0, open_probe, 120.0, 0.0, 0.0)
 	_check("Lane.hairpin_holds", hairpin_shifted[1].is_equal_approx(hairpin[1]))
 	_check("Lane.wall_probe_invalid", not LaneOffset.wall_probe(null).is_valid())
+
+	# ---------------------------------------------------------------- FAROL ----
+	# The five FAROL layers are pure and headless (AGENTS §3), so they are
+	# asserted here with no scene. `farol_mode` is 0 in every scene today, so a
+	# failure here means the SHADOW code is already wrong — the cheapest moment
+	# to find out, before a level is promoted.
+	MooringRef.usar(FarolSpecRef.new())
+	# Shield (NERVO): the pupil may choose, the teacher may veto, a veto is about
+	# collision and never about taste.
+	var shield_rep: Dictionary = FarolShieldRef.check()
+	_check("Shield.check", (shield_rep.get("fails", []) as Array).is_empty())
+	# Mooring (ATRACAÇÃO): the phase sequence must be ALIGN -> ARC -> SLIDE and
+	# monotone, because the legacy cascade re-decided every frame and the phases
+	# oscillated (see src/farol/Mooring.gd).
+	# The hull is 88x74 at the level scales; use a 690x314 bay (Fase2) and a
+	# 162x439 one (Fase8, the tightest) — AGENTS #27: the BAY is the free
+	# variable and the Mooring has to fit the ones that exist.
+	var meia := Vector2(79.2, 49.6)
+	var centro := Vector2.ZERO
+	var spec: FarolSpecRef = FarolSpecRef.new()
+	# (1) On the approach, aligned, still short -> ARC (drive in, no turning).
+	var p_arc: Dictionary = MooringRef.passo(centro - Vector2(160, 0), 0.0, centro, 0.0, meia)
+	_check("Mooring.arc_on_approach", int(p_arc["fase"]) == MooringRef.Fase.ARCO)
+	# (2) REGRESSION: the same pose with 0.5 rad of yaw error must ALIGN. The
+	# first version gated ALIGN on `ao_longo < 0.0`, which IS the approach (the
+	# preparation point is `centro - nariz*alcance`), so this returned ARC and
+	# the squaring-up phase was dead exactly where it was needed.
+	var p_alinhar: Dictionary = MooringRef.passo(centro - Vector2(160, 0), 0.5, centro, 0.0, meia)
+	_check("Mooring.aligns_when_twisted", int(p_alinhar["fase"]) == MooringRef.Fase.ALINHAR)
+	# (3) REGRESSION: twisted INSIDE the bay, 13 px from the centre — the
+	# AGENTS #38 case that turns ALIGNING into eternal parking — must also
+	# ALIGN, and only then slide.
+	var p_dentro: Dictionary = MooringRef.passo(centro - Vector2(13, 0), 1.2, centro, 0.0, meia)
+	_check("Mooring.aligns_inside_bay", int(p_dentro["fase"]) == MooringRef.Fase.ALINHAR)
+	# (4) The ALIGN aim point must be AHEAD of the hull, never behind it: a
+	# target behind the car makes the pursuit steer the nose the wrong way.
+	var t_alinhar: Vector2 = p_alinhar["target"]
+	var carro_alinhar := Vector2(-160, 0)
+	_check("Mooring.align_target_ahead",
+		t_alinhar.dot(MooringRef.nariz(centro, 0.0)) > carro_alinhar.dot(MooringRef.nariz(centro, 0.0)))
+	# (5) Aligned and on the centre -> SLIDE (the last 12 px, AGENTS #16).
+	var p_slide: Dictionary = MooringRef.passo(centro - Vector2(10, 0), 0.0, centro, 0.0, meia)
+	_check("Mooring.slides_at_centre", int(p_slide["fase"]) == MooringRef.Fase.DESLIZAR)
+	# (6) A nose-WEST bay (rot_alvo = PI, how Fase2/Fase3 are really authored,
+	# AGENTS #15) must be geometrically identical to the nose-east one, or the
+	# arrival error is ~PI and the car reverses out (the AGENTS #15c defect).
+	var p_oeste: Dictionary = MooringRef.passo(Vector2(160, 0), PI, centro, PI, meia)
+	_check("Mooring.nose_west_same_phase", int(p_oeste["fase"]) == int(p_arc["fase"]))
+	# (7) ALIGN must creep, never freeze: the Locomotion refuses to yaw below
+	# 1 px/s, so a zero throttle would burn ALINHA_MAX_S and end in eternal
+	# parking (the exact failure AGENTS #38 describes).
+	var c_alinhar: Dictionary = MooringRef.comando(carro_alinhar, 0.5, centro, 0.0, meia, 160.0)
+	_check("Mooring.align_creeps",
+		float((c_alinhar["comando"] as DriveCommand).throttle) > 0.0)
+	# (8) The tightest real bay must not change the decision: a 162x439 bay has
+	# the car 1.60x longer than it is wide, so the arc threshold is the only
+	# thing that could differ.
+	var meia_estreita := Vector2(81.0, 49.6)
+	var p_estreita: Dictionary = MooringRef.passo(centro - Vector2(160, 0), 0.0, centro, 0.0, meia_estreita)
+	_check("Mooring.tight_bay_arc", int(p_estreita["fase"]) == MooringRef.Fase.ARCO)
+	# (9) A DIAGONAL bay (yaw 0.7 rad) — no level has one today, so the Mooring
+	# has never been asked to square up against a rotated aisle.
+	var p_diag: Dictionary = MooringRef.passo(centro - Vector2(160, 0).rotated(0.7),
+		0.7 + 0.4, centro, 0.7, meia)
+	_check("Mooring.diagonal_aligns", int(p_diag["fase"]) == MooringRef.Fase.ALINHAR)
+	# (10) The spec must actually reach the Mooring: `usar()` is what the vehicle
+	# calls every frame, and without it a scene's `farol_spec` was ignored here.
+	MooringRef.usar(spec)
+	spec.atracar_yaw_tol = 0.9   # absurdly loose
+	_check("Mooring.spec_is_used",
+		int(MooringRef.passo(carro_alinhar, 0.5, centro, 0.0, meia)["fase"]) != MooringRef.Fase.ALINHAR)
+	MooringRef.usar(FarolSpecRef.new())
 
 	# Car menu (D1): 10 skins from TWO art families with different pixel sizes
 	# (Kenney 70x121 full-bleed, assets/sprites 100x100 trimmed). The contract
