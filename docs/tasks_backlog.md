@@ -977,6 +977,66 @@ Fase6 apareceu 1 boot com `REC_FRAMES=59` (escada de fuga, 16,6 s):
 3 reboots deram **3/3 PARKED em 6,0–21,5 s** — variação de spawn, não
 regressão.
 
+### 1.19 S0 — o placar de pilotagem, e a fragilidade de spawn que ele revelou (2026-09-29)
+
+O plano do FAROL exige um placar ANTES de qualquer código (§3 S0): sem número
+não há como provar que o carro entendeu mais. `tools/gate_drive.gd` mede, no
+boot real, `|CTE| médio/p95`, % de saturação do volante, folga do casco,
+replans, desvios, TTC e standstill.
+
+**O gate não media nada comparável.** `FaseBase.posicao_aleatoria` é `true`
+(AGENTS #28) e **nenhum gate fixava seed** — só o `gate_seeds` fixava
+(`seed(9000+i)`). O spawn sorteado decide todas as métricas. Medido na Fase7,
+mesmo commit, 3 processos:
+
+| Spawn sorteado | `sat_pct` | `folga_min` | `t` |
+|---|---|---|---|
+| (744, 352) | 58,5 % | 12,4 | 33,4 s |
+| (583, 383) | 77,4 % | 148,7 | 10,1 s |
+
+Um A/B com sorteios diferentes mede o **sorteio**, não o código. Foi assim que
+um `--all` de 9 fases deu `NOT_PARKED` na Fase7 **e** na Fase8 enquanto o
+`gate_boot` (processo novo, outro sorteio) dava 7,1 s e 6,6 s nas mesmas duas.
+Corrigido: `--seed` com **padrão 9000**, fixado **por fase** (`seed(9000 +
+hash(nome_da_fase))`, senão num `--all` o sorteio da Fase8 depende de quantas
+vezes o RNG foi consumido antes), a seed entra no JSON e uma seed diferente
+entre `--ref` e a nova medição **reprova** em vez de atribuir ao código uma
+diferença que veio do sorteio. O spawn também vai para o JSON: o placar sem a
+entrada que o produziu não é reproduzível nem julgável. Verificado: 3 runs
+seguidas da Fase7 deram saída **byte-idêntica**.
+
+**O placar (seed 9000, `farol_mode=0`, `docs/baseline_drive.json`):**
+
+| Fase | Resultado | `t` | `cte_med` | `cte_p95` | `sat` | `folga_min` | `ttc_min` | replans | spawn |
+|---|---|---|---|---|---|---|---|---|---|
+| Fase1 | PARKED | 12,4 | 18,1 | 35,3 | 26,1 % | 118,4 | 7,9 | 1 | (309, 103) |
+| Fase2 | PARKED | 45,0 | 9,1 | 29,0 | 16,3 % | 78,7 | 1,4 | 0 | (-744, 1511) |
+| Fase3 | PARKED | 64,3 | 13,6 | 46,9 | 34,1 % | 57,4 | 1,3 | 2 | (-983, 1490) |
+| Fase4 | PARKED | 24,8 | 21,3 | 38,9 | **58,4 %** | 399,7 | 8,6 | 3 | (-600, -15) |
+| Fase5 | PARKED | 7,6 | 18,9 | 31,0 | **73,3 %** | 316,4 | 4,3 | 1 | (462, 54) |
+| Fase6 | PARKED | 14,8 | 17,7 | 51,3 | 38,6 % | **53,5** | 0,9 | 0 | (948, 458) |
+| Fase7 | PARKED | 6,4 | 11,1 | 12,8 | 0,0 % | 228,1 | — | 0 | (72, -337) |
+| Fase8 | PARKED | 7,7 | 5,2 | 8,4 | 21,1 % | 112,5 | 7,5 | 1 | (-562, 93) |
+| Fase9 | **NOT_PARKED** | 75,0 | 18,0 | 46,9 | 3,4 % | **8,9** | 1,5 | **16** | (-797, -192) |
+
+Média de saturação **30,1 %**, `desvios=0` em todas (esperado: o piloto local
+só conta com o FAROL promovido).
+
+**O achado que o placar pagou: o carro é frágil ao spawn.** Na seed 9000 a
+**Fase9 não estaciona em 75 s** — e a falha é **reproduzível** (2 runs
+idênticos: 16 replans, `parado_max` 6,9 s, `folga_min` 8,9 px = casco
+encostando). O mesmo `gate_boot` com o spawn (-66, -271) estaciona em 8,5 s.
+Somando os três sorteios medidos hoje, **três fases diferentes já falharam**
+(Fase7 e Fase8 no sorteio livre, Fase9 na seed 9000), todas com o mesmo
+assinatura: `folga_min` < 60 px, 15–16 replans e ~7 s parado. É a
+escada de fuga (`AGENTS #43`) sendo consumida por um obstáculo que ela não
+resolve — exatamente o defeito que o FAROL · PILOTO ataca (`blocked_ahead` →
+replan com goal deslocado, em vez de dar ré).
+
+A saturação média de 30,1 % (73,3 % na Fase5) é a tradução numérica do
+"burro" do usuário: o volante no batente não é falta de tentativa, é a
+**lacuna entre a rota e a roda** que o plano §1 diagnostica.
+
 ## 2. Blockers for the deliverable
 
 ### B1/B2 — autonomous parking in Fase2 + Fase3 — **FIXED** (§1.5: 10/10 seeds)
