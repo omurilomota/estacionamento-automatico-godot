@@ -9,6 +9,7 @@ extends SceneTree
 const MooringRef = preload("res://src/farol/Mooring.gd")
 const FarolSpecRef = preload("res://src/farol/FarolSpec.gd")
 const FarolShieldRef = preload("res://src/farol/FarolShield.gd")
+const LocalMapRef = preload("res://src/farol/LocalMap.gd")
 
 var _fails: int = 0
 
@@ -297,6 +298,34 @@ func _init() -> void:
 	_check("Mooring.spec_is_used",
 		int(MooringRef.passo(carro_alinhar, 0.5, centro, 0.0, meia)["fase"]) != MooringRef.Fase.ALINHAR)
 	MooringRef.usar(FarolSpecRef.new())
+
+	# REGRESSION (Fase9, 2026-09-29): a ray that hits NOTHING used to paint a
+	# solid cell at its own MAXIMUM RANGE, because the contact cell was marked
+	# unconditionally. With 19 rays that rings an empty aisle with 19 phantom
+	# walls; the shield then vetoed every frame and the car stood still for 41 s.
+	#
+	# The rule lives in `_tracar_rastro`, and it has to be called DIRECTLY: an
+	# earlier version of this check passed `{}` as the ray dictionary, which
+	# never enters the loop and therefore proved nothing — reintroducing the bug
+	# left the suite green. `_tracar_rastro` IS the unit under test here, and
+	# ModulesCheck is in-repo, so calling it is the honest way to pin it.
+	var lm := LocalMapRef.de_teste(8, 20.0)
+	# An unobstructed beam: free to the end, and NO solid cell at its range.
+	lm._tracar_rastro(Vector2.ZERO, 150.0, 0.0, false)
+	_check("LocalMap.no_phantom_wall",
+		lm.custo_em(Vector2(140.0, 0.0)) == LocalMapRef.LIVRE)
+	_check("LocalMap.unhit_ray_marks_nothing", lm.celulas_ocupadas == 0)
+	# A beam that REPORTED a contact ends solid, with the short shadow behind it
+	# — the rule the fix must not have broken.
+	lm._tracar_rastro(Vector2.ZERO, 100.0, 0.0, true)
+	_check("LocalMap.hit_ray_marks_wall",
+		lm.custo_em(Vector2(100.0, 0.0)) >= 0.99)
+	_check("LocalMap.hit_ray_shadow",
+		lm.custo_em(Vector2(120.0, 0.0)) > 0.0)
+	# A cell OUTSIDE the window is unknown space, and reading it as solid is the
+	# safe direction (the shield must not read past what the car can see).
+	_check("LocalMap.outside_is_solid",
+		lm.custo_em(Vector2(100000.0, 0.0)) == LocalMapRef.OBSTACULO)
 
 	# Car menu (D1): 10 skins from TWO art families with different pixel sizes
 	# (Kenney 70x121 full-bleed, assets/sprites 100x100 trimmed). The contract

@@ -108,21 +108,27 @@ func reconstruir(pos: Vector2, rays: Dictionary) -> void:
 	raios_usados = 0
 	for nome: String in rays.keys():
 		var r: RayCast2D = rays[nome] as RayCast2D
-		if r == null or not r.is_instance_valid(r):
+		# `is_instance_valid` is a GLOBAL function, not a method on the object.
+		# Calling it as `r.is_instance_valid(r)` raised every frame, and the
+		# `continue` below then skipped EVERY ray: the map was built from the
+		# Chart alone with `raios_usados == 0` (measured on Fase9, 2026-09-29).
+		if r == null or not is_instance_valid(r):
 			continue
 		var alvo: Vector2
 		var d: float = INF
+		var houve_impacto := false
 		if r.is_colliding():
 			var hit: Vector2 = r.get_collision_point()
 			if not hit.is_finite():
 				continue
 			d = pos.distance_to(hit)
 			alvo = hit
+			houve_impacto = true
 		else:
 			alvo = pos + (r.target_position - r.position)
 			d = alvo.distance_to(pos)
 		raios_usados += 1
-		_tracar_rastro(pos, d, r.global_rotation)
+		_tracar_rastro(pos, d, r.global_rotation, houve_impacto)
 	_preservar_idade()
 
 
@@ -139,7 +145,18 @@ func _preservar_idade() -> void:
 ## Paints the wedge a ray swept: free up to the hit, blocked at the hit, and a
 ## small shadow BEHIND it (an obstacle hides what is behind it, and forgetting
 ## that is how a car plans into the back of a truck).
-func _tracar_rastro(origem: Vector2, distancia: float, angulo_raio: float) -> void:
+##
+## `houve_impacto` is the whole point, and its absence was the bug that froze
+## the pilot on its first real boot (Fase9, 2026-09-29, measured): a ray that
+## hits NOTHING still has a finite length — its own maximum range — and the
+## first version painted the contact cell solid at that range. With 19 rays
+## around the car, an empty aisle was ringed by 19 phantom walls, so the shield
+## vetoed every frame (`custo` = OBSTACULO along the whole beam), the DWA saw a
+## closed room and could only creep, and the car sat still for 41 s while the
+## escape ladder burned 672 frames of reverse. A ray that saw nothing has seen
+## nothing: it paints free to the end and marks nothing beyond.
+func _tracar_rastro(origem: Vector2, distancia: float, angulo_raio: float,
+		houve_impacto: bool) -> void:
 	if distancia <= 0.0:
 		return
 	var dir := Vector2.RIGHT.rotated(angulo_raio)
@@ -147,6 +164,8 @@ func _tracar_rastro(origem: Vector2, distancia: float, angulo_raio: float) -> vo
 	for k in range(passos):
 		var p: Vector2 = origem + dir * (distancia * float(k) / float(passos))
 		_marcar(p, LIVRE, 1.0)
+	if not houve_impacto:
+		return
 	# the contact cell and a short shadow behind it
 	_marcar(origem + dir * distancia, OBSTACULO, 1.0)
 	for s in range(1, 3):
