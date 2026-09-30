@@ -73,6 +73,10 @@ extends Resource
 
 ## DWA: 9 steering x 3 speeds = 27 arcs, rolled `dwa_horizonte_s` in
 ## `dwa_passo_s` steps against the local costmap.
+## Steering samples across the symmetric -1..+1 window. `Dwa.avaliar()` reads
+## this field and it was MISSING from the spec, so the DWA raised every frame
+## and the pilot never produced a command (measured on Fase9, 2026-09-29).
+@export var dwa_steer_steps: int = 9
 @export var dwa_horizonte_s: float = 1.2
 @export var dwa_passo_s: float = 0.1
 @export var dwa_periodo_s: float = 0.1
