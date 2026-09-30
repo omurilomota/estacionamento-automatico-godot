@@ -89,6 +89,13 @@ extends Resource
 @export var w_faixa_piloto: float = 0.8
 @export var w_suavidade: float = 0.55
 @export var w_roteiro: float = 0.9
+## Charge per px/s of speed ABOVE the route/choke profile (soft ceiling).
+## Hard-filtering the sampled fractions froze the window on its floor fraction
+## whenever the profile dipped for one tick (measured 40 px/s cruise through
+## wide corridors, Fase2 2026-09-29); charging the excess lets the profile win
+## exactly where it matters (a choke) and cost almost nothing on open-road
+## dips. 0.0 = profile ignored (the DWA would then never slow for chokes).
+@export var w_excesso_vel: float = 1.5
 ## `blocked_ahead`: how far along the route counts as "the plan is blocked",
 ## and how many consecutive bad cells are needed before it is a signal rather
 ## than noise. Distinct from the stuck watchdog (which measures DISPLACEMENT):
