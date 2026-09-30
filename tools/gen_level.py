@@ -309,6 +309,10 @@ def generate(spec):
     # .kilo/plans/1790717727010-swift-squid.md §4: 0 = legacy, 1 = shadow
     # (measures, does not drive), 2 = the FAROL pilot drives).
     out.append("farol_mode = %d" % int(spec.get("farol_mode", 0)))
+    # FAROL · ROTA (S2): the right-hand rule as A* cost. Same promotion
+    # discipline as farol_mode: default 0 (the post-hoc LaneOffset shift),
+    # declared per level in the spec, reviewed one level at a time.
+    out.append("lane_cost_mode = %d" % int(spec.get("lane_cost_mode", 0)))
     out.append("")
 
     out.append('[node name="Planejador" type="Node2D" parent="."]')
