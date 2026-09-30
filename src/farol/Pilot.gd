@@ -273,19 +273,26 @@ func _velocidade_do_roteiro(context: DriveContext) -> float:
 ## The cap is deliberately a CEILING profile: below `normal` (most of the
 ## radius of room) no cap; down to `minimo` (creep) at the tightest fit; the
 ## rate-limited steering does the steering.
+## `folga_media_corpo` POLARITY: 0 = the hull has swept-radius room everywhere
+## (open), 1 = the hull is fully buried (clearance ~0 under the body). The cap
+## therefore ENGAGES as f GROWS past `normal`, and crawls towards `v_teto` as f
+## approaches 1. (The first version had this backwards — it capped f BELOW the
+## threshold, i.e. the open road — which ModulesCheck caught as
+## `Pilot.cap_crawls_in_choke` failing at f=0.9 returning full speed.)
 func _velocidade_do_gargalo(vel: float) -> float:
 	var f: float = local.folga_media_corpo
+	# -1 = metric undefined (no chart yet); 0 = open. Both pass through.
 	if f <= 0.0:
 		return vel
 	var normal: float = 0.35
-	var minimo: float = 0.75
-	if f >= normal:
+	if f <= normal:
 		return vel
-	var t: float = clampf((f - 0.0) / normal, 0.0, 1.0)
-	# smoothstep: v_teto at the choke mouth, vel where the room is normal
-	var k: float = t * t * (3.0 - 2.0 * t)
+	# 0..1 from "room is getting tight" to "fully buried"
+	var t: float = clampf((f - normal) / (1.0 - normal), 0.0, 1.0)
+	var k: float = t * t * (3.0 - 2.0 * t) # smoothstep
 	var v_teto: float = maxf(45.0, vel * 0.30)
-	return maxf(v_teto, vel * k)
+	# Crawl to ~15% of the profile at the worst burial; never below v_teto.
+	return maxf(v_teto, vel * (1.0 - k * 0.85))
 
 
 func _comando_sem_rota(perception: PerceptionSnapshot, context: DriveContext) -> DriveCommand:

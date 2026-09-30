@@ -10,8 +10,20 @@ const MooringRef = preload("res://src/farol/Mooring.gd")
 const FarolSpecRef = preload("res://src/farol/FarolSpec.gd")
 const FarolShieldRef = preload("res://src/farol/FarolShield.gd")
 const LocalMapRef = preload("res://src/farol/LocalMap.gd")
+const DwaRef = preload("res://src/farol/Dwa.gd")
+const PilotRef = preload("res://src/farol/Pilot.gd")
 
 var _fails: int = 0
+
+
+## Minimal stand-in for the vehicle: only the properties the Pilot reads from
+## it. Needed because the FIRST version of the scaled-wheelbase check only
+## exercised the `veiculo == null` fallback (a literal), and the mutation that
+## dropped the scale factor survived the suite (comanda §7: a test that does
+## not fail when the bug comes back is not a test).
+class FakeCarro:
+	var entre_eixos := 60.0
+	var global_scale := Vector2.ONE
 
 
 func _init() -> void:
@@ -326,6 +338,69 @@ func _init() -> void:
 	# safe direction (the shield must not read past what the car can see).
 	_check("LocalMap.outside_is_solid",
 		lm.custo_em(Vector2(100000.0, 0.0)) == LocalMapRef.OBSTACULO)
+
+	# REGRESSION (Fase9 choke, 2026-09-29): the DWA rollout must use the SAME
+	# model the mover executes — scaled wheelbase, actuator-limited steering —
+	# otherwise it proposes arcs the chassis cannot follow (+40% curvature
+	# measured) and the controller chases phantom geometry. Asserted with a
+	# REAL `LocalMap` (a free window with one painted wall) and the REAL
+	# signature: `avaliar(local, pos, rot, vel_max, meia_eixos, entre_eixos,
+	# rota_dir, steer_anterior, max_steer, v_atuador)`. This is the exact
+	# coverage gap the comanda flagged: `Dwa.avaliar` had NO headless exercise
+	# with real inputs, which is how three latent defects shipped.
+	var spec_dwa: FarolSpecRef = FarolSpecRef.new()
+	var dw := DwaRef.new(spec_dwa)
+	var lm_dwa := LocalMapRef.de_teste(12, 20.0)
+	# Wall on the LEFT of the corridor (cells x in [-8..-2] of the window), so
+	# arcs steering left die and arcs steering right survive.
+	for yy in range(lm_dwa.dim):
+		for xx in range(0, lm_dwa.dim / 2):
+			lm_dwa.custo[yy * lm_dwa.dim + xx] = LocalMapRef.OBSTACULO
+	var escolhido: Array = dw.avaliar(lm_dwa, Vector2(40.0, 240.0), 0.0,
+		120.0, Vector2(61.6, 51.8), 84.0, Vector2.RIGHT, 0.0, 0.9, 160.0)
+	_check("Dwa.returns_command", escolhido.size() >= 2)
+	_check("Dwa.steer_in_actuator_units",
+		absf(float(escolhido[0])) <= 1.0 + 0.001)
+	_check("Dwa.avoids_wall", float(escolhido[0]) >= -0.01)
+	_check("Dwa.produces_throttle", float(escolhido[1]) > 0.0)
+	_check("Dwa.at_least_one_arc", dw.avaliacoes >= 9)
+	# The wheelbase the window was GIVEN must be the scaled one (the Pilot now
+	# passes entre_eixos * escala). Pin the helper, not the scene: 60 * 1.4.
+	var piloto_probe = PilotRef.new(FarolSpecRef.new())
+	_check("Pilot.scaled_wheelbase_unit", absf(piloto_probe._entre_eixos() - 84.0) < 0.01)
+	# The REAL path: with a vehicle at scale 1.4 the mover turns with
+	# entre_eixos * escala = 84; the rollout must receive exactly that.
+	var fake := FakeCarro.new()
+	fake.entre_eixos = 60.0
+	fake.global_scale = Vector2(1.4, 1.4)
+	piloto_probe.injetar_veiculo(fake)
+	_check("Pilot.scaled_wheelbase_scene", absf(piloto_probe._entre_eixos() - 84.0) < 0.01)
+	# MODEL PARITY: with the wall only on the left, the DWA must NOT pick the
+	# full-left arc. (The old code sampled tan(1.0) — an arc the actuator
+	# clamps — so the window's best arc was unexecutable.)
+	_check("Dwa.actuator_clamped",
+		absf(float(escolhido[0])) <= 0.9001)
+
+	# The choke cap: a body-integral over the CHART's clearance cells. With no
+	# chart the metric is undefined (-1) and the cap must be a no-op, so the
+	# pilot never slows on a map that has no static truth.
+	var piloto_cap = PilotRef.new(FarolSpecRef.new())
+	_check("Pilot.cap_noop_without_chart",
+		piloto_cap._velocidade_do_gargalo(120.0) == 120.0)
+	# And the cap itself: folga_media_corpo near 1 (hull mostly buried) must
+	# crawl; 0 (open) must pass the speed through untouched.
+	piloto_cap.local.folga_media_corpo = 0.9
+	_check("Pilot.cap_crawls_in_choke",
+		piloto_cap._velocidade_do_gargalo(120.0) < 60.0)
+	piloto_cap.local.folga_media_corpo = 0.0
+	_check("Pilot.cap_open_passthrough",
+		piloto_cap._velocidade_do_gargalo(120.0) == 120.0)
+	# The detour cooldown survives `resetar()` (Fase5: 30 detours in 11 s when
+	# it did not — the vehicle consumes the request by resetting the pilot).
+	piloto_cap._ultimo_desvio = 9.0
+	piloto_cap.resetar()
+	_check("Pilot.detour_cooldown_survives_reset",
+		piloto_cap._ultimo_desvio == 9.0)
 
 	# Car menu (D1): 10 skins from TWO art families with different pixel sizes
 	# (Kenney 70x121 full-bleed, assets/sprites 100x100 trimmed). The contract
