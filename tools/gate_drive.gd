@@ -51,6 +51,19 @@ extends SceneTree
 ##
 ##   --seed=9000   fixo e reproduzivel (PADRAO, use este para o A/B)
 ##   --seed=0      sorteio livre (equivale a nao fixar seed)
+##
+## FAROL OVERLOAD (--farol=N)
+## --------------------------
+## Mede a fase com o piloto FAROL (`farol_mode = N`) SEM editar a cena: o
+## valor e declarado no no `Carro` ANTES de `add_child` (a mesma tecnica do
+## `gate_trail`), que e o unico momento seguro — `farol_mode` so e lido no
+## primeiro frame (`_garantir_folga_do_planejador`, comanda §7) e o cache de
+## brains tem o valor na chave (AGENTS #20). `--farol=-1` (padrao) nao toca na
+## cena e mede o que ela declara. O campo `farol_mode` do relatorio reflete o
+## que rodou de verdade, e comparar `--farol=2` contra uma ref `farol_mode=0`
+## NAO reprova por isso (o campo nao entra na lista de regressao).
+const SEM_FAROL := -1
+const SEM_LANE := -1
 
 const SensorArrayRef = preload("res://src/vehicle/SensorArray.gd")
 const LevelRegistryRef = preload("res://src/core/LevelRegistry.gd")
@@ -72,6 +85,8 @@ var _json := ""
 var _ref := ""
 var _tol := 0.10
 var _seed := SEED_PADRAO
+var _farol := SEM_FAROL
+var _lane := SEM_LANE
 
 
 func _init() -> void:
@@ -91,6 +106,10 @@ func _init() -> void:
 			_tol = float(a.split("=")[1])
 		elif a.begins_with("--seed="):
 			_seed = int(a.split("=")[1])
+		elif a.begins_with("--farol="):
+			_farol = int(a.split("=")[1])
+		elif a.begins_with("--lane="):
+			_lane = int(a.split("=")[1])
 	if _todas:
 		for n in LevelRegistryRef.LEVELS:
 			lista.append(str(n).get_file().get_basename())
@@ -128,6 +147,18 @@ func _medir(fase_nome: String) -> Dictionary:
 	if _seed != 0:
 		seed(_seed + int(str(fase_nome).hash()))
 	var cena = load("res://scenes/fases/%s.tscn" % fase_nome).instantiate()
+	# The FAROL overload MUST land before the scene enters the tree: `_ready`
+	# is where the planner reads `farol_mode` and the car caches its brain.
+	if _farol != SEM_FAROL or _lane != SEM_LANE:
+		var carro_pre: Node = cena.get_node_or_null("Carro")
+		if carro_pre != null:
+			if _farol != SEM_FAROL:
+				carro_pre.set("farol_mode", _farol)
+			if _lane != SEM_LANE:
+				# FAROL · ROTA (S2): the right-hand rule as A* COST. Like
+				# farol_mode, it only needs to exist before the scene enters
+				# the tree (the planner reads it on the first build).
+				carro_pre.set("lane_cost_mode", _lane)
 	root.add_child(cena)
 	await process_frame
 	var carro: Node2D = cena.get_node_or_null("Carro") as Node2D
