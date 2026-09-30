@@ -303,6 +303,12 @@ def generate(spec):
     out.append("modo_trilha = false")
     out.append("brain_enabled = true")
     out.append("keep_right_shift = %s" % spec.get("keep_right_shift", 300.0))
+    # FAROL rollout switch. DEFAULT 0 on purpose: a level is promoted one at a
+    # time, by DECLARING it here, so regenerating a spec can never silently turn
+    # the pilot on in a level nobody reviewed (the promotion rule is in
+    # .kilo/plans/1790717727010-swift-squid.md §4: 0 = legacy, 1 = shadow
+    # (measures, does not drive), 2 = the FAROL pilot drives).
+    out.append("farol_mode = %d" % int(spec.get("farol_mode", 0)))
     out.append("")
 
     out.append('[node name="Planejador" type="Node2D" parent="."]')

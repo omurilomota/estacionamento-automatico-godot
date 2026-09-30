@@ -181,6 +181,7 @@ auto_navegacao = true
 modo_trilha = false
 brain_enabled = true
 keep_right_shift = 300.0
+farol_mode = 0
 
 [node name="Planejador" type="Node2D" parent="."]
 script = ExtResource("6_plan")
