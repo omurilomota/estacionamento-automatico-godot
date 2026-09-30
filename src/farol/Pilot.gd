@@ -58,6 +58,7 @@ var _steer_hold: float = 0.0
 var _throttle_hold: float = 0.0
 var _ultimo_desvio: float = -1.0e9
 var _t: float = 0.0
+var _steer_abs: float = 0.0
 ## The detour goal the Pilot is asking for (the vehicle consumes and clears it).
 var desvio_alvo: Vector2 = Vector2.INF
 var desvio_contagem: int = 0
@@ -96,9 +97,13 @@ func resetar() -> void:
 	_t_dwa = 0.0
 	_steer_hold = 0.0
 	_throttle_hold = 0.0
-	_ultimo_desvio = -1.0e9
+	_steer_abs = 0.0
 	desvio_alvo = Vector2.INF
 	bloqueado = false
+	# `_ultimo_desvio` DELIBERATELY survives (Fase5, 2026-09-29): the vehicle
+	# consumes a detour by calling `resetar()`, and clearing the cooldown here
+	# let the same blockage re-fire on the very next frame — 30 detours in one
+	# 11 s run. The period is the anti-loop, so only the REQUEST is consumed.
 
 
 func decide(_perception: PerceptionSnapshot, _delta: float) -> DriveCommand:
@@ -120,7 +125,7 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 	if _t - _t_rebuild >= spec.local_rebuild_s:
 		_t_rebuild = _t
 		local.atualizar(context.vehicle_position, rays, _carta(), varrido,
-			spec.local_rebuild_s)
+			spec.local_rebuild_s, _folga_estatica_do_corpo)
 	# 3. blocked_ahead — the plan is unusable, not "I hit a wall".
 	var rota: Array = context.route
 	bloqueado = false
@@ -141,8 +146,10 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 					desvio_alvo = alvo
 					desvios += 1
 					ultima_ordem = "desvio"
-	# 5. DRIVE.
+	# 5. DRIVE. The route speed, THEN the static-choke cap: the profile must
+	# know how much room the WHOLE hull has, not just the route's cell centres.
 	var vel_alvo: float = _velocidade_do_roteiro(context)
+	vel_alvo = _velocidade_do_gargalo(vel_alvo)
 	if rota.size() < 2:
 		ultima_ordem = "sem rota"
 		return _comando_sem_rota(perception, context)
@@ -151,7 +158,8 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 		var dir: Vector2 = _tangente(rota, context)
 		var r: Array = dwa.avaliar(local, context.vehicle_position,
 			context.vehicle_rotation, vel_alvo, meia_eixos,
-			_entre_eixos(), dir, _steer_hold / maxf(max_steer, 0.001))
+			_entre_eixos(), dir, _steer_hold, maxf(max_steer, 0.05),
+			maxf(max_speed, 20.0))
 		# Hold the previous command if the DWA ever answers with a short array:
 		# indexing it blindly turned a single bad frame into a freeze, and the
 		# car stood still for 41 s while the escape ladder burned 672 frames of
@@ -159,6 +167,7 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 		if r.size() >= 2:
 			_steer_hold = float(r[0])
 			_throttle_hold = float(r[1])
+			_steer_abs = _steer_hold * maxf(max_steer, 0.05)
 		else:
 			ultima_ordem = "dwa vazio"
 	if ultima_ordem != "desvio":
@@ -184,11 +193,18 @@ func _avaliar_bloqueio(rota: Array, context: DriveContext) -> Array:
 			i += 1
 			continue
 		acum += seg
-		# The route point is where the CAR will be. A route point that is
-		# tight means the plan does not fit, even while the car is still clear
-		# — that is the difference between this and a collision detector, and
-		# the reason it fires at ~3 m while the car is still MOVING.
-		if local.custo_em(b) >= 0.999:
+		# The route point is where the CAR will be. `bloqueado_clearance_px` is
+		# the spec's MINIMUM threshold on the local cost, and it must be read as
+		# a FLOOR over the hard gate, not as a replacement (measured wrong way,
+		# Fase9 2026-09-29): the cost field is a GRADIENT — mixing the Chart
+		# writes ~0.75 on legal corridor-adjacent cells (cl = raio + 1.5 cells)
+		# — so a raw low threshold marks a LEGAL route as blocked and the detour
+		# replans in a loop every `desvio_periodo_s`. "The plan does not fit"
+		# means the hull would TOUCH (cost >= 0.999: chart clearance at the
+		# swept radius, or a solid painted by a ray). The spec raises the bar,
+		# never lowers it.
+		var custo: float = local.custo_em(b)
+		if custo >= maxf(0.999, spec.bloqueado_clearance_px):
 			seguidos += 1
 		else:
 			seguidos = 0
@@ -247,6 +263,31 @@ func _velocidade_do_roteiro(context: DriveContext) -> float:
 	return FsmProfiles.approach_speed(context.distance_to_target, v, max_speed)
 
 
+## Speed the STATIC room under the hull allows (Fase9 choke fix, 2026-09-29).
+## The route profile only reads the CHART at the route's cell centres; a 400
+## px gap that the scaled hull crosses with ~8 px to spare is `folga = free`
+## there, so `vel_alvo` arrived at full cruise, every fast DWA arc died on
+## contact and the window settled for creep + reverse loops. The static
+## integral under the WHOLE footprint (`folga_media_corpo`, 0..1 = share of
+## the swept radius the body is buried) is the number the profile was missing.
+## The cap is deliberately a CEILING profile: below `normal` (most of the
+## radius of room) no cap; down to `minimo` (creep) at the tightest fit; the
+## rate-limited steering does the steering.
+func _velocidade_do_gargalo(vel: float) -> float:
+	var f: float = local.folga_media_corpo
+	if f <= 0.0:
+		return vel
+	var normal: float = 0.35
+	var minimo: float = 0.75
+	if f >= normal:
+		return vel
+	var t: float = clampf((f - 0.0) / normal, 0.0, 1.0)
+	# smoothstep: v_teto at the choke mouth, vel where the room is normal
+	var k: float = t * t * (3.0 - 2.0 * t)
+	var v_teto: float = maxf(45.0, vel * 0.30)
+	return maxf(v_teto, vel * k)
+
+
 func _comando_sem_rota(perception: PerceptionSnapshot, context: DriveContext) -> DriveCommand:
 	# Without a route the only honest thing is to look at the target, and to
 	# STOP (never push) when the front is closed. The DWA cannot help: it has
@@ -256,6 +297,41 @@ func _comando_sem_rota(perception: PerceptionSnapshot, context: DriveContext) ->
 	var turn: float = clampf(-context.angle_to_target * 2.2, -1.0, 1.0)
 	var gas: float = 0.5 if context.distance_to_target > 200.0 else 0.0
 	return DriveCommand.make(turn, gas)
+
+
+## The body-integral over the LOCAL grid's cells, using the same `folga` px
+## the route profile and `misturar_carta` read. Exposed as a Callable for
+## `LocalMap.atualizar` — the metric lives with the map, the policy (the cap)
+## lives with the Pilot. Cells outside the chart count as 0 room (NEVER
+## overstated).
+func _folga_estatica_do_corpo(pos: Vector2, _ignored: float) -> void:
+	var chart = _carta()
+	if chart == null or veiculo == null:
+		local.folga_media_corpo = -1.0
+		return
+	var meia: Vector2 = _meia_eixos()
+	var raio: float = maxf(meia.length(), 1.0)
+	var cel0: Vector2i = chart.celula_de(pos)
+	var n: int = maxi(2, int(raio / chart.resolucao))
+	var soma := 0.0
+	var total := 0
+	var pior := INF
+	for gy in range(-n, n + 1):
+		for gx in range(-n, n + 1):
+			var cel := cel0 + Vector2i(gx, gy)
+			var centro: Vector2 = chart.centro_de(cel)
+			if centro.distance_to(pos) > raio:
+				continue
+			var f: float = chart.folga(cel)
+			var no_corpo: float = maxf(0.0, raio - f)
+			soma += no_corpo
+			total += 1
+			pior = minf(pior, f)
+	if total <= 0:
+		local.folga_media_corpo = -1.0
+		return
+	local.folga_media_corpo = soma / float(total) / maxf(raio, 1.0)
+	local.folga_pior_px = pior
 
 
 func _tangente(rota: Array, context: DriveContext) -> Vector2:
@@ -291,9 +367,18 @@ func _meia_eixos() -> Vector2:
 
 
 func _entre_eixos() -> float:
+	# MODEL/EFFECTOR PARITY: the mover turns with `entre_eixos * escala_media`
+	# (Carro._aplicar_movimento), so the rollout must too. The bare 60 px made
+	# every DWA arc curve ~40% tighter than the chassis could follow at the
+	# phases' scales (1.1..2.2) — the chase oscillated around the route and the
+	# measured cte was 33.6 px against the legacy 18.0 (Fase9, 2026-09-29).
 	if veiculo == null:
-		return 60.0
-	return maxf(float(veiculo.get("entre_eixos")), 1.0)
+		return 84.0
+	var entre_eixos: float = float(veiculo.get("entre_eixos")) if "entre_eixos" in veiculo else 60.0
+	var escala: float = 1.0
+	var gs: Vector2 = veiculo.get("global_scale") as Vector2 if veiculo.get("global_scale") is Vector2 else Vector2.ONE
+	escala = maxf((gs.x + gs.y) * 0.5, 1.0)
+	return maxf(entre_eixos * escala, 1.0)
 
 
 func _carta():

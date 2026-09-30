@@ -49,10 +49,18 @@ var ancora: Vector2 = Vector2.ZERO
 ## Generation counters for the decay (a cell's cost halves per generation).
 var _idade: PackedByteArray = PackedByteArray()
 var _geracao: int = 0
+## The Chart handed to `misturar_carta`, kept for the body-integral probe.
+var _carta_cache: Chart = null
 ## Diagnostics.
 var celulas_ocupadas: int = 0
 var reconstrucoes: int = 0
 var raios_usados: int = 0
+## Body-integral STATIC-clearance stats over the hull, refreshed by `atualizar`:
+## how much room the Chart (the static truth) gives under the hull footprint,
+## averaged over the disc, and the px of the WORST hull point inside a choke.
+## `folga_media_corpo` is -1.0 until the first refresh.
+var folga_media_corpo: float = -1.0
+var folga_pior_px: float = INF
 
 
 func _init(p_spec: FarolSpec = null) -> void:
@@ -205,13 +213,14 @@ func _marcar(p: Vector2, valor: float, peso: float) -> void:
 ## Blends the STATIC truth (the Chart's clearance) into the same cost field, so
 ## the DWA rollouts are conservative even where a ray has not been cast yet —
 ## the 19 rays cover a fan, not a disc.
-func misturar_carta(chart: Chart, raio_varrido: float) -> void:
-	if chart == null:
+func misturar_carta(p_chart: Chart, raio_varrido: float) -> void:
+	_carta_cache = p_chart
+	if p_chart == null:
 		return
 	for cy in range(dim):
 		for cx in range(dim):
 			var p: Vector2 = ancora + Vector2(cx, cy) * cell
-			var cl: float = chart.folga_em(p)
+			var cl: float = p_chart.folga_em(p)
 			if cl <= 0.0:
 				custo[cy * dim + cx] = OBSTACULO
 				continue
@@ -248,10 +257,44 @@ func ponto(cel: Vector2i) -> Vector2:
 ## Fills a local field from the world state: the rays' wedge, the Chart's
 ## clearance and the decay in one call (the Pilot's per-frame entry point).
 func atualizar(pos: Vector2, rays: Dictionary, chart: Chart, raio_varrido: float,
-		delta: float) -> void:
+		delta: float, folga_estatica: Callable = Callable()) -> void:
 	reconstruir(pos, rays)
 	misturar_carta(chart, raio_varrido)
 	_aplicar_decaimento(delta)
+	if folga_estatica.is_valid():
+		folga_estatica.call(pos, 0.0)
+
+
+## BODY-INTEGRAL static clearance (the missing half of the speed profile).
+## Cost at a point is a 20 px CENTRE sample; the sweep through a 400 px gap
+## reads clean even when the hull at scale 1.4 fits with ~8 px to spare, so a
+## chart-only speed profile cruises into chokes at full speed, every fast arc
+## dies on contact, the DWA creeps at ~8 px/s with a pinned wheel and the
+## escape ladder burns reverse (Fase9 trace, 2026-09-29: 4 cycles, v=0.6->153
+## ->4.1->re). The fix integrates the STATIC truth under the WHOLE footprint:
+## the Chart's `folga` is real px of room (column + half cell, NEVER
+## overstated), sampled on a ring + centre, normalised by the swept radius.
+## Call AFTER `misturar_carta` (post-anchor, pre-decay) — reads only the Chart.
+func folga_estatica_do_corpo(pos: Vector2, half_diag: float) -> void:
+	var chart: Chart = _carta_cache
+	if chart == null or half_diag <= 1.0:
+		folga_media_corpo = -1.0
+		return
+	var raio: float = half_diag
+	var pontos := 13
+	var soma := 0.0
+	var pior := INF
+	for k in range(pontos):
+		var p: Vector2 = pos
+		if k > 0:
+			var ang: float = TAU * float(k - 1) / float(pontos - 1)
+			p = pos + Vector2.RIGHT.rotated(ang) * raio
+		var f: float = chart.folga_em(p)
+		var no_corpo: float = maxf(0.0, raio - f)
+		soma += no_corpo
+		pior = minf(pior, f)
+	folga_media_corpo = soma / float(pontos) / maxf(raio, 1.0)
+	folga_pior_px = pior
 
 
 ## Time-based decay: a cell nobody re-marked fades back to free, so a ray that
