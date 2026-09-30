@@ -152,8 +152,15 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 		var r: Array = dwa.avaliar(local, context.vehicle_position,
 			context.vehicle_rotation, vel_alvo, meia_eixos,
 			_entre_eixos(), dir, _steer_hold / maxf(max_steer, 0.001))
-		_steer_hold = float(r[0])
-		_throttle_hold = float(r[1])
+		# Hold the previous command if the DWA ever answers with a short array:
+		# indexing it blindly turned a single bad frame into a freeze, and the
+		# car stood still for 41 s while the escape ladder burned 672 frames of
+		# reverse (Fase9, 2026-09-29). A short array is a bug, not a plan.
+		if r.size() >= 2:
+			_steer_hold = float(r[0])
+			_throttle_hold = float(r[1])
+		else:
+			ultima_ordem = "dwa vazio"
 	if ultima_ordem != "desvio":
 		ultima_ordem = "piloto"
 	return DriveCommand.make(clampf(_steer_hold, -1.0, 1.0), clampf(_throttle_hold, 0.0, 1.0))
