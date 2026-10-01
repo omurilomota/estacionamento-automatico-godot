@@ -11,6 +11,7 @@ const FarolSpecRef = preload("res://src/farol/FarolSpec.gd")
 const FarolShieldRef = preload("res://src/farol/FarolShield.gd")
 const LocalMapRef = preload("res://src/farol/LocalMap.gd")
 const DwaRef = preload("res://src/farol/Dwa.gd")
+const EngineAudioRef = preload("res://src/vehicle/EngineAudio.gd")
 const PilotRef = preload("res://src/farol/Pilot.gd")
 
 var _fails: int = 0
@@ -460,6 +461,32 @@ func _init() -> void:
 		_check("Catalog.sprite_path_used", str(carro_node.get("sprite_path")) == "Sprite2D")
 		carro_node.free()
 	VehicleCatalog.current_id = VehicleCatalog.DEFAULT_ID
+
+	# Áudio: a pista de ré e o som da ESCADA DE FUGA (#43) — o único lugar onde
+	# o carro dá ré. Era um quadrado de 1 kHz a cada 0,75 s e o usuário chamou
+	# de terrível (2026-09-30). Estes 4 testes existem para o quadrado voltar a
+	# falhar: pico, degrau máximo entre amostras (o que faz o estalo) e a
+	# frequência média (o que faz a penetração).
+	var audio := EngineAudioRef.new()
+	var cue: PackedFloat32Array = audio.call("_beep_samples")
+	var pico := 0.0
+	var degrau := 0.0
+	var cruzes := 0
+	for i in cue.size():
+		pico = maxf(pico, absf(cue[i]))
+		if i > 0:
+			degrau = maxf(degrau, absf(cue[i] - cue[i - 1]))
+		if i > 0 and signf(cue[i]) != signf(cue[i - 1]) and cue[i] != 0.0:
+			cruzes += 1
+	var dur := float(cue.size()) / float(EngineAudioRef.SAMPLE_RATE)
+	var hz := float(cruzes) * 0.5 / maxf(dur, 0.001)
+	_check("Audio.cue_presente", cue.size() > 0 and pico > 0.05)
+	_check("Audio.cue_suave", pico <= 0.40)
+	_check("Audio.cue_sem_estalos", degrau <= 0.06)
+	_check("Audio.cue_grave", hz > 200.0 and hz < 700.0)
+	_check("Audio.cue_curta", dur >= 0.18 and dur <= 0.35)
+	_check("Audio.cadencia_calma", EngineAudioRef.REVERSE_CUE_PERIOD >= 1.0)
+	audio.free()
 
 	print("MODULES_CHECK fails=%d" % _fails)
 	quit(_fails)

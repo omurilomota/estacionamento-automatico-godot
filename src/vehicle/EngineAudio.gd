@@ -19,6 +19,11 @@ const SAMPLE_RATE := 22050
 ## Voice cap: below this the engine is silent, above it is loud. In px/s.
 const SPEED_MIN := 4.0
 const SPEED_MAX := 260.0
+## How often the reverse cue sounds, in seconds. The recovery manoeuvre
+## (AGENTS #43) is the only place the car reverses, so this IS the sound the
+## user hears for it — it was 0.75 s, which made a long escape feel like an
+## alarm.
+const REVERSE_CUE_PERIOD := 1.15
 
 @export var enabled := true
 @export var master_db := -6.0
@@ -79,10 +84,11 @@ func set_engine(speed: float, reversing: bool, parked: bool, delta: float) -> vo
 		_engine.stop()
 	elif not _engine.playing:
 		_engine.play()
-	# Reverse beep: one beep every 0.75 s while the car is actually reversing.
+	# Reverse cue: one soft "tut" every REVERSE_CUE_PERIOD s while the car is
+	# actually reversing.
 	if reversing and not parked:
 		_beep_accum += delta
-		if not _reverse_latched or _beep_accum >= 0.75:
+		if not _reverse_latched or _beep_accum >= REVERSE_CUE_PERIOD:
 			_beep_accum = 0.0
 			_reverse_latched = true
 			if _beep != null:
@@ -127,20 +133,36 @@ func _engine_samples() -> PackedFloat32Array:
 	return out
 
 
-## 0.18 s square-ish beep with 8 ms fades (a square with hard edges clicks).
+## The reverse cue — a calm 0.26 s "tut" instead of the 1000 Hz square beep the
+## recovery manoeuvre used to play (the user called it unbearable on 2026-09-30).
+## What changed, and why each part matters:
+##   - two SINE partials (a square at 1 kHz is the piercing part; a square's
+##     edge harmonics are what the ear hates, not its pitch);
+##   - a gentle downward glide, 494 -> 392 Hz: a falling tone reads as "the car
+##     is being careful", a rising one as an alert;
+##   - 30 ms attack and 30 ms release instead of 8 ms: no click, no slam;
+##   - peak 0.30 (was 0.55) and a 1.15 s cadence (was 0.75 s).
+## The glide is a linear frequency ramp, so the loop-free waveform stays smooth.
 func _beep_samples() -> PackedFloat32Array:
-	var n := int(SAMPLE_RATE * 0.18)
-	var fade := int(SAMPLE_RATE * 0.008)
+	var n := int(SAMPLE_RATE * 0.26)
+	var ataque := int(SAMPLE_RATE * 0.030)
+	var soltar := int(SAMPLE_RATE * 0.030)
+	var f0 := 494.0
+	var f1 := 392.0
 	var out := PackedFloat32Array()
 	out.resize(n)
 	for i in range(n):
-		var s := signf(sin(TAU * 1000.0 * float(i) / SAMPLE_RATE)) * 0.55
-		var env := 1.0
-		if i < fade:
-			env = float(i) / fade
-		elif i > n - fade:
-			env = float(n - i) / fade
-		out[i] = s * env
+		var u := float(i) / SAMPLE_RATE
+		var t := float(i) / float(n - 1)
+		var f: float = lerpf(f0, f1, t * t)
+		# body: a quiet octave above the fundamental, no more
+		var s: float = 0.85 * sin(TAU * f * u) + 0.15 * sin(TAU * f * 2.0 * u)
+		var env := exp(-5.0 * u)
+		if i < ataque:
+			env *= float(i) / ataque
+		elif i > n - soltar:
+			env *= float(n - i) / soltar
+		out[i] = clampf(s * env * 0.30, -1.0, 1.0)
 	return out
 
 
