@@ -1298,6 +1298,42 @@ revertidas** porque a matriz de seeds reprovou:
    **degrau que tira o carro do bolso** (o §43 tem "replanejar → ré → largar a
    vaga" e não tem "sair do bolso"). Revertido, e registrado aqui como pendência.
 
+### 1.26 A escada de fuga ganhou o degrau que faltava: SAIR DO BOLSO (2026-10-01)
+
+O §1.25 deixou claro o buraco: a escada tem "replanejar → ré → largar a vaga", e
+**nenhum dos três tira o carro de um bolsão** — as duas primeiras devolvem o
+carro ao mesmo ponto e a terceira esgota o orçamento de desistências sem mover
+um pixel. Medido na Fase8 seed 9000: 66 s parado, `wp=0/39`, a escada recomeçando
+a cada ~30 px de ré.
+
+**O degrau novo** (`Carro._sair_do_bolso` + `Planejador.achar_celula_espacosa`):
+no 4º degrau, em vez de recusar a vaga, o carro planeja uma rota para **a célula
+livre mais espaçosa num raio**, com mais folga que a sua. O planejador lê a
+folga **real** (12 raios contra o layer 2, o mesmo que a grade usa para decidir
+solidez) e só aceita um destino que o A* sabe alcançar daqui. Uma vez por
+tentativa: `_bolso_resolvido` reabre no reset por progresso real, para um bolso
+*diferente* poder ser escapado.
+
+**O degrau só dispara quando o carro está DE FATO sem espaço.** A primeira
+versão disparava em qualquer engravamento de rotina e custou **28 s na Fase2**
+(`t` 44,9 → 72,9 s, `cte_med` 9,1 → 21,4 px): o desvio era um custo, não um
+resgate. Com a guarda `_sem_espaco_ao_redor()` (folga real em volta < 2× o raio
+varrido — num corredor normal são centenas de px), o degrau só entra onde
+manobrar é impossível.
+
+**Verificação**: seeds **50/50** nas 10 fases · `gate_drive` **GATE_DRIVE_OK**
+(sem regressão em nenhuma métrica) · boots 10/10 · `ModulesCheck fails=0` ·
+`verify_scenes 17/0`.
+
+**O que fica em aberto (medido, não resolvido)**: a margem de spawn. Com 50 px o
+carro pode nascer com o nariz dentro de uma vaga (Fase9 seed 9003: 25 s em
+ALINHAR a 0,6 px/s — agora contornado pela guarda do Mooring, §1.24). Com a
+margem do `inflar` a Fase8 e a Fase10 passam a nascer dentro do bolso do chicane e
+não estacionam em 80 s. **O conserto não é a margem: é a Fase8 não ter bolsões
+que uma diferença de 30 px de spawn alcance** — o degrau novo evita o laço
+infinito, mas o carro ainda gasta os 80 s saindo e voltando. Isso é geometria de
+nível (`tools/specs/Fase8.json`), e é o candidato natural a seguir.
+
 ## 2. Blockers for the deliverable
 
 ### B1/B2 — autonomous parking in Fase2 + Fase3 — **FIXED** (§1.5: 10/10 seeds)
