@@ -1423,7 +1423,33 @@ que ela nunca viu, e extrapolação nesta rede dá zero.
 lançamento e dois sem nenhuma linha parada — a gravação anterior foi interrompida
 ou rodou com o carro ja em movimento. Regravar os episódios (o `gravar.gd` leva
 poucos minutos) e retreinar (`python3 ml/treinar.py`, segundos) fecha o buraco.
-O risco é baixo porque **os pesos versionados são reversíveis** (`git checkout
+**Achei também o bug que fechava a porta:** `ml/treinar.py` filtrava por
+`m[:, 19]` achando que era a "velocidade desejada do professor", mas no contrato
+de 24 colunas a coluna 19 é a **feature** `largura do corredor / 2000` — a saída do
+professor é a coluna `N_ENTRADAS` (22). Com o default `min_vel = 0` o filtro nem
+rodava (a rede treinava com os quadros paradoxais de "parado = professor
+parado"); com `min_vel > 0` ele apagava as linhas por **largura de corredor**,
+justamente as de lançamento (que vivem num corredor estreito, 0,167 < 0,25).
+Corrigido para `m[:, N_ENTRADAS]`.
+
+**Gravando mais 4 episódios e retreinando com o filtro corrigido**:
+
+| | antes | depois |
+|---|---|---|
+| comando da rede no spawn | **0,0 px/s** | **27 px/s** (o deadlock de largada acabou) |
+| tempo dirigindo antes do watchdog | 4,0 s / 5 px | **24,0 s / 1820 px** |
+| onde entrega o volante | t = 4,0 s, parado | t = 24,0 s em (898, 1572), sem progresso |
+| regressão ML | `ESTACIONADO 68,1 s`, fallback | `ESTACIONADO 83,6 s`, fallback |
+
+**Não retreinei em produção, deliberadamente**: a rede dirigindo 24 s é uma
+melhora real do que a pendência pedia, mas a regressão ponta a ponta ficou 15 s
+mais lenta, e trocar `ml/modelo/pesos.json` toca o dado do site (`site/data/`) e o
+ML do jogo. Os pesos publicados foram restaurados, a paridade jogo × site segue
+`GATE_ML_OK` (4,0e-13) e a regressão segue 68,1 s. **Promover o retreino é decisão
+do usuário**: com o dado novo no disco basta `python3 ml/treinar.py 40`,
+`bash tools/export_site_data.sh` e republicar.
+
+O conserto é dado, não código (`git checkout
 ml/modelo/pesos.json`), e a verificação é a regressão ML + a paridade jogo×site
 (`gate_ml_probe`). O que NÃO é automático é o **redeploy**: `pesos.json` vai para
 `site/data/` e é servido em produção — esse passo é decisão do usuário.
