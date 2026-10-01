@@ -269,6 +269,14 @@ var _cautela_tempo: float = 0.0
 ## anda 2 s -> trava -> ré -> zera -> anda 2 s ... 75 s em laço, 1136 frames
 ## de ré, nenhuma vaga conquistada.
 const TRAVA_RESET_PX := 78.0
+## O degrau "sair do bolso" ja rodou nesta vaga (um por tentativa; o reset
+## por progresso real em `_cravou` reabre a contagem para OUTRO bolso).
+var _bolso_resolvido: bool = false
+## Distancia ao FIM da rota no instante da ancora. Quem zera a escada e'
+## "chegou mais perto", nao "andou": dentro de um bolso o carro da ~30 px de re
+## por ciclo e voltava, o que contava como progresso e a escada reiniciava
+## sozinha (Fase8 seed 9000: 66 s parado, wp 0/39).
+var _ancora_distancia: float = 1.0e9
 ## Minutos que o carro pode ficar parado em cima do comando antes de recuperar.
 const TRAVA_MIN_S := 2.0
 ## Progresso mínimo em px durante esse tempo (abaixo disso = travado).
@@ -447,6 +455,8 @@ func definir_modo(modo: int, manter_rota: bool = false) -> void:
 	_travado_tentativas = 0
 	_travado_ha = 0.0
 	_ancora_deslocamento = global_position
+	_ancora_distancia = 1.0e9
+	_bolso_resolvido = false
 	_alinhando_tentativas = 0
 	_tempo_alinhando = 0.0
 	_cautela_tempo = 0.0
@@ -1439,11 +1449,22 @@ func _physics_process(delta: float) -> void:
 			# replanejamento com inflacao 227 disparava a cada 2 s, devolvia a
 			# MESMA rota de 58 waypoints e nao movia o carro um pixel em 45 s.
 			# Entao a escada e': replanejar (1-2) -> dar RE (3) -> largar a vaga (4).
+
 			if _travado_tentativas <= 2:
 				if not _replanejar_com_Inflacao_maior():
 					_comecar_reversao_de_emergencia()
 			elif _travado_tentativas == 3:
 				_comecar_reversao_de_emergencia()
+			elif _travado_tentativas == 4 and not _bolso_resolvido and _sem_espaco_ao_redor():
+				# DEGRAU 4: SAIR DO BOLSO. Replanejar e dar re resolvem a
+				# parede, nao o bolso: dentro de um chao entre duas paredes os
+				# dois devolvem o carro ao mesmo ponto (Fase8 seed 9000, medido
+				# 2026-10-01: 66 s parado, wp 0/39, a escada recomecando do
+				# zero a cada 30 px de re). O que tira o carro de um bolso e' um
+				# objetivo NOVO com mais espaco em volta — e recusar a vaga na
+				# primeira tentativa esgota o orcamento sem mover o carro.
+				if not _sair_do_bolso():
+					_recusar_vaga_atual()
 			else:
 				_recusar_vaga_atual()
 			queue_redraw()
@@ -1683,6 +1704,46 @@ func _replanejar_com_Inflacao_maior() -> bool:
 ## reescolher a MESMA e cair no mesmo laço), zera o orcamento da manobra e
 ## pede outra vaga. Chamado pelo ultimo degrau da escada de fuga e pelo
 ## timeout de ALINHANDO.
+## Plano de fuga: uma rota para a celula livre mais ESPACOSA num raio, com mais
+## folga que a atual. Devolve false quando nao ha nada melhor (a escada segue
+## para recusar a vaga). Uma vez por tentativa: `_bolso_resolvido` volta a zero
+## no reset por progresso real, para um bolso DIFERENTE poder ser escapado.
+## O carro esta ENCAIXADO? Medido como a folga real em volta: abaixo de duas
+## vezes o raio varrido nao ha espaco para manobrar e nenhum objetivo novo o
+## tira de la. Num corredor normal a folga e' de centenas de px e a resposta e'
+## `false` — sem este teste o degrau disparava em encravamento de rotina e
+## custava 28 s na Fase2 (medido 2026-10-01: `t` 44,9 -> 72,9 s, `cte_med`
+## 9,1 -> 21,4 px).
+func _sem_espaco_ao_redor() -> bool:
+	var espaco := _espaco_de_fisica()
+	if espaco == null:
+		return false
+	var folga := float(_folga_minima(espaco, global_position, 900.0)["d"])
+	return folga < raio_varrido() * 2.0
+
+
+func _sair_do_bolso() -> bool:
+	if planejador == null:
+		return false
+	var espaco := _espaco_de_fisica()
+	if espaco == null:
+		return false
+	var folga_aqui := float(_folga_minima(espaco, global_position, 600.0)["d"])
+	planejador.set("_origem_busca", global_position)
+	var destino: Vector2 = planejador.call("achar_celula_espacosa",
+		raio_varrido() * 6.0 + 400.0, folga_aqui + 40.0, true)
+	if destino == Vector2.INF or destino.distance_to(global_position) < 60.0:
+		return false
+	var rota: Array = _rota_a_star_ate(destino)
+	if rota.size() < 2:
+		return false
+	_bolso_resolvido = true
+	_aplicar_rota(rota)
+	tentativa_mudou.emit(0, "Saiu do bolso (%.0f px de folga)" % folga_aqui)
+	_mudar_estado(Estado.BUSCANDO)
+	return true
+
+
 func _recusar_vaga_atual() -> void:
 	if _vaga_alvo != null and is_instance_valid(_vaga_alvo) and not (_vaga_alvo in _vagas_recusadas):
 		_vagas_recusadas.append(_vaga_alvo)
@@ -1712,9 +1773,20 @@ func _comecar_reversao_de_emergencia() -> void:
 	_mudar_estado(Estado.RECUPERANDO)
 
 
+## Distance to the END of the route (the preparation point, or the bay when the
+## route is gone) — never to the current waypoint: a replanned route is born on
+## the car's own cell (AGENTS #43), so waypoint 0 sits 0.02 px away and
+## "closer" would always be true.
+func _distancia_ao_alvo_da_rota() -> float:
+	if waypoints.size() > 0:
+		return global_position.distance_to(waypoints[waypoints.size() - 1])
+	return global_position.distance_to(posicao_alvo)
+
+
 func _cravou(delta: float) -> bool:
 	if _ancora_deslocamento == Vector2.ZERO:
 		_ancora_deslocamento = global_position
+		_ancora_distancia = _distancia_ao_alvo_da_rota()
 		return false
 	# Andar um tanto NAO zera a escada (ver TRAVA_RESET_PX): quem zera e' o
 	# progresso na ROTA (`_avancar_indice_rota`). Medido na Fase1: entre dois
@@ -1723,7 +1795,9 @@ func _cravou(delta: float) -> bool:
 	# (75 s, 1167 frames de ré, nenhuma vaga conquistada).
 	if global_position.distance_to(_ancora_deslocamento) >= TRAVA_RESET_PX:
 		_ancora_deslocamento = global_position
+		_ancora_distancia = _distancia_ao_alvo_da_rota()
 		_travado_ha = 0.0
+		_bolso_resolvido = false
 		return false
 	_travado_ha += delta
 	if _travado_ha < TRAVA_MIN_S:
@@ -2106,6 +2180,7 @@ func _avancar_indice_rota() -> void:
 			_travado_tentativas = 0
 			_travado_ha = 0.0
 			_ancora_deslocamento = global_position
+			_ancora_distancia = _distancia_ao_alvo_da_rota()
 		_resetar_tentativa()
 
 
