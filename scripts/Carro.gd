@@ -718,7 +718,7 @@ func _pos_processar_rota(crua: PackedVector2Array) -> Array:
 		if not rota_farol.vias_livreis(suave, raio_varrido()):
 			_contagem_via_ruim += 1
 		return _garantir_folga(suave)
-	return _garantir_folga(_deslocar_para_direita(suave))
+	return _garantir_folga(_deslocar_para_direita(suave), suave)
 
 
 ## FAROL · DESVIO (S3): the Pilot's detour request, consumed.
@@ -809,7 +809,18 @@ func plano_chart():
 ## isso encosta a linha na parede. A sonda empurra cada ponto para fora ate o
 ## raio varrido. Sem esta passagem a Fase2 dava 3 violacoes (min 97 px contra
 ## 126,5 do raio) logo na saida do spawn.
-func _garantir_folga(rota: Array) -> Array:
+## `origem` is the SAME polyline BEFORE the right-hand shift, point by point.
+## The shift only measures clearance along ONE direction (the route normal), so
+## `free_r' >= keep_clear` is an invariant about that axis only. Two things then
+## break, both measured on 2026-09-30 in Fase3 (seed 9001, `keep_right_shift`
+## 900): a shifted point lands 73 px from a wall with a 115 px swept radius, and
+## — worse — a SEGMENT between two points that are each clear passes 0.8 px
+## from a convex corner. The car cannot drive its own route, and the escape
+## ladder (AGENTS #43) loops forever. So the guarantee runs over the vertices
+## AND over the segments, and whatever it cannot repair reverts to the planner's
+## own line: A* marks every cell within `inflar >= raio_varrido` as solid, and
+## the smoothed line measured 213 px of clearance in that same run.
+func _garantir_folga(rota: Array, origem: Array = []) -> Array:
 	if rota.size() < 2 or planejador == null:
 		return rota
 	var espaco := _espaco_de_fisica()
@@ -828,22 +839,129 @@ func _garantir_folga(rota: Array) -> Array:
 			continue
 		var p: Vector2 = saida[i]
 		var guarda := 0
+		var medido := _folga_minima(espaco, p, varrido + 4.0)
 		while guarda < 4:
-			var d_min: float = varrido
-			var n_para: Vector2 = Vector2.ZERO
-			for k in range(12):
-				var ang: float = TAU * float(k) / 12.0
-				var dir := Vector2.RIGHT.rotated(ang)
-				var d: float = _distancia_parede(espaco, p, dir, varrido + 4.0)
-				if d < d_min:
-					d_min = d
-					n_para = -dir
-			if d_min >= varrido - 0.5:
+			medido = _folga_minima(espaco, p, varrido + 4.0)
+			if float(medido["d"]) >= varrido - 0.5:
 				break
-			p += n_para * (varrido - d_min + 2.0)
+			p += (medido["n"] as Vector2) * (varrido - float(medido["d"]) + 2.0)
 			guarda += 1
+		if float(medido["d"]) < varrido - 0.5 and i < origem.size():
+			var alt: Vector2 = origem[i]
+			if float(_folga_minima(espaco, alt, varrido + 4.0)["d"]) > float(medido["d"]):
+				p = alt
 		saida[i] = p
+	# Segmentos: o que o carro realmente percorre. O reparo e LOCAL — o ponto
+	# ofendido recua pelo MENOR trecho que resolve, em direcao a linha do
+	# planejador (bisecao). Reverter a perna inteira custou 10 s de pilotagem na
+	# Fase6 e aproximou o carro 19 px de um obstaculo, porque a lane perde o
+	# formato num trecho que so estava apertado num ponto.
+	for _volta in range(3):
+		if not _repuxar_pontos(espaco, saida, origem):
+			break
 	return saida
+
+
+## Pulls each offending point toward the planner's line by the SMALLEST amount
+## that leaves room for the car body — the lane keeps its shape everywhere else.
+## Sliding the point away from the wall instead (the "driver's" fix) bent the
+## route and cost Fase10 more than it bought: `cte_p95` 44 -> 97 px.
+## Returns true when something moved.
+func _repuxar_pontos(espaco, saida: Array, origem: Array) -> bool:
+	if origem.size() != saida.size() or origem.size() < 3:
+		return false
+	var passo: float = maxf(passo_rota * 0.4, 10.0)
+	var mudou := false
+	for i in range(1, saida.size() - 1):
+		var alvo: Vector2 = saida[i]
+		var escolhido: Vector2 = _melhor_entre(espaco, saida, i, origem[i], passo)
+		if escolhido == alvo:
+			continue
+		saida[i] = escolhido
+		mudou = true
+	return mudou
+
+
+## Smallest pull from the lane point toward the planner's line that gives the
+## body room on both legs of point `i`. `t = 0` is the planner's line, `t = 1`
+## the lane point.
+func _melhor_entre(espaco, saida: Array, i: int, base: Vector2, passo: float) -> Vector2:
+	var alvo: Vector2 = saida[i]
+	saida[i] = alvo
+	if _folga_das_pernas(espaco, saida, i, passo) >= 0.0:
+		return alvo
+	saida[i] = base
+	if _folga_das_pernas(espaco, saida, i, passo) < 0.0:
+		return base
+	var lo := 0.0
+	var hi := 1.0
+	for _k in range(6):
+		var meio := (lo + hi) * 0.5
+		saida[i] = base.lerp(alvo, meio)
+		if _folga_das_pernas(espaco, saida, i, passo) >= 0.0:
+			lo = meio
+		else:
+			hi = meio
+	saida[i] = base.lerp(alvo, lo)
+	return saida[i]
+
+
+## Room the car BODY has on the two legs that meet at point `i`, sampled along
+## them. Negative means the hull would touch a wall. Measured against the
+## RECTANGLE the car is (176x148 px in Fase3), not its circumscribed circle
+## (115 px): the circle is 30% wider than the body, and demanding it everywhere
+## "repaired" routes the car drove perfectly — it cost Fase6 ten seconds and
+## brought it within 30 px of an obstacle.
+func _folga_das_pernas(espaco, saida: Array, i: int, passo: float) -> float:
+	return minf(
+		_folga_do_segmento(espaco, saida[i - 1], saida[i], passo),
+		_folga_do_segmento(espaco, saida[i], saida[i + 1], passo))
+
+
+func _folga_do_segmento(espaco, a: Vector2, b: Vector2, passo: float) -> float:
+	var comp: float = a.distance_to(b)
+	if comp <= passo:
+		return 1.0e9
+	var n := int(comp / passo)
+	var pior := 1.0e9
+	for k in range(n + 1):
+		var q := a.lerp(b, float(k) / float(n))
+		var dir := (b - a).normalized()
+		pior = minf(pior, _folga_do_casco(espaco, q, dir, 400.0))
+	return pior
+
+
+## Clearance from `p` to the first wall, minus the distance the car BODY reaches
+## in that same direction while travelling along `dir`. Negative = the hull
+## overlaps the wall at this pose.
+func _folga_do_casco(espaco, p: Vector2, dir: Vector2, max_dist: float) -> float:
+	var meia := _meia_eixos_do_carro()
+	if meia == Vector2.ZERO:
+		return float(_folga_minima(espaco, p, max_dist)["d"])
+	var frente := dir.normalized()
+	var lado := frente.orthogonal()
+	var folga := max_dist
+	for k in range(12):
+		var u := Vector2.RIGHT.rotated(TAU * float(k) / 12.0)
+		# distance from the centre to the rectangle's boundary along u
+		var alcance: float = 1.0 / maxf(
+			absf(u.dot(frente)) / meia.x, absf(u.dot(lado)) / meia.y)
+		folga = minf(folga, _distancia_parede(espaco, p, u, max_dist) - alcance)
+	return folga
+
+
+## Closest wall in ANY of 12 directions: `d` is the distance and `n` the unit
+## vector pointing from that wall toward the point (the way out).
+func _folga_minima(espaco, p: Vector2, max_dist: float) -> Dictionary:
+	var d_min: float = max_dist
+	var n_para: Vector2 = Vector2.ZERO
+	for k in range(12):
+		var dir := Vector2.RIGHT.rotated(TAU * float(k) / 12.0)
+		var d: float = _distancia_parede(espaco, p, dir, max_dist)
+		if d < d_min:
+			d_min = d
+			n_para = -dir
+	return {"d": d_min, "n": n_para}
 
 
 func _espaco_de_fisica() -> PhysicsDirectSpaceState2D:
