@@ -17,6 +17,8 @@ var _secs := 32.0
 var _box := Rect2(832.0, -2000.0, 374.0, 4000.0)
 var _min_corredor := 1000.0
 var _shift := -1.0
+var _farol := -1
+var _lane := -1
 
 
 func _init() -> void:
@@ -31,10 +33,19 @@ func _init() -> void:
 			_box.size.x = float(a.split("=")[1]) - _box.position.x
 		elif a.begins_with("--shift="):
 			_shift = float(a.split("=")[1])
+		elif a.begins_with("--farol="):
+			_farol = int(a.split("=")[1])
+		elif a.begins_with("--lane="):
+			_lane = int(a.split("=")[1])
 	var cena = load("res://scenes/fases/%s.tscn" % _fase).instantiate()
 	var carro_pre: Node = cena.get_node_or_null("Carro")
-	if carro_pre != null and _shift >= 0.0:
-		carro_pre.set("keep_right_shift", _shift)
+	if carro_pre != null:
+		if _shift >= 0.0:
+			carro_pre.set("keep_right_shift", _shift)
+		if _farol >= 0:
+			carro_pre.set("farol_mode", _farol)
+		if _lane >= 0:
+			carro_pre.set("lane_cost_mode", _lane)
 	root.add_child(cena)
 	await process_frame
 	var carro: Node2D = cena.get_node_or_null("Carro") as Node2D
@@ -64,6 +75,17 @@ func _init() -> void:
 			dentro += 1
 	if xs.is_empty():
 		print("GATE_LANE %s: sem amostras dentro de corredor largo" % _fase)
+		print("GATE_LANE_FALHOU")
+		quit(1)
+		return
+	# Uma mediana de 9 amostras ja produziu um veredito falso ("55,6% dentro do
+	# box") na medicao de 2026-10-01: o carro passou 0,2 s no corredor largo e o
+	# resto do tempo nao. Abaixo de MIN_AMOSTRAS nao ha julgamento de faixa, e o
+	# gate FALHA em vez de medir a mediana de um punhado de pontos.
+	const MIN_AMOSTRAS := 20
+	if xs.size() < MIN_AMOSTRAS:
+		print("GATE_LANE %s: so %d amostras no corredor largo (minimo %d) — nao da para julgar a faixa" % [
+			_fase, xs.size(), MIN_AMOSTRAS])
 		print("GATE_LANE_FALHOU")
 		quit(1)
 		return
