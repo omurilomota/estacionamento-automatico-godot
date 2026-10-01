@@ -37,6 +37,9 @@ CARRO_SPRITE_SCALE = 1.62
 ENTRE_EIXOS = 60.0
 
 
+RESOLUCAO = 15.0   # Planejador.resolucao (scripts/Planejador.gd)
+
+
 def car_footprint(scale):
     """Collision box and visual box of the car at a level scale."""
     col = (CARRO_BASE[0] * scale, CARRO_BASE[1] * scale)
@@ -107,7 +110,8 @@ def build_bays(spec, world):
                     rot=0.0 if row["rot"] < 0 else 3.141592653589793))
                 continue
             bays.append(dict(name=name, pos=(cx, cy),
-                             scale=row["bay_scale"], rot=row["rot"], prep=prep))
+                             scale=row["bay_scale"], rot=row["rot"], prep=prep,
+                             y_edge=float(row["y_edge"])))
     # cross-row overlap check (cheap AABB sweep)
     for i in range(len(bays)):
         for j in range(i + 1, len(bays)):
@@ -136,6 +140,13 @@ def inside(pt, r):
     return r[0] <= pt[0] <= r[2] and r[1] <= pt[1] <= r[3]
 
 
+def dist_pt_rect(pt, r):
+    """Gap in px from a point to an axis-aligned rect (0 when inside)."""
+    dx = max(r[0] - pt[0], pt[0] - r[2], 0.0)
+    dy = max(r[1] - pt[1], pt[1] - r[3], 0.0)
+    return (dx * dx + dy * dy) ** 0.5
+
+
 def check_solids(spec, world, bays):
     """Invariants about the STATIC BODIES (walls/sidewalks) and the cones.
 
@@ -157,6 +168,34 @@ def check_solids(spec, world, bays):
             if inside(b["prep"], w):
                 die("bay %s prep point %s is inside wall rect %s"
                     % (b["name"], b["prep"], w))
+        # AGENTS §1.24: nao encostar na parede NAO e' suficiente. A grade do
+        # planejador marca solida toda celula dentro de `raio varrido + 1.5
+        # celulas` da parede, entao uma baia a 110 px da guia (Fase6, 3 de 13
+        # inalcancaveis) tem o CENTRO dentro da faixa inflada e nunca pode ser
+        # alcancada — o `gate_reach` e' que mede isso, e o gerador precisa
+        # abortar antes, como aborta para sobreposicao.
+        need = swept_radius(spec["car_scale"]) + 1.5 * RESOLUCAO + RESOLUCAO
+        for w in walls:
+            # A parede contra a qual a baia esta ENCOSTADA de proposito (a
+            # fileira nasce dela) nao conta: o carro entra de frente e o casco
+            # encosta na traseira, como numa vaga de verdade. O que a grade do
+            # planejador marca solido e o CENTRO da celula, entao e' o CENTRO da
+            # baia (e o ponto de preparacao) que precisa de folga — e com uma
+            # celula a mais, porque um centro a 103 px da parede pode cair em
+            # celula solida por causa do arredondamento (Fase6: 3 de 13 baias
+            # inalcancaveis por causa dos espigões fecharem a faixa, AGENTS §1.24).
+            if abs(w[3] - b["y_edge"]) < 0.5 or abs(w[1] - b["y_edge"]) < 0.5:
+                continue
+            d = dist_pt_rect(b["pos"], w)
+            if d < need:
+                die("bay %s centre is only %.0f px from wall rect %s (needs "
+                    "%.0f = swept radius + 2.5 cells)"
+                    % (b["name"], d, w, need))
+            dp = dist_pt_rect(b["prep"], w)
+            if dp < need:
+                die("prep of bay %s is only %.0f px from wall rect %s (needs "
+                    "%.0f = swept radius + 2.5 cells)"
+                    % (b["name"], dp, w, need))
     clear = swept_radius(spec["car_scale"]) + 18.0 + 40.0
     for i, cone in enumerate(spec.get("cones", []), 1):
         p = (cone["pos"][0], cone["pos"][1])
