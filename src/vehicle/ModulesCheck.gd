@@ -464,6 +464,51 @@ func _init() -> void:
 		carro_node.free()
 	VehicleCatalog.current_id = VehicleCatalog.DEFAULT_ID
 
+	# DESVIO REATIVO (S3): `desvios = 0` nas 10 fases nao prova que a camada
+	# esta morta — prova que nenhuma rota fica bloqueada. Aqui a rota ATRAVESSA
+	# um obstaculo e o piloto tem de publicar um desvio ADiante e alcancavel.
+	var lm_desvio := LocalMapRef.de_teste(30, 20.0)
+	lm_desvio.ancora = Vector2(-600.0, -600.0)
+	# parede vertical em x = +240, com a abertura a NORTE (y < -300) e o desvio
+	# tem de ser para um dos lados, nunca para tras
+	for k in range(40):
+		for dy in range(-10, 12):
+			lm_desvio.call("_marcar", Vector2(240.0, 240.0 + float(dy) * 20.0), 1.0, 1.0)
+	var rota_bloqueada: Array[Vector2] = []
+	for k in range(12):
+		rota_bloqueada.append(Vector2(0.0, float(k) * 40.0))
+	rota_bloqueada.append(Vector2(240.0, 480.0))
+	var piloto := PilotRef.new(FarolSpecRef.new())
+	piloto.local = lm
+	var ctx_desvio := DriveContext.new()
+	ctx_desvio.vehicle_position = Vector2.ZERO
+	ctx_desvio.vehicle_rotation = 0.0
+	ctx_desvio.route = rota_bloqueada
+	ctx_desvio.speed = 120.0
+	ctx_desvio.target_position = rota_bloqueada[-1]
+	var percep_desvio := PerceptionSnapshot.new()
+	piloto.max_speed = 120.0
+	piloto.decide_context(percep_desvio, ctx_desvio, 0.05)
+	_check("Detour.detecta_bloqueio", piloto.bloqueado)
+	_check("Detour.celulas_consecutivas", piloto.bloqueado_celulas >= 4)
+	_check("Detour.publica_alvo", piloto.desvio_alvo.is_finite())
+	if piloto.desvio_alvo.is_finite():
+		# o desvio tem de ser ALCANCAVEL (BFS) e estar do lado certo: mais
+		# perto do destino que a propria rota, nunca atras do carro
+		var cam_livre := not lm_desvio.bfs(Vector2.ZERO, piloto.desvio_alvo, 0.0).is_empty()
+		var mais_perto: bool = piloto.desvio_alvo.distance_to(rota_bloqueada[-1]) \
+			< Vector2.ZERO.distance_to(rota_bloqueada[-1])
+		_check("Detour.alvo_alcancavel", cam_livre)
+		_check("Detour.alvo_a_frente", mais_perto)
+	_check("Detour.conta_desvio", piloto.desvios == 1)
+
+	# LACUNA CONHECIDA: o portao `bloqueado_celulas` (4 pontos de rota
+	# CONSECUTIVOS) ainda nao tem teste. A tentativa de monta-lo num LocalMap
+	# sintetico nao foi confiavel: uma marca de 20 px na rota contou 8 pontos
+	# seguidos, entao o cenario nao reproduz o campo de custo real e qualquer
+	# asercao sobre ele passaria no vacuo. Fica como proximo passo (backlog
+	# §1.27): o cenario tem de vir de um Chart de verdade, como o gate_chart faz.
+
 	# FAIXA NO CUSTO (S2): o alvo da faixa e' a DISTANCIA ate a guia direita, e
 	# o custo e' |fr - alvo| nos DOIS lados. A versao anterior definia `alvo` a
 	# partir do proprio `fr` da celula, entao `(alvo - fr)` era negativo em toda
