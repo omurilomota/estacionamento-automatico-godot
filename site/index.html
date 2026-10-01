@@ -43,7 +43,7 @@
     <ul class="chips">
       <li>50 de 50 spawns aleatórios estacionaram (10 níveis × 5 seeds)</li>
       <li>10 níveis, 82 vagas — 79 alcançáveis pelo A*</li>
-      <li>faixa da direita: 22,5% do tempo dentro do box que você desenhou</li>
+      <li>faixa da direita: a rota encosta na guia leste a 190 px, o mínimo seguro, e o carro segue com 17 px de erro médio</li>
       <li>0 cone tocado, 0 raspada de carroceria</li>
       <li>sensores + A* visíveis ao vivo</li>
     </ul>
@@ -219,7 +219,7 @@
     <div><strong>6–15 s</strong><span>Fase 5 a Fase 10: 16, 13, 13, 10, 5 e 6 vagas, em 6,4 a 14,8 s</span></div>
     <div><strong>82 vagas</strong><span>em 10 níveis — <strong>79</strong> alcançáveis pelo A*; 3 da Fase 6 ficam fora do alcance e o carro nunca as escolhe</span></div>
     <div><strong>746 px · 459 px</strong><span>posição mediana do carro e distância até a guia direita (Fase 2) — o carro usa a via, mas não encosta na parede</span></div>
-    <div><strong>0% → 22,5%</strong><span>do tempo dentro do box da RuaDireita que você desenhado. O número de 100% que estava aqui não se reproduz: medido no gate versionado, o carro chega a x=1003 (a guia está em 1206), mas só fica 22,5% do boot dentro da caixa</span></div>
+    <div><strong>190 px</strong><span>distância da rota até a guia leste dentro da RuaDireita — 1,5× o raio varrido, o mínimo seguro. O "100% dentro do box" que estava aqui nunca existiu: o carro tem de sair da rua para entrar na vaga, 700 px a oeste, então "tempo dentro da caixa" não é a medida da faixa</span></div>
     <div><strong>0</strong><span>violação de raio varrido: 145,2 px de folga mínima contra 126,5 exigidos, na rota já deslocada para a direita</span></div>
     <div><strong>326 px</strong><span>menor folga até o trânsito que cruza, no boot de hoje: sobreposição é impossível</span></div>
     <div><strong>39,2 s</strong><span>Fase 2 em modo trilha (10,8 px do centro, ré zero)</span></div>

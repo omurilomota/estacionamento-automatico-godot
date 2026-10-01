@@ -1182,6 +1182,59 @@ Fase3), and the A* cost currently abandons the corridor. The missing piece is
 `w_faixa` in `FarolSpec` tuned so the corridor is worth more than the diagonal
 — the plan's own diagnosis, now with the two ends of the trade-off measured.
 
+### 1.23 Two bugs in the lane cost, and what "rua direita" actually means (2026-10-01)
+
+§1.22 rejected the lane-as-cost because it sent the car away from the eastern
+street. Two real bugs turned up while chasing that, both of which made the
+weight `w_faixa` **unable to reorder anything**:
+
+1. **`alvo` was derived from the cell's own `fr`** (`alvo = fr - band` /
+   `fr - largura * 0.25`), so `(alvo - fr)` was negative for EVERY cell and the
+   right-half penalty was identically **zero**. Measured on Fase2,
+   `w_faixa` from 1.8 to 40 gave the same route to the metre (x_med 272→277).
+   `alvo` is now the lane target **as a distance from the right guide** (the
+   same number `LaneOffset` leaves between lane and guide) and the penalty is
+   `|alvo - fr|` — on **both** sides of the target, because measuring only "too
+   close to the wall" leaves everything from the target to the middle free.
+2. **`Chart.dominante_eixo` was mirrored on x.** The four sweeps in
+   `_varrer_direcoes` accumulate the distance to solid cells at *smaller*
+   coordinates, so index 0 reported the distance toward −x while
+   `dominante_eixo(+x)` returned 0. `Route.custo_celula` therefore read the lane
+   off the **LEFT** side of a northbound corridor. y was correct, which is why
+   the bug only showed on vertical legs — and why the lane looked plausible.
+
+Both are pinned in `ModulesCheck` with a synthetic corridor Chart
+(`Lane.alvo_mais_barato_que_o_meio/que_a_parede`, `Lane.meio_mais_barato_que_a_esquerda`),
+and **all three mutations were run**: mirrored axis → 3 FAIL, dead penalty → 2
+FAIL, one-sided penalty → 1 FAIL. The ordering they now enforce, measured on a
+1000 px corridor: target **1.16** < wall hug 2.60 < middle 2.77 < left half
+3.40.
+
+**But promoting it to Fase2 is still wrong, and now for a reason that is not a
+bug.** With the cost working, the car *still* does not enter the eastern street
+(`x_max` 431, 0 % inside the box, at any `w_faixa`): the street is not on the
+way. The bay is at x = −135 and the car starts at x = −742; driving to x ≈ 1000
+and back is a **detour**, and a per-cell weight cannot buy a detour that costs
+distance. What actually puts the car on that street is the **post-hoc shift**,
+which displaces the path sideways by up to 900 px. So the shift stays, and
+`lane_cost_mode = 1` remains Fase9's promotion.
+
+**What the lane actually measures, with the right instrument.** `tools/lane_track.gd`
+added in §1.22 counts boot time in a box, and that number is a poor proxy: the
+car *must* leave the eastern street to reach a bay 700 px west of it. Measuring
+the thing the rule is about:
+
+| pergunta | como | resultado |
+|---|---|---|
+| a rota encosta na guia leste? | `folga_dir` dos pontos da rota na rua leste | mediana **190 px** = `1.5 × raio varrido` (o mínimo seguro), 17 de 29 pontos dentro do box |
+| o carro segue a faixa? | `Carro._cte_para_rota()` no boot inteiro | média **17,3 px**; os piores momentos (257 px) são todos na manobra final (`estado = ALINHANDO`) |
+| o carro usa a rua? | `lane_track` | `x_max` = **1003** (a guia está em 1206), entrada pela corner sul-leste |
+
+Ou seja: **a faixa está certa**, e o número de "100% dentro do box" do §34 nunca
+existiu. O que a varredura entregou foram dois bugs reais no caminho do custo,
+um portão novo que recusa julgar uma faixa com menos de 20 amostras, e a
+correção do número publicado.
+
 ## 2. Blockers for the deliverable
 
 ### B1/B2 — autonomous parking in Fase2 + Fase3 — **FIXED** (§1.5: 10/10 seeds)

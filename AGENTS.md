@@ -895,3 +895,22 @@ so `estado == 3` still means PARKED during migration.
     um modo de faixa so entra porNIVEL, com o placar de arbitro, e
     `gate_lane` agora **FALHA com menos de 20 amostras** — uma mediana de 9
     pontos ja deu um veredito falso ("55,6% dentro do box") neste dia.
+    **E o custo tinha DOIS bugs que o tornavam inerte** (achados em 2026-10-01,
+    backlog §1.23): (a) `alvo` era derivado do proprio `fr` da celula, entao
+    `(alvo - fr)` era negativo em TODAS as celulas e a penalidade da metade
+    direita era zero — `w_faixa` de 1.8 a 40 deu a mesma rota; (b)
+    `Chart.dominante_eixo` estava ESPELHADO no eixo x (as varreduras de
+    `_varrer_direcoes` acumulam a distancia para celulas de coordenada MENOR, e
+    o indice 0 devolvia a distancia para -x), entao a faixa era lida do lado
+    ESQUERDO num corredor vertical — o eixo y estava certo, por isso o defeito
+    so aparecia em perna vertical. Corrigido: `alvo` e' a distancia da faixa ate
+    a guia e a penalidade e' `|alvo - fr|` nos DOIS lados. Tres testes novos
+    (`Lane.*`) com mutacao rodada.
+    **Ainda assim nao promove a fase:** a rua leste da Fase2 nao esta no caminho
+    (a vaga esta a x=-135 e o carro nasce a x=-742), e entrar nela e' um
+    DETURNO — preco de distancia que peso por celula nao compra. Quem põe o
+    carro naquela rua e' o shift pos-A*, que desloca o caminho ate 900 px.
+    **E o numero certo para julgar a faixa** nao e' "tempo dentro do box" (o
+    carro tem de SAIR da rua para entrar na vaga, 700 px a oeste): e' a distancia
+    da ROTA ate a guia dentro da rua (mediana **190 px** = `1.5 x raio varrido`)
+    e o erro lateral do carro nela (`_cte_para_rota`, media **17 px**).
