@@ -233,6 +233,16 @@ so `estado == 3` still means PARKED during migration.
   like `Carro._escolher_vaga()` does. It prints per-bay REACHABLE/UNREACHABLE and
   exits non-zero if not one bay is reachable. This is the gate that showed Fase1
   and Fase5 had **zero** usable bays.
+- **Reachability is not "the point is routable"** (`tools/gate_reach.gd` only
+  asks the planner for a route to the preparation point, and the planner will
+  happily snap a goal that is INSIDE a wall to the nearest free cell). The
+  generator is the real gate: the bay CENTRE and its preparation point must keep
+  `raio varrido + 2.5 cells` from every wall except the one the row is built
+  against (`tools/gen_level.py`, 2026-10-01). Two levels were shipping dead bays
+  past `gate_reach`: Fase6 (3 of 13, its 221 px spikes sealed the aisle once the
+  swept radius inflated it) and Fase9 (`N_4`'s prep point 10 px inside an
+  interior wall). A perimeter wall the car parks *against* is not a clearance
+  violation — the hull touches the kerb by design.
 - **Level generator** (declarative, asserts before writing):
   `python3 tools/gen_level.py tools/specs/FaseN.json` emits the scene; the stall
   grid is derived from the car footprint and the script ABORTS if a bay would

@@ -1235,6 +1235,69 @@ existiu. O que a varredura entregou foram dois bugs reais no caminho do custo,
 um portão novo que recusa julgar uma faixa com menos de 20 amostras, e a
 correção do número publicado.
 
+### 1.24 Duaslevels com baias mortas, e a invariante que faltava no gerador (2026-10-01)
+
+A pendência "3 baias inalcançáveis na Fase6" era a ponta: **o gerador não tinha a
+invariante**. Ele abortava se a baia *encostava* numa parede, mas o planejador
+marca solida toda célula dentro de `raio varrido + 1.5 células` da parede — e
+uma baia a 110 px da guia tem o **centro** dentro dessa faixa. Duas variantes do
+mesmo defeito foram measure e corrigidas:
+
+| nível | defeito | como foi discovered |
+|---|---|---|
+| **Fase6** | 3 de 13 baias inalcançáveis (`N_8`, `S_7`, `S_8`): os **espigões** de 221 px de altura fechavam a faixa com a inflação de 118 px, e o ponto de preparo da fileira ficava dentro da faixa dos espigões | `gate_reach` (10/13) + a nova invariante |
+| **Fase9** | a prep de `N_4` ficava a **10 px DENTRO** do `MuroLeste` — o planejador só salvava arredondando o objetivo para a célula livre, e o gate_reach chamava a baia de alcançável | a nova invariante (o gate_reach sozinho não via) |
+
+**A invariante nova** (`tools/gen_level.py`): o **centro** da baia e o **ponto de
+preparo** precisam de `raio varrido + 2,5 células` de qualquer parede — exceto a
+parede contra a qual a fileira nasce (ali o carro encosta a traseira de
+propósito, como numa vaga de verdade). A margem de 2,5 células (e não 1,5) é o
+arrendondamento de célula: um centro a 103 px pode cair em célula sólida.
+
+**A correção da Fase6 preservou a dificuldade e MELHOROU a pilotagem.** Os
+espigões de 221 px viraram **meios-fios de 40×60 px** nos vãos entre baias (passo
+285,7 px): ainda obrigam a mudar de faixa, e deixam 381 px de faixa dirigível
+(o carro precisa de 2×103 = 206 px). O destino é a place where the car drives
+*worse* without them:
+
+| Fase6 | antes | depois |
+|---|---|---|
+| baias alcançáveis | **10/13** | **13/13** |
+| `t` | 6,4 s | 7,5 s |
+| `cte_med` | 12,6 px | **3,8 px** |
+| `cte_p95` | 17,2 px | **7,6 px** |
+| `sat` | 0 % | 0 % |
+| `folga_min` | 294,7 px | **312,6 px** |
+
+Ou seja: a faixa aberta e sem guia fazia o carro *pior*, não melhor.
+
+**E um bug do piloto (Fase9), encontrado de passagem**: com `farol_mode >= 2` o
+`Mooring` assumia o volante a 200 px da vaga, ignorava o waypoint de preparo e ia
+direto contra o meio-fio das costas — 25 s em `ALINHAR` a 0,6 px/s, porque o
+Locomotion recusa girar abaixo de 1 px/s e a rampa que o Mooring exige para girar
+em parado estava bloqueada pelos raios da frente. Agora `_no_ponto_de_preparo()`
+só entrega o volante ao Mooring quando o carro chegou ao ponto de preparo; antes
+disso o `ALINHANDO` legado conduz pela rota (o caminho que os 9 níveis
+históricos mediram). A seed 9003 da Fase9 passou de **não estaciona em 80 s** para
+**6,0 s**.
+
+### 1.25 Duas correções que eu aplicuei e reverti (a sorte de medir)
+
+Duas mudanças de comportamento compartilhado pareceram certas e **foram
+revertidas** porque a matriz de seeds reprovou:
+
+1. **Margem de spawn = `inflar` do planejador** (era 50 px fixos): com 50 px o carro
+   pode nascer com o nariz dentro da vaga (Fase9 seed 9003). Com a margem nova a
+   Fase9 seed 3 passou, **mas** a Fase8 e a Fase10 passaram a nascer dentro do
+   bolso do chicane e a falhar (50 s parado cada). Revertido.
+2. **Escada de fuga zera por aproximação, não por deslocamento**: dentro de um
+   bolso o carro dá ~50 px de ré por ciclo, o que contava como progresso. Troquei
+   por "chegou mais perto do alvo" e o sintoma mudou de nome — o carro passou a
+   **recusar todas as vagas** (`_recusar_vaga_atual` até `_sem_vagas`) e parar, em
+   vez de replanejar para sempre. Nenhum dos dois é o conserto; o que falta é o
+   **degrau que tira o carro do bolso** (o §43 tem "replanejar → ré → largar a
+   vaga" e não tem "sair do bolso"). Revertido, e registrado aqui como pendência.
+
 ## 2. Blockers for the deliverable
 
 ### B1/B2 — autonomous parking in Fase2 + Fase3 — **FIXED** (§1.5: 10/10 seeds)
