@@ -1379,6 +1379,55 @@ mista o Chart com gradiente). Um teste sobre esse cenario passaria no vacuo, ent
 **preferi nao shippar** e registrei a lacuna. O cenario tem de vir de um Chart de
 verdade, como o `tools/gate_chart.gd` faz.
 
+### 1.28 Por que a rede entrega o volante em 4,0 s (2026-10-01)
+
+`ml/testar_ml.gd` reporta `ESTACIONADO 68,1 s (usou_fallback=true)`. Rastreado
+frame a frame, o handover acontece em **t = 4,0 s**, depois de andar **5 px**:
+
+```
+t=0.0 modo_ml=true  estado=0  v=  3.4  wp=0/0
+t=2.0 modo_ml=true  estado=0  v=  0.0  wp=0/0     <- a rede mandou parar
+t=4.0 modo_ml=false estado=0  v= 66.8  wp=2/92    <- o watchdog de 4 s assumiu
+```
+
+E a rede **comanda 0,0 px/s com a via livre**: `inferir(_ml_features())` devolve
+`sterro = -1.66, vel = -0.0025` no spawn (todos os 11 raios a 1,0).
+
+**Não é fiação nem é o watchdog.** O watchdog está certo: uma rede que não anda
+em 4 s não é a rede. E a rede está boa **dentro** da distribuição em que foi
+treinada: nos dados de cruiseamento ela reproduz o professor (0,85 contra 1,0),
+e o dataset tem **2222 linhas (60% de um episódio) de "carro parado + frente
+livre" com 100 % de "acelerar"**.
+
+**O que falha é a cobertura do ponto de partida.** Comparando o vetor de runtime
+com as 2222 linhas de lançamento, **6 das 22 features ficam fora da faixa
+p10–p90** do dataset:
+
+| feature | runtime | dataset (p10–p90) |
+|---|---|---|
+| `ray_long_c` / `_esq` / `_dir` | 1,000 | 0,253–0,295 |
+| `sin(erro_vaga)` | −0,806 | 0,516 |
+| `cos(erro_vaga)` | 0,592 | −0,856 |
+| `erro_rot/PI` | −0,999 | 0,502 |
+| `largura/2000` | 1,000 | 0,167 |
+
+O episódio gravado com spawn aleatório aconteceu num **corredor estreito, com o
+carro apontado ~120° para fora da vaga**; o spawn de `testar_ml.gd` é um
+**largo aberto com o carro apontado para o lado oposto da vaga** (`erro_rot/PI =
+−0,999`). Nenhuma feature isolada decide: trocadas uma a uma, três delas viram
+a saída positiva (54, 57 e 35 px/s) — a rede está **extrapolando** numa superfície
+que ela nunca viu, e extrapolação nesta rede dá zero.
+
+**O conserto é dado, não código**: `ml/gravar.gd` já tem no plano
+`["Fase3", 1..3, true]` (spawn aleatório), mas no disco há um episódio com
+lançamento e dois sem nenhuma linha parada — a gravação anterior foi interrompida
+ou rodou com o carro ja em movimento. Regravar os episódios (o `gravar.gd` leva
+poucos minutos) e retreinar (`python3 ml/treinar.py`, segundos) fecha o buraco.
+O risco é baixo porque **os pesos versionados são reversíveis** (`git checkout
+ml/modelo/pesos.json`), e a verificação é a regressão ML + a paridade jogo×site
+(`gate_ml_probe`). O que NÃO é automático é o **redeploy**: `pesos.json` vai para
+`site/data/` e é servido em produção — esse passo é decisão do usuário.
+
 ## 2. Blockers for the deliverable
 
 ### B1/B2 — autonomous parking in Fase2 + Fase3 — **FIXED** (§1.5: 10/10 seeds)
