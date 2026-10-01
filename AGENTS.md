@@ -247,13 +247,24 @@ so `estado == 3` still means PARKED during migration.
     player is stopped; it deliberately does NOT read the car's `CrosserGate`,
     because with a brain active the gate in use is the brain's, AGENTS #20) +
     `neg_frames`. Non-zero exit on failure.
-  - `tools/gate_seeds.gd -- --secs=80` — 5 seeds x {Fase2, Fase3} with random
-    spawn. This is the gate that catches what a single boot cannot.
-  - `tools/gate_lane.gd -- --fase=FaseN --secs=32` — the right-hand rule by
-    ABSOLUTE position: median x, distance to the right guide and the fraction
-    inside the box the user drew (x 832..1206 in Fase2), plus the route's
-    `free_r' >= raio varrido` invariant. Never judge the lane with a lateral
-    offset in a wide aisle (#31).
+  - `tools/gate_seeds.gd -- --fases=Fase1,...,Fase10 --secs=80` — 5 seeds per
+    level with random spawn (50 boots; the default is still Fase2,Fase3).
+    This is the gate that catches what a single boot cannot — it is the one that
+    caught Fase3 seed 2 wedging forever on an undrivable lane (§46).
+  - `tools/gate_drive.gd -- --fase=FaseN --secs=75 [--ref=<json>]
+    [--shift=X] [--farol=M] [--lane=M]` — the driving-quality board:
+    `|CTE| med/p95`, steering saturation %, minimum hull clearance, replans,
+    local detours, TTC and total time, on the fixed seed 9000 **per level**.
+    `--ref` compares against a stored scoreboard and fails on a regression
+    (a different seed between the two is itself a failure); `docs/farol_drive.json`
+    is the current board (10 levels). Never judge a lane width from the scene:
+    sweep it with `--shift=` (AGENTS §46).
+  - `tools/gate_lane.gd -- --fase=FaseN --secs=32 [--shift=X]` — the right-hand
+    rule by ABSOLUTE position: median x, distance to the right guide and the
+    fraction inside the box the user drew (x 832..1206 in Fase2), plus the
+    route's `free_r' >= raio varrido` invariant. Never judge the lane with a
+    lateral offset in a wide aisle (#31). `--shift=` sweeps the lane width of a
+    level without touching the scene (§46).
   - `tools/gate_trail.gd -- --secs=70` — Fase2 in forced trail mode.
   - `tools/gate_ml_probe.gd` + `tools/gate_ml_probe.js` (+ the fixed
     `tools/ml_probe_vector.json`) — the browser's MLP must equal the game's.
@@ -834,3 +845,38 @@ so `estado == 3` still means PARKED during migration.
     sendo RE-CODIFICADA pelo script versionado (nunca copiada crua, §26) —
     o script roda em segundos porque o trabalho pesado (SVG -> PNG) e' feito
     pelo Godot a 1x (#24).
+
+46. **A invariante da faixa (#18) vale num EIXO so — e o carro dirige o
+    SEGMENTO, nao o vertice.** `shift = fr - keep_clear` garante folga na
+    normal da rota e em mais nada. Medido em 2026-09-30 na Fase3 (seed 9001,
+    `keep_right_shift=900`), por estagio, com 16 raios e raio varrido 115 px:
+
+    | estagio | folga nos VERTICES | folga nos SEGMENTOS |
+    |---|---|---|
+    | A* cru | 213,4 px | 213,4 px |
+    | Chaikin + reamostra | 213,4 px | 213,4 px |
+    | depois da faixa | 73,3 px | **0,8 px** |
+    | depois de `_garantir_folga` | 104,2 px | **0,8 px** |
+
+    A polilinha deslocada passava a **0,8 px** da quina do `Obstaculo` de
+    (247, -781): dois vertices com 121 px de folga tem um segmento que corta a
+    quina convexa entre eles. O carro tentava dirigir a propria rota atraves da
+    parede, `NEG_FRAMES` ficava 0 e `estado` continuava `SEEKING` — **nenhum
+    portao via**. A escada de fuga (#43) ciclava replan -> re -> a mesma quina
+    para sempre, porque cada re de ~30 px contava como "progresso real".
+    **A correcao:** a garantia passou a ser sobre o **corredor varrido** —
+    `Carro._casco_preso()` amostra cada perna a cada `passo_rota * 0.4` px e
+    compara a distancia ate a parede com o alcance do **CASCO** (retangulo de
+    176x148 px, alcance de 74 a 88 px por direcao), **nao com o circulo
+    circunscrito de 115 px**: exigir o circulo "conserta" rotas que o carro
+    dirigia (custou 10 s na Fase6 e aproximou o carro de um obstaculo). O ponto
+    ofendido recua pelo **menor** trecho que resolve, por bisecao, em direcao a
+    linha do planejador (que o A* prova dirigivel). Duas variantes foram
+    medidas e REJEITADAS: reverter a perna inteira (Fase6 +10 s) e deslizar o
+    ponto para longe da parede (Fase10 `cte_p95` 44 -> 97 px).
+    **Corolario de nivel:** a faixa tem de caber no corredor. Na Fase10 o
+    `keep_right_shift` de 300 nao cabia entre os dois refugios escalonados —
+    medido com `gate_drive --shift=`: 300 -> 23,8 s / `cte_p95` 48,0 / folga
+    91 px, 200 -> 19,8 s / 24,2 / 133, **120 -> 12,6 s / 19,9 / 217**. O spec
+    passou a 120. Use `--shift=` para medir, `--fase=` para isolar; nunca
+    edite a cena na mao para tunar isso (a fase e' DADO, #41).

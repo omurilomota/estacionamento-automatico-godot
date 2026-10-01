@@ -1037,6 +1037,105 @@ A saturação média de 30,1 % (73,3 % na Fase5) é a tradução numérica do
 "burro" do usuário: o volante no batente não é falta de tentativa, é a
 **lacuna entre a rota e a roda** que o plano §1 diagnostica.
 
+### 1.21 The right-hand lane produced routes the car could not drive (2026-09-30)
+
+The full-gate sweep on 2026-09-30 (10 levels: `gate_reach` + `run_gates.sh` +
+`gate_drive` + `gate_seeds` + `gate_lane` + `gate_trail` + ML) found **one
+regression and one rule that was weaker than documented**.
+
+**The regression: Fase3 seed 2 never parked.** `gate_seeds` printed
+`parked=false t=80.0s parado=40.1s` — the car sat at (451, -637) for 40 s,
+reversed, drove forward 2 s, wedged again, forever. `NEG_FRAMES` stayed 0 and
+`estado` stayed `SEEKING`, so no existing gate could see it. A/B on a worktree
+at `6e4b9a7` (the commit before the FAROL series):
+
+| Code | Fase3 scene | 5 seeds |
+|---|---|---|
+| `6e4b9a7` | as of `6e4b9a7` (trail, `keep_right_shift` default) | **5/5** (seed 2 took 75,0 s) |
+| `6e4b9a7` | as of HEAD (autonomous, shift 900, `vaga_prioritaria`) | **0/5** |
+| HEAD | as of HEAD | 4/5 |
+
+So the trigger is `8b0a48a` ("fix the SCENE, not the shared park gate"), which
+rewrote `Fase3.tscn` and switched it from trail to autonomous with
+`keep_right_shift = 900`. The proximate cause is **not** the scene: it is the
+lane rule.
+
+**The rule was weaker than AGENTS #18 claims.** That entry states the safety
+invariant `free_r' >= keep_clear` holds *by construction*. It holds on the axis
+the shift was measured on (the route normal) and **nowhere else**. Measuring
+each stage of the pipeline on the failing run (16 rays, layer 2, swept radius
+115 px):
+
+| Stage | min clearance at the VERTICES | min clearance along the SEGMENTS |
+|---|---|---|
+| raw A* | 213,4 px | 213,4 px |
+| Chaikin + resample | 213,4 px | 213,4 px |
+| after the right-hand shift | 73,3 px | **0,8 px** |
+| after `_garantir_folga` | 104,2 px | **0,8 px** |
+
+The shifted polyline passed **0,8 px** from the corner of the `Obstaculo` at
+(247, -781) — the car was asked to drive its own route through a wall, because
+two vertices that are each 121 px clear have a *segment* that cuts the convex
+corner between them. `_garantir_folga` only ever looked at vertices, so it
+repaired 73 → 104 px and never saw the segment. The car then pressed its nose
+into that corner, and the escape ladder (`AGENTS #43`) cycled replan → reverse
+→ the same corner forever: each reverse gave it 30 px of "real progress", and
+that is what resets the ladder.
+
+**The fix** (`scripts/Carro.gd`): the guarantee now runs over the swept
+corridor, not the vertices. For each leg it samples every `passo_rota * 0.4`
+px and asks `_casco_preso()`: for each of 12 wall directions, the distance from
+the centre to the first wall **minus the distance the car BODY reaches in that
+direction** (the hull is a 176×148 rectangle, so its reach is 74–88 px — *not*
+the 115 px circumscribed circle). When a leg is inside that reach, the point is
+pulled toward the planner's line by the **smallest** amount that clears it, by
+bisection. Two earlier variants were measured and rejected: reverting the whole
+leg cost Fase6 ten seconds and brought the car 19 px closer to an obstacle;
+sliding the point sideways instead cost Fase10 `cte_p95` 44 → 97 px.
+
+**Fase10's lane was the level-level cause** (its corridor between the two
+staggered refuges cannot hold a 300 px lane): sweeping `keep_right_shift` with
+the new `gate_drive --shift=` gave 300 → 23,8 s / `cte_p95` 48,0 / `folga` 91,
+200 → 19,8 s / 24,2 / 133, **120 → 12,6 s / 19,9 / 217**. The spec now declares
+120 (the cost: the car sits ~156 px left of where it sat, still ~505 px from
+the right guide in that 1000 px corridor). **Fase6's cones** were the other
+half: at (±1050, 0) they sat 110 px inside the sidewalk, and the car passed
+48–57 px from a solid cone on 1 of 3 free spawns. They now sit on
+`CalcadaOeste`/`CalcadaLeste` (±1180), where the `inflar` band already seals the
+area, so no route can come near (AGENTS #19's cheapest placement).
+
+**After the fix — the whole board, all green:**
+
+| Gate | Result |
+|---|---|
+| `ModulesCheck` | `fails=0` |
+| `verify_scenes` | `scenes=17 failures=0` |
+| `gate_chart --all` | 10 levels, `dif_sym=0` |
+| `gate_reach` | 10/10 levels (Fase6 10/13 bays) |
+| `run_gates.sh --fases=Fase1..Fase10` | **10/10 PARKED**, `CONES hits=0`, `NEG_FRAMES=0` |
+| `gate_seeds` (5 seeds × **10** levels) | **50/50 parked** |
+| `gate_drive --all` | `GATE_DRIVE_OK` — 10/10 PARKED, `docs/farol_drive.json` |
+| `gate_lane` Fase2/Fase3 | `GATE_LANE_OK`, `min_free_r` 145,2 / 118,8 px, 0 violations |
+| `gate_trail` (Fase2 forced trail) | `PARKED 39,5 s`, `dist_centro 10,8`, `neg_frames=0` |
+| `ml/testar_ml.gd` | `ESTACIONADO 68,1 s` (`usou_fallback=true`) |
+| `gate_ml_probe` (game vs site MLP) | `pior_diff 4,0e-13`, `GATE_ML_OK` |
+
+Fase6 and Fase10 got **better than the pre-fix board** on every metric, and the
+cone scrapes disappeared from both boots (Fase10: 27,1 s → 6,4 s,
+`ray_finite_while_passing` 269 → 0, `min_gap` 34,3 → 272,4 px, `REC_FRAMES`
+68 → 0).
+
+**Still open, measured, not fixed:** `gate_lane` on Fase2 is deterministic
+(3 identical runs) and reports `x_mediano=745,7`, **459 px from the right
+guide**, 21,4 % inside the box the user drew (832..1206). AGENTS #34 records
+`x=996`, 206 px, **100 %** — that number came from a `/tmp` script with a
+different sampling rule and is **not reproducible with the versioned gate**. The
+route itself does reach x ≈ 1001 (the wall is at 1206), so the lane exists; the
+car spends much of the run on legs that are not aisle legs. This is a tuning
+question about `LaneOffset`'s open-aisle branch (`LANE_OPEN_EDGE` →
+`RIGHT_HALF_BIAS`), not a regression: the numbers are identical before and
+after this fix.
+
 ## 2. Blockers for the deliverable
 
 ### B1/B2 — autonomous parking in Fase2 + Fase3 — **FIXED** (§1.5: 10/10 seeds)
