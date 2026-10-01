@@ -12,6 +12,8 @@ const FarolShieldRef = preload("res://src/farol/FarolShield.gd")
 const LocalMapRef = preload("res://src/farol/LocalMap.gd")
 const DwaRef = preload("res://src/farol/Dwa.gd")
 const EngineAudioRef = preload("res://src/vehicle/EngineAudio.gd")
+const ChartRef = preload("res://src/farol/Chart.gd")
+const RouteRef = preload("res://src/farol/Route.gd")
 const PilotRef = preload("res://src/farol/Pilot.gd")
 
 var _fails: int = 0
@@ -462,6 +464,36 @@ func _init() -> void:
 		carro_node.free()
 	VehicleCatalog.current_id = VehicleCatalog.DEFAULT_ID
 
+	# FAIXA NO CUSTO (S2): o alvo da faixa e' a DISTANCIA ate a guia direita, e
+	# o custo e' |fr - alvo| nos DOIS lados. A versao anterior definia `alvo` a
+	# partir do proprio `fr` da celula, entao `(alvo - fr)` era negativo em toda
+	# celula e a penalidade da metade direita era IDENTICAMENTE ZERO: `w_faixa`
+	# nao tinha efeito nenhum de 1.8 ate 40 (medido na Fase2 em 2026-10-01,
+	# backlog §1.22). Estes testes montam um Chart sintetico com um corredor e
+	# exigem a ORDEM que a regra promete.
+	var chart := ChartRef.new()
+	chart.configure(Vector2(-1000.0, -500.0), Vector2(2000.0, 1000.0), 20.0, 100.0)
+	chart.call("_criar_campos")
+	chart.call("carimbar_aabb", Rect2(-1000.0, -500.0, 60.0, 1000.0))    # guia oeste
+	chart.call("carimbar_aabb", Rect2(940.0, -500.0, 60.0, 1000.0))     # guia leste
+	chart.call("carimbar_aabb", Rect2(-1000.0, -500.0, 2000.0, 60.0))    # fundo norte
+	chart.call("carimbar_aabb", Rect2(-1000.0, 440.0, 2000.0, 60.0))     # fundo sul
+	chart.call("_transformada_distancia")
+	var rota_custo := RouteRef.new()
+	rota_custo.chart = chart
+	rota_custo.spec = FarolSpecRef.new()
+	var rai := 100.0
+	# `dir` e' a direcao ate o GOAL, entao o lado direito da faixa depende do
+	# rumo: cada celula e' avaliada com um goal ao NORTE dela, que e' o caso
+	# "carro subindo a rua" e deixa `right` = leste sem ambiguidade.
+	var c_alvo: float = _custo_norte(chart, rota_custo, 940.0 - rai * 1.5, rai)
+	var c_parede: float = _custo_norte(chart, rota_custo, 940.0 - 40.0, rai)
+	var c_meio: float = _custo_norte(chart, rota_custo, 0.0, rai)
+	var c_esquerda: float = _custo_norte(chart, rota_custo, -600.0, rai)
+	_check("Lane.alvo_mais_barato_que_o_meio", c_alvo < c_meio)
+	_check("Lane.alvo_mais_barato_que_a_parede", c_alvo < c_parede)
+	_check("Lane.meio_mais_barato_que_a_esquerda", c_meio < c_esquerda)
+
 	# Áudio: a pista de ré e o som da ESCADA DE FUGA (#43) — o único lugar onde
 	# o carro dá ré. Era um quadrado de 1 kHz a cada 0,75 s e o usuário chamou
 	# de terrível (2026-09-30). Estes 4 testes existem para o quadrado voltar a
@@ -490,6 +522,13 @@ func _init() -> void:
 
 	print("MODULES_CHECK fails=%d" % _fails)
 	quit(_fails)
+
+
+## Cost of the lane cell at world `x` on a corridor cell whose goal is due north.
+func _custo_norte(chart, rota, x: float, raio: float) -> float:
+	var cel: Vector2i = chart.celula_de(Vector2(x, 200.0))
+	var goal: Vector2i = chart.celula_de(Vector2(x, 0.0))
+	return rota.custo_celula(cel, goal, raio)
 
 
 ## Latches, then lets a crosser sitting at the edge go: the release must

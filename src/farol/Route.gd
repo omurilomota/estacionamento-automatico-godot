@@ -119,14 +119,26 @@ func custo_celula(cel: Vector2i, goal_cell: Vector2i, raio_varrido: float) -> fl
 	# right, the lane is the proportional bias, not a wall hug.
 	var aberto: bool = fr > raio_varrido * spec.lane_open_edge \
 		and largura - fr > raio_varrido * spec.lane_open_edge
+	# `alvo` is the lane target AS A DISTANCE FROM THE RIGHT WALL — the same
+	# number `LaneOffset.apply` leaves between the lane and the guide
+	# (`shift = fr - keep_clear * (1 + margin)`), not a function of this cell's
+	# own `fr`. It used to be `fr - band` / `fr - largura * DIREITA_ABERTA`,
+	# which made `(alvo - fr)` NEGATIVE for every single cell, the right-half
+	# penalty was identically ZERO, and `w_faixa` could not reorder anything:
+	# measured on Fase2 with `w_faixa` from 1.8 to 40 the car drove the same
+	# route and entered the eastern corridor 0% of the boot (2026-10-01,
+	# backlog §1.22).
 	var alvo: float
 	if aberto or largura < raio_varrido * 2.0:
-		alvo = maxf(0.0, fr - largura * DIREITA_ABERTA)
+		alvo = maxf(0.0, largura * DIREITA_ABERTA)
 	else:
-		alvo = minf(raio_varrido * spec.lane_max_largura, maxf(0.0, fr - band))
+		alvo = minf(raio_varrido * spec.lane_max_largura, band)
 	if fr <= fl:
-		# Right half: the further from the lane target, the more it costs.
-		w += spec.w_faixa * clampf((alvo - fr) / maxf(alvo, 1.0), 0.0, 1.0)
+		# Right half: the further from the lane target, the more it costs — on
+		# BOTH sides of it. Measuring only "too close to the wall" would leave
+		# everything from the target to the middle of the aisle free, and the
+		# A* would settle wherever the geometry was cheapest.
+		w += spec.w_faixa * clampf(absf(alvo - fr) / maxf(alvo, 1.0), 0.0, 1.0)
 	else:
 		# Left half: always off-lane, and explicitly more expensive so a wide
 		# aisle cannot settle in the middle.

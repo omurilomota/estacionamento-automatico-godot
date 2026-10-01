@@ -154,11 +154,22 @@ func folga_dir(cel: Vector2i, dir: Vector2) -> float:
 	return _dirs[dominante_eixo(d)][_widx(cel.x, cel.y)]
 
 
-## 0=+x, 1=-x, 2=+y, 3=-y. Screen coords: +y is DOWN, i.e. the driver's RIGHT on
-## an eastbound leg — the sign the AGENTS #18 rule depends on.
+## Index of `_dirs` that measures the clearance TOWARD `dir`.
+##
+## The four sweeps in `_varrer_direcoes` accumulate the distance to the solid
+## cells at SMALLER coordinates, so the index is the INVERSE of the direction on
+## x: `_dirs[0]` walks +x but reports the distance to -x, `_dirs[1]` the other
+## way round. On y the sweep order already matches (+y is DOWN here, and
+## `_dirs[2]` walks it).
+##
+## This mapping was wrong on x until 2026-10-01: it handed the caller the
+## distance to the WRONG wall, so `Route.custo_celula` read the lane off the
+## LEFT side of a northbound corridor. The cost then preferred the wrong side of
+## the street, which is why promoting the lane-as-cost to Fase2 sent the car
+## AWAY from the eastern street (0% inside the user's box, backlog §1.22).
 static func dominante_eixo(dir: Vector2) -> int:
 	if absf(dir.x) >= absf(dir.y):
-		return 0 if dir.x >= 0.0 else 1
+		return 1 if dir.x >= 0.0 else 0
 	return 2 if dir.y >= 0.0 else 3
 
 
