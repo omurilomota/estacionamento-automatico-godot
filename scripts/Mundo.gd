@@ -97,8 +97,13 @@ func _ao_mudar_modo(_modo: int) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode >= KEY_1 and event.keycode <= KEY_1 + Fases.FASES.size() - 1:
-			get_tree().change_scene_to_file(Fases.FASES[event.keycode - KEY_1])
+		# 1..9 abrem as primeiras nove fases e 0 abre a decima: o teclado so tem
+		# dez digitos, e `KEY_1 + 9` e' KEY_COLON (58), que nao e' tecla de fase.
+		var indice: int = event.keycode - KEY_1
+		if event.keycode == KEY_0:
+			indice = 9
+		if indice >= 0 and indice < Fases.FASES.size():
+			get_tree().change_scene_to_file(Fases.FASES[indice])
 		elif event.keycode == KEY_R:
 			get_tree().reload_current_scene()
 
