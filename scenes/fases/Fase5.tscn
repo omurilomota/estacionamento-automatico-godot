@@ -8,6 +8,8 @@
 [ext_resource type="Script" path="res://scripts/Planejador.gd" id="6_plan"]
 [ext_resource type="PackedScene" path="res://scenes/Hud.tscn" id="7_hud"]
 [ext_resource type="PackedScene" path="res://scenes/Seta.tscn" id="8_seta"]
+[ext_resource type="PackedScene" path="res://scenes/Cone.tscn" id="9_cone"]
+[ext_resource type="Script" path="res://src/world/Crosser.gd" id="10_crosser"]
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaNorte"]
 size = Vector2(1901, 155.25)
@@ -185,6 +187,8 @@ auto_navegacao = true
 modo_trilha = false
 brain_enabled = true
 keep_right_shift = 300.0
+farol_mode = 0
+lane_cost_mode = 0
 
 [node name="Planejador" type="Node2D" parent="."]
 script = ExtResource("6_plan")

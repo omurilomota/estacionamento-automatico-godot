@@ -25,13 +25,13 @@ size = Vector2(40, 1400)
 size = Vector2(40, 1400)
 
 [sub_resource type="RectangleShape2D" id="Rect_EspigaoOeste"]
-size = Vector2(60, 221)
+size = Vector2(40.0, 60.0)
 
 [sub_resource type="RectangleShape2D" id="Rect_EspigaoMeio"]
-size = Vector2(60, 221)
+size = Vector2(40.0, 60.0)
 
 [sub_resource type="RectangleShape2D" id="Rect_EspigaoLeste"]
-size = Vector2(60, 221)
+size = Vector2(40.0, 60.0)
 
 [node name="Fase6" type="Node2D"]
 script = ExtResource("1_base")
@@ -75,36 +75,36 @@ collision_layer = 2
 shape = SubResource("Rect_CalcadaLeste")
 
 [node name="EspigaoOeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(-600, -110)
+position = Vector2(-571.4, -190.0)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/EspigaoOeste"]
 shape = SubResource("Rect_EspigaoOeste")
 
 [node name="EspigaoMeio" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(0, 110)
+position = Vector2(0.0, -190.0)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/EspigaoMeio"]
 shape = SubResource("Rect_EspigaoMeio")
 
 [node name="EspigaoLeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(600, -110)
+position = Vector2(571.4, -190.0)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/EspigaoLeste"]
 shape = SubResource("Rect_EspigaoLeste")
 
 [node name="Estacionado_N_5" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(150.0, -440.5)
+position = Vector2(142.9, -440.5)
 scale = Vector2(2.2732, 2.3109)
 
 [node name="Estacionado_N_7" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(750.0, -440.5)
+position = Vector2(714.3, -440.5)
 scale = Vector2(2.2732, 2.3109)
 
 [node name="Estacionado_S_6" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(450.0, 440.5)
+position = Vector2(428.6, 440.5)
 scale = Vector2(2.2732, 2.3109)
 rotation = 3.141592653589793
 
@@ -151,67 +151,67 @@ default_color = Color(0.2, 0.8, 1, 0.6)
 [node name="Vagas" type="Node2D" parent="."]
 
 [node name="N_1" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-1050.0, -440.5)
+position = Vector2(-1000.0, -440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
 [node name="N_2" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-750.0, -440.5)
+position = Vector2(-714.3, -440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
 [node name="N_3" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-450.0, -440.5)
+position = Vector2(-428.6, -440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
 [node name="N_4" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-150.0, -440.5)
+position = Vector2(-142.9, -440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
 [node name="N_6" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(450.0, -440.5)
+position = Vector2(428.6, -440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
 [node name="N_8" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(1050.0, -440.5)
+position = Vector2(1000.0, -440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
 [node name="S_1" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-1050.0, 440.5)
+position = Vector2(-1000.0, 440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
 [node name="S_2" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-750.0, 440.5)
+position = Vector2(-714.3, 440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
 [node name="S_3" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-450.0, 440.5)
+position = Vector2(-428.6, 440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
 [node name="S_4" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-150.0, 440.5)
+position = Vector2(-142.9, 440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
 [node name="S_5" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(150.0, 440.5)
+position = Vector2(142.9, 440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
 [node name="S_7" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(750.0, 440.5)
+position = Vector2(714.3, 440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
 [node name="S_8" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(1050.0, 440.5)
+position = Vector2(1000.0, 440.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 

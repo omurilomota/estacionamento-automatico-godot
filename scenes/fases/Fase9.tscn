@@ -28,7 +28,7 @@ size = Vector2(70, 1800)
 size = Vector2(60, 270)
 
 [sub_resource type="RectangleShape2D" id="Rect_MuroLeste"]
-size = Vector2(60, 270)
+size = Vector2(60, 162)
 
 [node name="Fase9" type="Node2D"]
 script = ExtResource("1_base")
@@ -79,7 +79,7 @@ collision_layer = 2
 shape = SubResource("Rect_MuroOeste")
 
 [node name="MuroLeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(450, -175)
+position = Vector2(450, -121)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/MuroLeste"]
