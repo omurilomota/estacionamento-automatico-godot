@@ -2651,6 +2651,21 @@ func _resolver_vaga_alvo() -> bool:
 	return true
 
 
+## O Mooring do FAROL cuida da POSE FINAL: ele so assume o volante quando o
+## carro ja chegou ao ponto de preparo. Antes disso o ALIGNING legado conduz
+## pela rota (e' o caminho que os 9 niveis historicos mediram). Medido na Fase9
+## seed 9003 (2026-10-01): o piloto assumia o volante a 200 px da vaga, ignorava
+## o waypoint de preparo e ia direto contra o meio-fio das costas — 25 s em
+## ALINHAR a 0,6 px/s, porque o Locomotion recusa girar abaixo de 1 px/s e a
+## rampa que o Mooring exige para girar em parado estava bloqueada pelos raios.
+func _no_ponto_de_preparo() -> bool:
+	if _vaga_alvo == null or not is_instance_valid(_vaga_alvo):
+		return true
+	var prep: Vector2 = _ponto_prep_da_vaga(_vaga_alvo as Node2D)
+	var escala: float = maxf((global_scale.x + global_scale.y) * 0.5, 1.0)
+	return global_position.distance_to(prep) <= entre_eixos * escala * 1.5 + 60.0
+
+
 func _processar_alinhando(delta: float) -> void:
 	# Sem vaga alvo nao existe manobra: o gatilho de AREA da vaga entrou em
 	# ALINHANDO e fijou `posicao_alvo` sem que `_escolher_vaga` tivesse escolhido
@@ -2700,7 +2715,7 @@ func _processar_alinhando(delta: float) -> void:
 	# O COMMIT continua sendo do Carro: `_esta_100_dentro_da_vaga()` e a
 	# tolerância abaixo são o gate real (AGENTS #16) e não são reimplementados
 	# aqui — o Mooring diz para onde mover, nunca quando terminar.
-	if farol_mode >= 2:
+	if farol_mode >= 2 and _no_ponto_de_preparo():
 		var meia_eixos := _meia_eixos_do_carro()
 		# The Mooring reads its numbers from a STATIC, so the spec has to be
 		# pushed every frame: without this a scene's `farol_spec` would be
