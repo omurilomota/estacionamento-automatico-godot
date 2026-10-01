@@ -554,6 +554,76 @@ func decimar(caminho: PackedVector2Array) -> Array:
 # (FaseBase._limites_de_planejamento), e esse anel tem células livres fora do
 # lote — sem o limite o carro nasce num bolso de canto e a matriz de seeds
 # caiu de 10/10 para 4/10 em 2026-09-26.
+## A celula LIVRE mais ESPACOSA num raio, com mais folga que a atual. E' o alvo
+## do degrau "sair do bolso" da escada de fuga: quando o carro esta preso entre
+## duas paredes, replanejar para a vaga devolve a mesma rota e dar re devolve o
+## mesmo ponto — o que tira o carro de um bolso e' um objetivo novo, com mais
+## espaco em volta. Devolve Vector2.INF quando nao ha nada melhor.
+func achar_celula_espacosa(raio_px: float, folga_min: float, exige_rota: bool) -> Vector2:
+	if not _grade_pronta:
+		construir()
+	var cel_atual := _celula_de(_carro_p_para_esta_busca())
+	var candidatos: Array[Vector2] = []
+	var melhor_folga := folga_min
+	# Duas passadas: primeiro um anel medio (sair do bolso e' curto), depois
+	# qualquer celula livre do mapa, para nao devolver INF num beco fechado.
+	for alcance in [raio_px, 1.0e9]:
+		candidatos.clear()
+		var x0 := 0 if alcance > 1.0e8 else maxi(0, cel_atual.x - int(alcance / resolucao))
+		var x1 := _n_cel_x() - 1 if alcance > 1.0e8 else mini(_n_cel_x() - 1, cel_atual.x + int(alcance / resolucao))
+		var y0 := 0 if alcance > 1.0e8 else maxi(0, cel_atual.y - int(alcance / resolucao))
+		var y1 := _n_cel_y() - 1 if alcance > 1.0e8 else mini(_n_cel_y() - 1, cel_atual.y + int(alcance / resolucao))
+		for y in range(y0, y1 + 1):
+			for x in range(x0, x1 + 1):
+				var cel := Vector2i(x, y)
+				if _grade.is_point_solid(cel):
+					continue
+				var folga := _folga_real(cel)
+				if folga <= melhor_folga:
+					continue
+				melhor_folga = folga
+				candidatos.append(_centro_de(cel))
+		if candidatos.size() >= 1:
+			break
+	# A mais espaçosa primeiro; com `exige_rota` só Accepta uma que o A* sabe
+	# alcançar daqui (o plano e o unico que pode provar isso).
+	candidatos.sort_custom(func(a: Vector2, b: Vector2) -> bool:
+		return _folga_real(_celula_de(a)) > _folga_real(_celula_de(b)))
+	var tentados := 0
+	for p in candidatos:
+		if tentados >= 12:
+			break
+		tentados += 1
+		if not exige_rota or achar_rota(_carro_p_para_esta_busca(), p).size() >= 2:
+			return p
+	return Vector2.INF
+
+
+## Clearance of a cell read from the physics world (mask 2), in px. The grid's own
+## inflation is what decided solidity; this asks how much room there really is.
+func _folga_real(cel: Vector2i) -> float:
+	var mundo := get_world_2d()
+	if mundo == null:
+		return _grade.get_point_weight_scale(cel)
+	var espaco := mundo.direct_space_state
+	var p := _centro_de(cel)
+	var q := PhysicsRayQueryParameters2D.create(p, p + Vector2.UP * 400.0)
+	q.collision_mask = 2
+	q.collide_with_bodies = true
+	q.collide_with_areas = false
+	var r: Dictionary = espaco.intersect_ray(q)
+	return 400.0 if r.is_empty() else p.distance_to(r.get("position") as Vector2)
+
+
+## Where the search starts: the vehicle asks for this per call, so the planner
+## does not have to know who is driving (AGENTS §3: no scene crawling).
+var _origem_busca: Vector2 = Vector2.INF
+
+
+func _carro_p_para_esta_busca() -> Vector2:
+	return _origem_busca if _origem_busca.is_finite() else Vector2.ZERO
+
+
 func achar_posicao_livre(retangulos_proibidos: Array[Rect2] = [], limite_spawn: Rect2 = Rect2()) -> Vector2:
 	if not _grade_pronta:
 		construir()
