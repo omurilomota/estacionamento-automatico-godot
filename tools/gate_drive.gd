@@ -64,6 +64,7 @@ extends SceneTree
 ## NAO reprova por isso (o campo nao entra na lista de regressao).
 const SEM_FAROL := -1
 const SEM_LANE := -1
+const SEM_SHIFT := -1.0
 
 const SensorArrayRef = preload("res://src/vehicle/SensorArray.gd")
 const LevelRegistryRef = preload("res://src/core/LevelRegistry.gd")
@@ -87,6 +88,7 @@ var _tol := 0.10
 var _seed := SEED_PADRAO
 var _farol := SEM_FAROL
 var _lane := SEM_LANE
+var _shift := SEM_SHIFT
 
 
 func _init() -> void:
@@ -110,6 +112,8 @@ func _init() -> void:
 			_farol = int(a.split("=")[1])
 		elif a.begins_with("--lane="):
 			_lane = int(a.split("=")[1])
+		elif a.begins_with("--shift="):
+			_shift = float(a.split("=")[1])
 	if _todas:
 		for n in LevelRegistryRef.LEVELS:
 			lista.append(str(n).get_file().get_basename())
@@ -149,11 +153,16 @@ func _medir(fase_nome: String) -> Dictionary:
 	var cena = load("res://scenes/fases/%s.tscn" % fase_nome).instantiate()
 	# The FAROL overload MUST land before the scene enters the tree: `_ready`
 	# is where the planner reads `farol_mode` and the car caches its brain.
-	if _farol != SEM_FAROL or _lane != SEM_LANE:
+	if _farol != SEM_FAROL or _lane != SEM_LANE or _shift != SEM_SHIFT:
 		var carro_pre: Node = cena.get_node_or_null("Carro")
 		if carro_pre != null:
 			if _farol != SEM_FAROL:
 				carro_pre.set("farol_mode", _farol)
+			if _shift != SEM_SHIFT:
+				# The lane width is per-level DATA (AGENTS #31). Sweeping it
+				# here is how a level's `keep_right_shift` gets tuned without
+				# editing the scene and regenerating it.
+				carro_pre.set("keep_right_shift", _shift)
 			if _lane != SEM_LANE:
 				# FAROL · ROTA (S2): the right-hand rule as A* COST. Like
 				# farol_mode, it only needs to exist before the scene enters

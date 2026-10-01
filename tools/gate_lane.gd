@@ -16,6 +16,7 @@ var _fase := "Fase2"
 var _secs := 32.0
 var _box := Rect2(832.0, -2000.0, 374.0, 4000.0)
 var _min_corredor := 1000.0
+var _shift := -1.0
 
 
 func _init() -> void:
@@ -28,7 +29,12 @@ func _init() -> void:
 			_box.position.x = float(a.split("=")[1])
 		elif a.begins_with("--boxx1="):
 			_box.size.x = float(a.split("=")[1]) - _box.position.x
+		elif a.begins_with("--shift="):
+			_shift = float(a.split("=")[1])
 	var cena = load("res://scenes/fases/%s.tscn" % _fase).instantiate()
+	var carro_pre: Node = cena.get_node_or_null("Carro")
+	if carro_pre != null and _shift >= 0.0:
+		carro_pre.set("keep_right_shift", _shift)
 	root.add_child(cena)
 	await process_frame
 	var carro: Node2D = cena.get_node_or_null("Carro") as Node2D
