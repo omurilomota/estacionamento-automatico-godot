@@ -1345,6 +1345,40 @@ que uma diferença de 30 px de spawn alcance** — o degrau novo evita o laço
 infinito, mas o carro ainda gasta os 80 s saindo e voltando. Isso é geometria de
 nível (`tools/specs/Fase8.json`), e é o candidato natural a seguir.
 
+### 1.27 `desvios = 0` nas 10 fases: a camada funciona, o problema é outro (2026-10-01)
+
+`gate_drive` reporta `desvios=0` em todas as fases e era a leitura natural
+"a camada reativa do piloto (S3) esta morta". **Nao esta.** O contrato esta
+agora pinado headless, com uma rota que ATRAVESSA um obstaculo:
+
+| teste | o que fixa |
+|---|---|
+| `Detour.detecta_bloqueio` / `.celulas_consecutivas` | `blocked_ahead` e' medido AO LONGO da rota, com `bloqueado_celulas` pontos seguidos |
+| `Detour.publica_alvo` / `.conta_desvio` | o desvio e' publicado e contabilizado (nunca "para tras") |
+| `Detour.alvo_alcancavel` | o alvo passa no BFS da LocalMap a partir do carro |
+| `Detour.alvo_a_frente` | o alvo esta mais perto do destino que a propria rota |
+
+**Mutacao rodada**: fazer `_melhor_desvio` devolver INF → 2 FAIL. A mutacao
+"bloqueado = >= 1 celula" **sobrevive**, e a razao e' uma lacuna real de teste
+(abaixo).
+
+**Por que `desvios=0` e' o resultado certo**: o desvio so dispara quando a rota
+*ja* esta bloqueada, e o planejador nunca produz uma rota bloqueada (a garantia
+do corredor varrido, §1.21) — e nenhum obstaculo dinamico tem corpo: o
+`Crosser` e' sensor-only de proposito (§39). Entao hoje a camada e' uma rede de
+seguranca que **nada** exercita. Para ela rodar de verdade seria preciso um
+cenario com bloqueio dinamico no plano (um carro de transito com corpo, ou uma
+vaga ocupada que muda depois do plano), e essa e' uma decisao de conteudo de
+nivel, nao de codigo.
+
+**Lacuna de teste que a tentativa expôs**: o portao `bloqueado_celulas` (4 pontos
+de rota CONSECUTIVOS) nao tem teste. A tentativa de monta-lo num `LocalMap`
+sintetico **nao foi confiavel** — uma marca de 20 px sobre a rota contou 8 pontos
+seguidos, ou seja, o cenario nao reproduz o campo de custo real (que em jogo
+mista o Chart com gradiente). Um teste sobre esse cenario passaria no vacuo, entao
+**preferi nao shippar** e registrei a lacuna. O cenario tem de vir de um Chart de
+verdade, como o `tools/gate_chart.gd` faz.
+
 ## 2. Blockers for the deliverable
 
 ### B1/B2 — autonomous parking in Fase2 + Fase3 — **FIXED** (§1.5: 10/10 seeds)
