@@ -1325,6 +1325,17 @@ manobrar é impossível.
 (sem regressão em nenhuma métrica) · boots 10/10 · `ModulesCheck fails=0` ·
 `verify_scenes 17/0`.
 
+**A margem de spawn, re-testada com o degrau novo** (medido, ainda em aberto):
+com a margem do `inflar` a **Fase8 seed 9000 passou a estacionar em 42,0 s**
+(antes: 80 s sem estacionar) — o degrau do bolso é o que faltava. A **Fase10
+continua falhando**, e a causa é geometria: com a margem o carro nasce em
+(-46, 48), no corredor entre os dois refúgios escalonados, e a 177 px de folga
+real ele fica com o nariz contra um `Estacionado` da fileira sul
+(`RayFrente* = Estacionado_S_3`), cycling recovery até (14, -197) aos 80 s. Não
+é bolsão (folga 177 px > 2× o raio varrido), então o degrau corretamente não
+dispara: é o corredor central da Fase10 que é apertado demais para nascer E
+atravessar.
+
 **O que fica em aberto (medido, não resolvido)**: a margem de spawn. Com 50 px o
 carro pode nascer com o nariz dentro de uma vaga (Fase9 seed 9003: 25 s em
 ALINHAR a 0,6 px/s — agora contornado pela guarda do Mooring, §1.24). Com a
