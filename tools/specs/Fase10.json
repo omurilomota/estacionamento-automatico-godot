@@ -6,7 +6,7 @@
   "escala_mapa": 1.0,
   "zoom_camera": 0.62,
   "car_scale": 1.4,
-  "keep_right_shift": 300.0,
+  "keep_right_shift": 120.0,
   "farol_mode": 0,
   "lane_cost_mode": 0,
   "posicao_aleatoria": true,

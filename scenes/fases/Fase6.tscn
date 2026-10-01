@@ -109,10 +109,10 @@ scale = Vector2(2.2732, 2.3109)
 rotation = 3.141592653589793
 
 [node name="Cone1" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(-1050, 0)
+position = Vector2(-1180, 0)
 
 [node name="Cone2" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(1050, 0)
+position = Vector2(1180, 0)
 
 [node name="Setas" type="Node2D" parent="."]
 
@@ -222,6 +222,8 @@ auto_navegacao = true
 modo_trilha = false
 brain_enabled = true
 keep_right_shift = 300.0
+farol_mode = 0
+lane_cost_mode = 0
 
 [node name="Planejador" type="Node2D" parent="."]
 script = ExtResource("6_plan")

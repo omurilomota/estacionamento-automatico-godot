@@ -190,7 +190,7 @@ scale = Vector2(1.4, 1.4)
 auto_navegacao = true
 modo_trilha = false
 brain_enabled = true
-keep_right_shift = 300.0
+keep_right_shift = 120.0
 farol_mode = 0
 lane_cost_mode = 0
 
