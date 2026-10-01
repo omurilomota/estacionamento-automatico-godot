@@ -880,3 +880,14 @@ so `estado == 3` still means PARKED during migration.
     91 px, 200 -> 19,8 s / 24,2 / 133, **120 -> 12,6 s / 19,9 / 217**. O spec
     passou a 120. Use `--shift=` para medir, `--fase=` para isolar; nunca
     edite a cena na mao para tunar isso (a fase e' DADO, #41).
+    **A faixa NO CUSTO do A\* (`lane_cost_mode=1`) NAO e' substituto imediato
+    do shift** (medido em 2026-10-01, `gate_drive --farol= --lane=` + o x do
+    carro boot inteiro): nas fases feitas a mao ela MELHORA a pilotagem
+    (Fase2 `t` 45 -> 31,5 s, `sat` 16 -> 9 %; Fase3 60 -> 29,3 s, 34 -> 6 %)
+    e **DESTROI a faixa** (Fase2: 22% -> **0%** do tempo dentro do box do
+    usuario, `x_max` 1003 -> 383): a rota deixa de usar o corredor leste e vai
+    pelo diagonal curto, porque `w_faixa` ainda nao paga o corredor. Nas fases
+    geradas e' pior (Fase8 `cte_p95` 8 -> 19 px, `sat` 21 -> 47 %). Regra:
+    um modo de faixa so entra porNIVEL, com o placar de arbitro, e
+    `gate_lane` agora **FALHA com menos de 20 amostras** — uma mediana de 9
+    pontos ja deu um veredito falso ("55,6% dentro do box") neste dia.

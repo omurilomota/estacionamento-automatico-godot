@@ -1136,6 +1136,52 @@ question about `LaneOffset`'s open-aisle branch (`LANE_OPEN_EDGE` →
 `RIGHT_HALF_BIAS`), not a regression: the numbers are identical before and
 after this fix.
 
+### 1.22 The A* cost lane is NOT a drop-in for the post-hoc shift (2026-10-01)
+
+§1.21 fixed the invariant. The obvious next move — the FAROL · S2 direction —
+is to move the right-hand rule from the post-hoc shift INTO the A* cost
+(`lane_cost_mode = 1`, the `Chart`), because that is what the planning
+literature does (Ferguson & Likhachev's *constrained cost map*: staying in the
+desired lane is a **soft cost** over the whole corridor, not an offset applied
+afterwards). Measured per level with `gate_drive --farol= --lane=` and the
+car's x tracked over the whole boot:
+
+| Fase | config | `t` | `cte_p95` | `sat` | `x_max` reached | time in the user's box |
+|---|---|---|---|---|---|---|
+| Fase2 | post-hoc shift (legacy) | 45,0 s | 29,1 | 16,1 % | **1003** | **22 %** |
+| Fase2 | lane as A* cost | **31,5 s** | 25,3 | **9,3 %** | 383 | **0 %** |
+| Fase3 | post-hoc shift (legacy) | 60,0 s | 24,0 | 33,8 % | **1019** | 11 % |
+| Fase3 | lane as A* cost | **29,3 s** | 24,1 | **5,9 %** | 406 | **0 %** |
+
+**The driving metrics are much better and the lane is much worse.** With the
+cost the route stops using the eastern corridor altogether (x range
+[-746, 364] in Fase2) — it takes the short diagonal to the bay. So `w_faixa`
+does not yet buy "keep right", it buys "go straight", and promoting it would
+have taken the user's complaint ("dirige no meio") from 22 % to **0 %** inside
+the box. **Not promoted** — the promotion was applied, measured and reverted.
+
+Two lessons worth keeping:
+
+1. **A verdict from 9 samples is not a verdict.** The first attempt measured
+   `x_mediano = 994,6`, 55,6 % inside the box — which is exactly what AGENTS
+   #34 claims and looked like the fix. It was 9 samples out of a 32 s window
+   (the gate only counts frames inside a corridor ≥ 1000 px wide), from a run
+   whose shell quoting had already mangled the flags. `tools/gate_lane.gd` now
+   **FAILS below 20 samples** instead of printing a median of a handful.
+2. **Per-level data, never a global switch.** The same `--farol=1 --lane=1`
+   run improved Fase2/3/4 (t −33 %, sat −70 %) and **hurt** Fase5, Fase8 and
+   Fase10 (`cte_p95` 8 → 19 and 20 → 49, `sat` 21 → 47 %): in the generated
+   levels the lane cost runs the route past the parked cars. This is the
+   promotion rule of the plan (one level at a time, with the board as the
+   referee), and `--farol=`/`--lane=` on both gates is how the next person runs
+   it.
+
+**What is left, precisely:** the post-hoc shift can only move the lane so far
+before the route stops fitting the car (§1.21: 260/400/900 all wedge in
+Fase3), and the A* cost currently abandons the corridor. The missing piece is
+`w_faixa` in `FarolSpec` tuned so the corridor is worth more than the diagonal
+— the plan's own diagnosis, now with the two ends of the trade-off measured.
+
 ## 2. Blockers for the deliverable
 
 ### B1/B2 — autonomous parking in Fase2 + Fase3 — **FIXED** (§1.5: 10/10 seeds)
