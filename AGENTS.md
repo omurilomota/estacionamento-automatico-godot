@@ -287,7 +287,11 @@ so `estado == 3` still means PARKED during migration.
   `vercel --prod --yes` **from inside `site/`** — the project link lives in
   `site/.vercel/project.json` and `vercel.json` must exist ONLY there.
 - **LIVE URL: `https://site-pi-tan-51.vercel.app`** (measured 200 on
-  2026-09-27 for `/`, `/game/index.html`, `/game/index.pck`, `/game/index.wasm`).
+  2026-10-01, deploy `estacionamento-automatico-ga6392lew`, after re-running
+  `export_site_data.sh` + `export_site_images.py` and the Web export: `/`,
+  `/game/index.html`, `/game/index.pck` (6,9 MB), `/game/index.wasm`,
+  `/img/piso-fase10.png`, `/data/pesos.json`, `/js/ml.js` all 200 with
+  **0 redirects**, which is the §33 check).
   The project is under the team `murilohenriquemota935-1958s-projects`, so the
   alias is SCOPED. **`estacionamento-automatico.vercel.app` is NOT an alias of
   this project and returns 404** — it is in old commit messages, so grep finds
