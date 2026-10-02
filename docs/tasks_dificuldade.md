@@ -193,3 +193,35 @@ o gate precisa de 540 px para soltar) — a faixa do crosser foi para água
 aberta (F9 x=225 → x=700). Resultado: `gate_reach` 10/13 + 13/13 + 10/10 +
 5/5, `gate_boot` verde nas 4, `gate_seeds` 5/5 nas 4 (F6 6–16 s, F7 7–53 s,
 F8 9–70 s, F9 7–38 s).
+
+## 9. Dificuldade das Fases 6–10 + deadlock da cedência mútua (01/10/2026)
+
+As Fases 6–10 estavam fáceis demais (retas longas, 1 crosser, poucas vagas
+ocupadas). Cada uma ganhou pressão — mais `parked`, cones reais no corredor,
+2º crosser e caminhos de cruzamento estendidos (±740–900 px) — tudo só em
+`tools/specs/*.json` (Fase é dado, #41): F6 4→7 vagas ocupadas + crosser 2 em
+x=−600; F7 6→9 + 2 cones no corredor M-S (±154,4) + crosser 2 em x=−500;
+F8 5→9 + crosser 2 em x=−700; F9 5→7 + crosser 2 em x=−700; F10 6→8 + cone
+em (−700,100) + crosser 2 em x=−700 (northbound). `gen_level.py` +
+`render_lot.py` regeneraram cenas e pisos (pintura e colisão não podem
+discordar).
+
+**Deadlock da cedência mútua (o achado da rodada).** `gate_seeds` deu 23/25:
+Fase7 seed=2 (74 s parado) e Fase10 seed=3 (62 s parado). Trace em `/tmp`
+reproduziu as duas: o carro parado a ~98 px da faixa de cruzamento (dentro da
+zona de conflito do Crosser, 120 px) e o crosser parado a ~316 px (dentro do
+`enter_distance` 420 do `CrosserGate`). O Crosser segura esperando o carro sair
+da zona de conflito; o carro cede esperando o crosser sair — ninguém se move, e a
+escada de fuga (#43) replaneia sem resolver porque cada rota nova nasce na mesma
+posição. Correção em `src/world/Crosser.gd`: o Crosser só segura se o veículo
+estiver **se movendo** (`velocidade_atual ≥ 5`); carro parado não vai atravessar
+ninguém, então o crosser passa. Medido depois: Fase7 seed=2 estaciona em
+17,5 s, Fase10 seed=3 em 24,3 s, e a Fase9 boot perdeu os 135 REC_FRAMES que
+tinha antes.
+
+**Resultado final:** `gate_reach` 9/9 + 12/12 + 7/7 + 3/3 + 4/4 (todas as
+baias livres alcançáveis), `gate_boot` 5/5 PASS com `NEG_FRAMES=0` e
+`REC_FRAMES=0`, `gate_seeds` **25/25** estacionou (Fase6 5/5, F7 5/5, F8 5/5,
+F9 5/5, F10 5/5), `gate_drive` 5/5 OK. Placar em `docs/farol_drive.json`
+atualizado (Fase6 t=13,4 cte_p95=54,3; F7 t=26,2 cte_p95=38,6; F8 t=20,7
+cte_p95=32,1; F9 t=16,7 cte_p95=112,7; F10 t=10,2 cte_p95=104,6).
