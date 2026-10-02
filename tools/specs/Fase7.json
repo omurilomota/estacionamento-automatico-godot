@@ -2,86 +2,232 @@
   "id": "Fase7",
   "mapa": "res://estacionamento/gen_fase7.png",
   "art": "estacionamento/gen_fase7.png",
-  "import_size": [2200, 2000],
+  "import_size": [
+    2194,
+    2537
+  ],
   "escala_mapa": 1.0,
   "zoom_camera": 0.707,
   "car_scale": 1.4,
   "keep_right_shift": 300.0,
   "posicao_aleatoria": true,
-  "car_pos": [-900, -370],
+  "car_pos": [
+    -900,
+    -370
+  ],
   "output": "scenes/fases/Fase7.tscn",
   "sidewalks": [
-    {"name": "CalcadaNorte", "rect": [0, -980, 2200, 40]},
-    {"name": "CalcadaSul", "rect": [0, 980, 2200, 40]},
-    {"name": "CalcadaOeste", "rect": [-1080, 0, 40, 2000]},
-    {"name": "CalcadaLeste", "rect": [1080, 0, 40, 2000]}
+    {
+      "name": "CalcadaNorte",
+      "rect": [
+        0,
+        -1268.58,
+        2194,
+        80.0
+      ]
+    },
+    {
+      "name": "CalcadaSul",
+      "rect": [
+        0,
+        1268.58,
+        2194,
+        80.0
+      ]
+    },
+    {
+      "name": "CalcadaOeste",
+      "rect": [
+        -1097.0847811701067,
+        0,
+        80.0,
+        2537
+      ]
+    },
+    {
+      "name": "CalcadaLeste",
+      "rect": [
+        1097.0847811701067,
+        0,
+        80.0,
+        2537
+      ]
+    }
   ],
   "rows": [
     {
       "name": "N",
       "side": "north",
-      "y_edge": -960,
+      "y_edge": -1220.58,
       "dir": 1,
-      "depth": 439.08,
-      "from": -900,
-      "to": 900,
+      "depth": 311.85,
+      "from": -926.0999999999998,
+      "to": 926.0999999999998,
       "count": 7,
-      "bay_scale": [2.2227, 3.659],
       "rot": -1.5708,
-      "parked": [0, 3, 5]
+      "parked": [
+        0,
+        1,
+        4
+      ]
     },
     {
       "name": "M",
       "side": "middle",
-      "y_edge": -219.54,
+      "y_edge": -510.81,
       "dir": 1,
-      "depth": 439.08,
-      "from": -900,
-      "to": 900,
+      "depth": 311.85,
+      "from": -926.0999999999998,
+      "to": 926.0999999999998,
       "count": 7,
-      "bay_scale": [2.2227, 3.659],
       "rot": 1.5708,
-      "parked": [1, 4]
+      "parked": [
+        0,
+        3,
+        6
+      ]
     },
     {
       "name": "S",
       "side": "south",
-      "y_edge": 960,
+      "y_edge": 596.88,
       "dir": -1,
-      "depth": 439.08,
-      "from": -900,
-      "to": 900,
+      "depth": 311.85,
+      "from": -926.0999999999998,
+      "to": 926.0999999999998,
       "count": 7,
-      "bay_scale": [2.2227, 3.659],
       "rot": 1.5708,
-      "parked": [2, 4, 6]
+      "parked": [
+        0,
+        2,
+        5
+      ]
     }
   ],
   "cones": [
-    {"pos": [-1030, -370]},
-    {"pos": [-1030, 370]}
+    {
+      "pos": [
+        -1077,
+        300
+      ]
+    },
+    {
+      "pos": [
+        -1077,
+        -900
+      ]
+    },
+    {
+      "pos": [
+        154.4,
+        0
+      ]
+    },
+    {
+      "pos": [
+        -154.4,
+        0
+      ]
+    }
   ],
   "crossers": [
     {
       "name": "CarroDeTransito",
-      "pos": [1020, -960],
-      "point_a": [1020, -960],
-      "point_b": [1020, 960],
+      "pos": [
+        866,
+        -900
+      ],
+      "point_a": [
+        866,
+        -900
+      ],
+      "point_b": [
+        866,
+        900
+      ],
       "cruise_speed": 160.0,
       "pause_time": 0.85,
       "spawn_distance": 700.0,
       "trigger_distancia": 900.0,
       "texture": "res://assets/kenney/cars/car_green_5.png"
+    },
+    {
+      "name": "CarroDeTransito2",
+      "pos": [
+        -500,
+        -900
+      ],
+      "point_a": [
+        -500,
+        -900
+      ],
+      "point_b": [
+        -500,
+        900
+      ],
+      "cruise_speed": 160.0,
+      "pause_time": 0.85,
+      "spawn_distance": 700.0,
+      "trigger_distancia": 900.0,
+      "texture": "res://assets/kenney/cars/car_yellow_5.png"
     }
   ],
   "rotas": [
-    {"name": "RotaAisleNorte", "points": [[-950, -370], [950, -370]]},
-    {"name": "RotaAisleSul", "points": [[950, 370], [-950, 370]]}
+    {
+      "name": "RotaAisleNorte",
+      "points": [
+        [
+          -950,
+          -370
+        ],
+        [
+          950,
+          -370
+        ]
+      ]
+    },
+    {
+      "name": "RotaAisleSul",
+      "points": [
+        [
+          950,
+          370
+        ],
+        [
+          -950,
+          370
+        ]
+      ]
+    }
   ],
   "setas": [
-    {"pos": [-500, -370], "direcao": 0.0},
-    {"pos": [500, -370], "direcao": 0.0},
-    {"pos": [500, 370], "direcao": 3.1416},
-    {"pos": [-500, 370], "direcao": 3.1416}
+    {
+      "pos": [
+        -500,
+        -370
+      ],
+      "direcao": 0.0
+    },
+    {
+      "pos": [
+        500,
+        -370
+      ],
+      "direcao": 0.0
+    },
+    {
+      "pos": [
+        500,
+        370
+      ],
+      "direcao": 3.1416
+    },
+    {
+      "pos": [
+        -500,
+        370
+      ],
+      "direcao": 3.1416
+    }
   ]
 }
