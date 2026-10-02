@@ -36,6 +36,34 @@ CARRO_SPRITE = (70.0, 121.0)   # Kenney texture, before the child's 1.62 scale
 CARRO_SPRITE_SCALE = 1.62
 ENTRE_EIXOS = 60.0
 
+# --- TAMANHO DA VAGA: DADO DO MUNDO REAL, NAO NUMERO SOLTO NO SPEC ----------
+# Uma vaga perpendicular de verdade mede 2,50 x 5,00 m. O carro de verdade
+# mede 1,80 x 4,40 m — e o que o JOGO mostra e' o sprite (70 x 121 px antes da
+# escala do filho), entao e' pelo sprite que a vaga tem de ser cotada:
+#
+#   largura = 1,80 * (2,50 / 1,80) = 2,50 m -> 1,389 x a largura do carro
+#   profun. = 4,40 * (5,00 / 4,40) = 5,00 m -> 1,136 x o comprimento do carro
+#
+# MEDIDO (2026-10-01, erro do usuario): o `bay_scale` dos specs era dado solto e
+# media 2,30 x 2,73 carros na Fase5 e 1,93 x 3,56 nas Fase6..Fase10 — ou seja,
+# 12 m e 22 m de profundidade, contra 5 m na realidade. Agora a vaga e' DERIVADA
+# e nao ha como um nivel nascer com vaga de outro mundo.
+VAGA_M = (2.50, 5.00)            # metros: largura x profundidade
+CARRO_M = (1.80, 4.40)           # metros
+VAGA_REAL_PX = (VAGA_M[0] / CARRO_M[0], VAGA_M[1] / CARRO_M[1])  # (1.389, 1.136)
+
+
+def bay_scale_do_carro(scale):
+    """`bay_scale` do spec para a Area de Vaga de uma vaga de verdade.
+
+    `car_footprint()[1]` devolve (COMPRIMENTO, LARGURA) do sprite ja escalado —
+    a textura do Kenney e' retrato (70 x 121) e o eixo do mundo X aponta para a
+    frente, entao a primeira componente e' o comprimento.
+    """
+    comprimento, largura = car_footprint(scale)[1]
+    return (VAGA_REAL_PX[0] * largura / VAGA_BASE[0],
+            VAGA_REAL_PX[1] * comprimento / VAGA_BASE[1])
+
 
 RESOLUCAO = 15.0   # Planejador.resolucao (scripts/Planejador.gd)
 
@@ -81,7 +109,8 @@ def build_bays(spec, world):
             pitch = span
         else:
             pitch = span / (count - 1)
-        bw = VAGA_BASE[0] * row["bay_scale"][0]
+        bs = row.get("bay_scale") or bay_scale_do_carro(spec["car_scale"])
+        bw = VAGA_BASE[0] * bs[0]
         if count > 1 and pitch < bw:
             die("row %s: pitch %.1f < bay width %.1f -> bays would overlap"
                 % (row["name"], pitch, bw))
@@ -90,7 +119,7 @@ def build_bays(spec, world):
             cy = float(row["y_edge"]) + (row["depth"] / 2.0) * row["dir"]
             cx = round(cx, 1)
             cy = round(cy, 1)
-            r = bay_rect({"scale": row["bay_scale"]}, cx, cy)
+            r = bay_rect({"scale": bs}, cx, cy)
             if r[0] < x0 or r[2] > x1 or r[1] < y0 or r[3] > y1:
                 die("row %s bay %d: rect %s outside world %s"
                     % (row["name"], k, r, (x0, y0, x1, y1)))
@@ -110,7 +139,7 @@ def build_bays(spec, world):
                     rot=0.0 if row["rot"] < 0 else 3.141592653589793))
                 continue
             bays.append(dict(name=name, pos=(cx, cy),
-                             scale=row["bay_scale"], rot=row["rot"], prep=prep,
+                             scale=bs, rot=row["rot"], prep=prep,
                              y_edge=float(row["y_edge"])))
     # cross-row overlap check (cheap AABB sweep)
     for i in range(len(bays)):

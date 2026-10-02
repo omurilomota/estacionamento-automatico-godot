@@ -1,54 +1,149 @@
 {
   "id": "Fase5",
   "mapa": "res://estacionamento/Parkinglot5.jpeg",
-  "import_size": [1408, 768],
-  "escala_mapa": 1.35,
+  "import_size": [
+    1835,
+    825
+  ],
+  "escala_mapa": 1.0,
   "zoom_camera": 0.95,
   "car_scale": 1.0,
   "keep_right_shift": 300.0,
   "posicao_aleatoria": true,
-  "car_pos": [-700, 30],
+  "car_pos": [
+    -700,
+    30
+  ],
   "output": "scenes/fases/Fase5.tscn",
   "sidewalks": [
-    {"name": "CalcadaNorte", "rect": [0, -440.5, 1901, 155.25]},
-    {"name": "CalcadaSul", "rect": [0, 472.5, 1901, 91.8]},
-    {"name": "CalcadaOeste", "rect": [-903.5, 1.35, 94.5, 877.5]},
-    {"name": "CalcadaLeste", "rect": [903.5, 6.75, 118.8, 891]}
+    {
+      "name": "CalcadaNorte",
+      "rect": [
+        0,
+        -412.86,
+        1835,
+        80
+      ]
+    },
+    {
+      "name": "CalcadaSul",
+      "rect": [
+        0,
+        412.86,
+        1835,
+        80
+      ]
+    },
+    {
+      "name": "CalcadaOeste",
+      "rect": [
+        -909.9891294072193,
+        0,
+        80,
+        825
+      ]
+    },
+    {
+      "name": "CalcadaLeste",
+      "rect": [
+        909.9891294072193,
+        0,
+        80,
+        825
+      ]
+    }
   ],
   "rows": [
     {
       "name": "N",
       "side": "north",
-      "y_edge": -362.75,
+      "y_edge": -364.86,
       "dir": 1,
-      "depth": 240,
-      "from": -665,
-      "to": 665,
+      "depth": 222.75,
+      "from": -770.0,
+      "to": 770.0,
       "count": 8,
-      "bay_scale": [1.889, 2.0],
-      "rot": -1.5708
+      "rot": -1.5708,
+      "parked": [
+        1,
+        4,
+        6
+      ]
     },
     {
       "name": "S",
       "side": "south",
-      "y_edge": 426.6,
+      "y_edge": 364.86,
       "dir": -1,
-      "depth": 240,
-      "from": -665,
-      "to": 665,
+      "depth": 222.75,
+      "from": -770.0,
+      "to": 770.0,
       "count": 8,
-      "bay_scale": [1.889, 2.0],
-      "rot": 1.5708
+      "rot": 1.5708,
+      "parked": [
+        2,
+        3,
+        5
+      ]
     }
   ],
   "rotas": [
-    {"name": "RotaLeste", "points": [[-760, 165], [760, 165]]},
-    {"name": "RotaOeste", "points": [[760, -80], [-760, -80]]}
+    {
+      "name": "RotaLeste",
+      "points": [
+        [
+          -760,
+          165
+        ],
+        [
+          760,
+          165
+        ]
+      ]
+    },
+    {
+      "name": "RotaOeste",
+      "points": [
+        [
+          760,
+          -80
+        ],
+        [
+          -760,
+          -80
+        ]
+      ]
+    }
   ],
   "setas": [
-    {"pos": [-430, 165], "direcao": 0.0},
-    {"pos": [430, 165], "direcao": 0.0},
-    {"pos": [-430, -80], "direcao": 3.1416},
-    {"pos": [430, -80], "direcao": 3.1416}
-  ]
+    {
+      "pos": [
+        -430,
+        165
+      ],
+      "direcao": 0.0
+    },
+    {
+      "pos": [
+        430,
+        165
+      ],
+      "direcao": 0.0
+    },
+    {
+      "pos": [
+        -430,
+        -80
+      ],
+      "direcao": 3.1416
+    },
+    {
+      "pos": [
+        430,
+        -80
+      ],
+      "direcao": 3.1416
+    }
+  ],
+  "art": "estacionamento/gen_fase5.png"
 }
