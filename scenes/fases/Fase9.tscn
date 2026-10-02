@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://scenes/Cone.tscn" id="9_cone"]
 [ext_resource type="Script" path="res://src/world/Crosser.gd" id="10_crosser"]
 [ext_resource type="Texture2D" path="res://assets/kenney/cars/car_blue_5.png" id="11_tex0"]
+[ext_resource type="Texture2D" path="res://assets/kenney/cars/car_yellow_5.png" id="11_tex1"]
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaNorte"]
 size = Vector2(2200, 70)
@@ -97,6 +98,11 @@ scale = Vector2(2.2732, 2.3109)
 position = Vector2(900.0, -610.5)
 scale = Vector2(2.2732, 2.3109)
 
+[node name="Estacionado_S_1" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-900.0, 610.5)
+scale = Vector2(2.2732, 2.3109)
+rotation = 3.141592653589793
+
 [node name="Estacionado_S_2" parent="Obstaculos" instance=ExtResource("3_obs")]
 position = Vector2(-450.0, 610.5)
 scale = Vector2(2.2732, 2.3109)
@@ -104,6 +110,11 @@ rotation = 3.141592653589793
 
 [node name="Estacionado_S_4" parent="Obstaculos" instance=ExtResource("3_obs")]
 position = Vector2(450.0, 610.5)
+scale = Vector2(2.2732, 2.3109)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_5" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(900.0, 610.5)
 scale = Vector2(2.2732, 2.3109)
 rotation = 3.141592653589793
 
@@ -159,18 +170,8 @@ position = Vector2(450.0, -610.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
-[node name="S_1" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-900.0, 610.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
 [node name="S_3" parent="Vagas" instance=ExtResource("4_vaga")]
 position = Vector2(0.0, 610.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
-[node name="S_5" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(900.0, 610.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
@@ -188,10 +189,10 @@ lane_cost_mode = 1
 script = ExtResource("6_plan")
 
 [node name="CarroDeTransito" type="Node2D" parent="."]
-position = Vector2(700, -830)
+position = Vector2(700, -900)
 script = ExtResource("10_crosser")
-point_a = Vector2(700, -830)
-point_b = Vector2(700, 830)
+point_a = Vector2(700, -900)
+point_b = Vector2(700, 900)
 cruise_speed = 160.0
 pause_time = 3.5
 spawn_distance = 700.0
@@ -201,6 +202,21 @@ trigger_distancia = 550.0
 rotation = 1.5708
 scale = Vector2(1.62, 1.62)
 texture = ExtResource("11_tex0")
+
+[node name="CarroDeTransito2" type="Node2D" parent="."]
+position = Vector2(-700, -900)
+script = ExtResource("10_crosser")
+point_a = Vector2(-700, -900)
+point_b = Vector2(-700, 900)
+cruise_speed = 160.0
+pause_time = 3.5
+spawn_distance = 700.0
+trigger_distancia = 550.0
+
+[node name="Sprite" type="Sprite2D" parent="CarroDeTransito2"]
+rotation = 1.5708
+scale = Vector2(1.62, 1.62)
+texture = ExtResource("11_tex1")
 
 [node name="Camera" type="Camera2D" parent="."]
 

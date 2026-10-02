@@ -110,8 +110,10 @@
       ],
       "rot": 1.5708,
       "parked": [
+        0,
         1,
-        3
+        3,
+        4
       ]
     }
   ],
@@ -134,21 +136,41 @@
       "name": "CarroDeTransito",
       "pos": [
         700,
-        -830
+        -900
       ],
       "point_a": [
         700,
-        -830
+        -900
       ],
       "point_b": [
         700,
-        830
+        900
       ],
       "cruise_speed": 160.0,
       "pause_time": 3.5,
       "spawn_distance": 700.0,
       "trigger_distancia": 550.0,
       "texture": "res://assets/kenney/cars/car_blue_5.png"
+    },
+    {
+      "name": "CarroDeTransito2",
+      "pos": [
+        -700,
+        -900
+      ],
+      "point_a": [
+        -700,
+        -900
+      ],
+      "point_b": [
+        -700,
+        900
+      ],
+      "cruise_speed": 160.0,
+      "pause_time": 3.5,
+      "spawn_distance": 700.0,
+      "trigger_distancia": 550.0,
+      "texture": "res://assets/kenney/cars/car_yellow_5.png"
     }
   ],
   "rotas": [
