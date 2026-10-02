@@ -11,27 +11,28 @@
 [ext_resource type="PackedScene" path="res://scenes/Cone.tscn" id="9_cone"]
 [ext_resource type="Script" path="res://src/world/Crosser.gd" id="10_crosser"]
 [ext_resource type="Texture2D" path="res://assets/kenney/cars/car_red_5.png" id="11_tex0"]
+[ext_resource type="Texture2D" path="res://assets/kenney/cars/car_yellow_5.png" id="11_tex1"]
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaNorte"]
-size = Vector2(2400, 40)
+size = Vector2(2502, 80.0)
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaSul"]
-size = Vector2(2400, 40)
+size = Vector2(2502, 80.0)
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaOeste"]
-size = Vector2(40, 1400)
+size = Vector2(80.0, 1117)
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaLeste"]
-size = Vector2(40, 1400)
+size = Vector2(80.0, 1117)
 
 [sub_resource type="RectangleShape2D" id="Rect_EspigaoOeste"]
-size = Vector2(40.0, 60.0)
+size = Vector2(40, 131)
 
 [sub_resource type="RectangleShape2D" id="Rect_EspigaoMeio"]
-size = Vector2(40.0, 60.0)
+size = Vector2(40, 131)
 
 [sub_resource type="RectangleShape2D" id="Rect_EspigaoLeste"]
-size = Vector2(40.0, 60.0)
+size = Vector2(40, 131)
 
 [node name="Fase6" type="Node2D"]
 script = ExtResource("1_base")
@@ -47,72 +48,91 @@ texture = ExtResource("2_map")
 [node name="Obstaculos" type="Node2D" parent="."]
 
 [node name="CalcadaNorte" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(0, -680)
+position = Vector2(0, -558.81)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/CalcadaNorte"]
 shape = SubResource("Rect_CalcadaNorte")
 
 [node name="CalcadaSul" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(0, 680)
+position = Vector2(0, 558.81)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/CalcadaSul"]
 shape = SubResource("Rect_CalcadaSul")
 
 [node name="CalcadaOeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(-1180, 0)
+position = Vector2(-1251.4347811701068, 0)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/CalcadaOeste"]
 shape = SubResource("Rect_CalcadaOeste")
 
 [node name="CalcadaLeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(1180, 0)
+position = Vector2(1251.4347811701068, 0)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/CalcadaLeste"]
 shape = SubResource("Rect_CalcadaLeste")
 
 [node name="EspigaoOeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(-571.4, -190.0)
+position = Vector2(-463.0499999999999, -500.8103)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/EspigaoOeste"]
 shape = SubResource("Rect_EspigaoOeste")
 
 [node name="EspigaoMeio" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(0.0, -190.0)
+position = Vector2(0.0, -500.8103)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/EspigaoMeio"]
 shape = SubResource("Rect_EspigaoMeio")
 
 [node name="EspigaoLeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(571.4, -190.0)
+position = Vector2(463.0499999999999, -500.8103)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/EspigaoLeste"]
 shape = SubResource("Rect_EspigaoLeste")
 
-[node name="Estacionado_N_5" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(142.9, -440.5)
-scale = Vector2(2.2732, 2.3109)
+[node name="Estacionado_N_1" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-1080.4, -354.9)
+scale = Vector2(2.5057, 1.6413)
 
-[node name="Estacionado_N_7" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(714.3, -440.5)
-scale = Vector2(2.2732, 2.3109)
+[node name="Estacionado_N_3" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-463.0, -354.9)
+scale = Vector2(2.5057, 1.6413)
 
-[node name="Estacionado_S_6" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(428.6, 440.5)
-scale = Vector2(2.2732, 2.3109)
+[node name="Estacionado_N_6" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(463.0, -354.9)
+scale = Vector2(2.5057, 1.6413)
+
+[node name="Estacionado_S_1" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-1080.4, 354.9)
+scale = Vector2(2.5057, 1.6413)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_2" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-771.7, 354.9)
+scale = Vector2(2.5057, 1.6413)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_4" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-154.4, 354.9)
+scale = Vector2(2.5057, 1.6413)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_7" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(771.7, 354.9)
+scale = Vector2(2.5057, 1.6413)
 rotation = 3.141592653589793
 
 [node name="Cone1" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(-1180, 0)
+position = Vector2(-1231, 0)
 
 [node name="Cone2" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(1180, 0)
+position = Vector2(1231, 0)
 
 [node name="Setas" type="Node2D" parent="."]
 
@@ -150,69 +170,49 @@ default_color = Color(0.2, 0.8, 1, 0.6)
 
 [node name="Vagas" type="Node2D" parent="."]
 
-[node name="N_1" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-1000.0, -440.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = -1.5708
-
 [node name="N_2" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-714.3, -440.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = -1.5708
-
-[node name="N_3" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-428.6, -440.5)
-scale = Vector2(2.2227, 3.659)
+position = Vector2(-771.7, -354.9)
+scale = Vector2(2.4499999999999997, 2.59875)
 rotacao_alvo = -1.5708
 
 [node name="N_4" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-142.9, -440.5)
-scale = Vector2(2.2227, 3.659)
+position = Vector2(-154.4, -354.9)
+scale = Vector2(2.4499999999999997, 2.59875)
 rotacao_alvo = -1.5708
 
-[node name="N_6" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(428.6, -440.5)
-scale = Vector2(2.2227, 3.659)
+[node name="N_5" parent="Vagas" instance=ExtResource("4_vaga")]
+position = Vector2(154.3, -354.9)
+scale = Vector2(2.4499999999999997, 2.59875)
+rotacao_alvo = -1.5708
+
+[node name="N_7" parent="Vagas" instance=ExtResource("4_vaga")]
+position = Vector2(771.7, -354.9)
+scale = Vector2(2.4499999999999997, 2.59875)
 rotacao_alvo = -1.5708
 
 [node name="N_8" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(1000.0, -440.5)
-scale = Vector2(2.2227, 3.659)
+position = Vector2(1080.4, -354.9)
+scale = Vector2(2.4499999999999997, 2.59875)
 rotacao_alvo = -1.5708
 
-[node name="S_1" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-1000.0, 440.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
-[node name="S_2" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-714.3, 440.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
 [node name="S_3" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-428.6, 440.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
-[node name="S_4" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-142.9, 440.5)
-scale = Vector2(2.2227, 3.659)
+position = Vector2(-463.0, 354.9)
+scale = Vector2(2.4499999999999997, 2.59875)
 rotacao_alvo = 1.5708
 
 [node name="S_5" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(142.9, 440.5)
-scale = Vector2(2.2227, 3.659)
+position = Vector2(154.3, 354.9)
+scale = Vector2(2.4499999999999997, 2.59875)
 rotacao_alvo = 1.5708
 
-[node name="S_7" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(714.3, 440.5)
-scale = Vector2(2.2227, 3.659)
+[node name="S_6" parent="Vagas" instance=ExtResource("4_vaga")]
+position = Vector2(463.0, 354.9)
+scale = Vector2(2.4499999999999997, 2.59875)
 rotacao_alvo = 1.5708
 
 [node name="S_8" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(1000.0, 440.5)
-scale = Vector2(2.2227, 3.659)
+position = Vector2(1080.4, 354.9)
+scale = Vector2(2.4499999999999997, 2.59875)
 rotacao_alvo = 1.5708
 
 [node name="Carro" parent="." instance=ExtResource("5_carro")]
@@ -229,10 +229,10 @@ lane_cost_mode = 0
 script = ExtResource("6_plan")
 
 [node name="CarroDeTransito" type="Node2D" parent="."]
-position = Vector2(300, -640)
+position = Vector2(300, -740)
 script = ExtResource("10_crosser")
-point_a = Vector2(300, -640)
-point_b = Vector2(300, 640)
+point_a = Vector2(300, -740)
+point_b = Vector2(300, 740)
 cruise_speed = 160.0
 pause_time = 0.85
 spawn_distance = 700.0
@@ -242,6 +242,21 @@ trigger_distancia = 900.0
 rotation = 1.5708
 scale = Vector2(1.62, 1.62)
 texture = ExtResource("11_tex0")
+
+[node name="CarroDeTransito2" type="Node2D" parent="."]
+position = Vector2(-600, -740)
+script = ExtResource("10_crosser")
+point_a = Vector2(-600, -740)
+point_b = Vector2(-600, 740)
+cruise_speed = 160.0
+pause_time = 0.85
+spawn_distance = 700.0
+trigger_distancia = 900.0
+
+[node name="Sprite" type="Sprite2D" parent="CarroDeTransito2"]
+rotation = 1.5708
+scale = Vector2(1.62, 1.62)
+texture = ExtResource("11_tex1")
 
 [node name="Camera" type="Camera2D" parent="."]
 
