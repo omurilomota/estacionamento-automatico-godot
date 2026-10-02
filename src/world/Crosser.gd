@@ -117,6 +117,12 @@ func _veiculo_se_aproximando() -> bool:
 ## Ha veiculo na zona de conflito (dentro da faixa, a frente do Crosser)?
 ## E' isto que garante, por construcao, que o carro que cruza NAO atravesse o
 ## jogador: o usuario viu o azul "sobrescrito" pelo laranja.
+##
+## Deadlock (2026-10-01, Fase10 seed=3): se o carro esta PARADO dentro da zona
+## de conflito, o Crosser segura esperando o carro sair — mas o carro esta parado
+## justamente porque CEDE ao Crosser (CrosserGate). Ninguem se move. O carro
+## parado nao vai atravessar ninguem, entao o Crosser so segura se o veiculo
+## estiver se movendo.
 func _conflito() -> bool:
 	if get_tree() == null:
 		return false
@@ -128,6 +134,8 @@ func _conflito() -> bool:
 	for n in get_tree().get_nodes_in_group(vehicle_group):
 		var v := n as Node2D
 		if v == null or not is_instance_valid(v):
+			continue
+		if absf(float(v.get("velocidade_atual"))) < 5.0:
 			continue
 		var rel: Vector2 = v.global_position - global_position
 		var ao_longo: float = rel.dot(u)
