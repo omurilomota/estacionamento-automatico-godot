@@ -52,6 +52,12 @@
   (promoting a slower retrain to production, a paid service, deleting data,
   publishing) waits recorded in the panel instead of blocking everything
   else.
+- **And the authority is explicit: while the user is away, the AI CREATES
+  tasks for itself and RESOLVES the project's pendências on its own**
+  (the backlog items, the open issues in `docs/tasks_*.md`) — it does not
+  wait to be handed work. Pick the next item from the panel, do it, close it
+  with its gates, open the next. Only a decision that is truly the user's
+  waits recorded instead of blocking.
 - The invariants do NOT loosen for autonomy: never two Godot at once, kill
   every spawned process at the end of each block (AGENTS §14), commit = one
   sentence (§0.1), never loosen a shared park gate (#42), bounded `/tmp`
