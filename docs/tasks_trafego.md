@@ -29,12 +29,20 @@
 
 ## 1. Issues (the work items of this round)
 
-### T1 — ML retrain promotion (user decision, answered: promote if better)
-- `python3 ml/treinar.py` with the CSVs already on disk (4 new episodes,
-  §1.28) → `ml/testar_ml.gd` + `gate_ml_probe` parity (worst `|diff| <= 1e-6`).
-- Promote only if the regression matches or beats **68,1 s**; otherwise
-  `git checkout ml/modelo/pesos.json` and record the number here.
-- If promoted: `bash tools/export_site_data.sh` + republish (T6).
+### T1 — ML retrain promotion — RESOLVED: revert, same number as §1.28
+- `python3 ml/treinar.py 40` retrained on the CSVs already on disk (4 new
+  episodes, §1.28): val_mse **0,00711**, corr 0,919/0,948.
+- Regression re-measured on the current code (2026-10-02):
+  **`ESTACIONADO em 83,6 s (usou_fallback=true)`** — byte-identical outcome to
+  §1.28 (deterministic, fixed seed). Reference **68,1 s** → **15,5 s WORSE**.
+  The trace shows a recovery maneuver mid-run (t=40, `RECUPERANDO`).
+- The launch deadlock IS fixed (the network drives from t=0, handover only at
+  t=25 s, vs t=4,0 s after 5 px on the old weights) — but per the user's rule
+  ("promote if better") the weights were REVERTED
+  (`git checkout ml/modelo/pesos.json`). The 68,1 s published weights and the
+  game×site parity stay as they were.
+- The dataset stays on disk for DAgger (T5) — that is where the launch
+  distribution gets fixed with more data, not by promoting a slower policy.
 
 ### T2 — Dynamic actors (`src/world/`, English, facade pattern)
 | Actor | What it is | How the car reacts |
