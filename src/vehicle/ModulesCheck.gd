@@ -15,6 +15,9 @@ const EngineAudioRef = preload("res://src/vehicle/EngineAudio.gd")
 const ChartRef = preload("res://src/farol/Chart.gd")
 const RouteRef = preload("res://src/farol/Route.gd")
 const PilotRef = preload("res://src/farol/Pilot.gd")
+const PedestrianRef = preload("res://src/world/Pedestrian.gd")
+const TireRef = preload("res://src/world/Tire.gd")
+const StalledCarRef = preload("res://src/world/StalledCar.gd")
 
 var _fails: int = 0
 
@@ -168,6 +171,56 @@ func _init() -> void:
 	beside.reset()
 	_check("Gate.reset", not beside.is_latched())
 	_check("Gate.no_crosser_clears", not _latched_then_lost(150.0))
+
+	# TRAZEGO (docs/tasks_trafego.md T2): the dynamic actors + the decision
+	# order. A pedestrian has PRIORITY (yield); a tire is a solid hazard to
+	# DODGE; a stalled car blocks the lane and triggers the detour.
+	var ped_a: Vector2 = PedestrianRef.position_at(Vector2(-600, 0), Vector2(600, 0), 55.0, 0.0)
+	_check("Ped.at_a", ped_a.distance_to(Vector2(-600, 0)) < 0.01)
+	var ped_mid: Vector2 = PedestrianRef.position_at(Vector2(-600, 0), Vector2(600, 0), 55.0, 5.0)
+	_check("Ped.walks", ped_mid.x > -600.0 and ped_mid.x < 600.0)
+	var ped_b: Vector2 = PedestrianRef.position_at(Vector2(-600, 0), Vector2(600, 0), 55.0, 40.0)
+	_check("Ped.clamped_at_b", ped_b.distance_to(Vector2(600, 0)) < 0.01)
+	var tire_probe = TireRef.new()
+	_check("Tire.body_is_solid", tire_probe.get_class() == "StaticBody2D")
+	tire_probe.free()
+	_check("Tire.radius", TireRef.RADIUS == 12.0)
+	var t_mid: Vector2 = TireRef.position_at(Vector2(-600, 0), Vector2(600, 0), 70.0, 4.0)
+	_check("Tire.rolls", t_mid.x > -600.0 and t_mid.x < 600.0)
+	# the ACCIDENT car: drives to the stall point and NEVER moves again
+	var stall_a: Vector2 = StalledCarRef.position_at(Vector2(-600, 0), Vector2(600, 0), 140.0, 600.0, 0.0)
+	_check("Accident.at_entry", stall_a.distance_to(Vector2(-600, 0)) < 0.01)
+	var stall_point: Vector2 = StalledCarRef.position_at(Vector2(-600, 0), Vector2(600, 0), 140.0, 600.0, 5.0)
+	_check("Accident.stops_on_line", absf(stall_point.x - 0.0) < 0.01)
+	var stall_done: Vector2 = StalledCarRef.position_at(Vector2(-600, 0), Vector2(600, 0), 140.0, 600.0, 30.0)
+	_check("Accident.never_moves_after_stall", stall_done.distance_to(stall_point) < 0.01)
+	# the arbitration order: a pedestrian wins over a crosser, both yield before
+	# any detour; the pilot's last order names who commanded the stop
+	var ambos := PerceptionSnapshot.new()
+	ambos.pedestrian_distance = 150.0
+	ambos.pedestrian_bearing = 0.1
+	ambos.crosser_distance = 150.0
+	ambos.crosser_bearing = 0.1
+	var auto_ped := AutonomousDriver.new()
+	_check("Ped.auto_yields", auto_ped.decide(ambos, 0.016).throttle == 0.0)
+	var ctx_ped := DriveContext.new()
+	ctx_ped.route = [Vector2.ZERO, Vector2(600, 0)]
+	ctx_ped.cte = 5.0
+	var piloto_ped := PilotRef.new(FarolSpecRef.new())
+	piloto_ped.decide_context(ambos, ctx_ped, 0.016)
+	_check("Ped.piloto_pedestre_primeiro", piloto_ped.ultima_ordem == "pedestre"
+		and piloto_ped.pedestrian_latches >= 1)
+	var so_crosser := PerceptionSnapshot.new()
+	so_crosser.crosser_distance = 150.0
+	so_crosser.crosser_bearing = 0.1
+	var piloto_crosser := PilotRef.new(FarolSpecRef.new())
+	piloto_crosser.decide_context(so_crosser, ctx_ped, 0.016)
+	_check("Ped.piloto_sem_pedestre_cede_crosser", piloto_crosser.ultima_ordem == "cedencia")
+	var livre_ped := PerceptionSnapshot.new()
+	var piloto_livre := PilotRef.new(FarolSpecRef.new())
+	piloto_livre.decide_context(livre_ped, ctx_ped, 0.016)
+	_check("Ped.sem_pedestre_nao_para", piloto_livre.ultima_ordem != "pedestre"
+		and piloto_livre.pedestrian_latches == 0)
 
 	# LaneOffset: right-hand traffic (mão à direita). A straight eastbound route
 	# must shift SOUTH (+y in screen coords = the driver's right) and never past

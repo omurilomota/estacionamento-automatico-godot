@@ -1154,6 +1154,8 @@ func _build_brain_perception() -> PerceptionSnapshot:
 		rot_v = _vaga_alvo.rotacao_alvo
 	var cross_dist := INF
 	var cross_bear := 0.0
+	var ped_dist := INF
+	var ped_bear := 0.0
 	if get_tree() != null:
 		for n in get_tree().get_nodes_in_group("crosser"):
 			var c := n as Node2D
@@ -1164,8 +1166,23 @@ func _build_brain_perception() -> PerceptionSnapshot:
 				cross_dist = d
 				cross_bear = angle_difference(rotation,
 					global_position.direction_to(c.global_position).angle())
-	return SensorArrayRef.snapshot_full(rays, velocidade_atual, dist_t, ang_t,
+		# pedestrian broadcast (docs/tasks_trafego.md T2): a pedestrian has
+		# priority and must never be run over; sensor-only, so the yield
+		# decision is the only protection.
+		for n in get_tree().get_nodes_in_group("pedestre"):
+			var p := n as Node2D
+			if p == null:
+				continue
+			var d2 := global_position.distance_to(p.global_position)
+			if d2 < ped_dist:
+				ped_dist = d2
+				ped_bear = angle_difference(rotation,
+					global_position.direction_to(p.global_position).angle())
+	var snapshot := SensorArrayRef.snapshot_full(rays, velocidade_atual, dist_t, ang_t,
 		angle_difference(rotation, rot_v), cross_dist, cross_bear, _tempo_parado)
+	snapshot.pedestrian_distance = ped_dist
+	snapshot.pedestrian_bearing = ped_bear
+	return snapshot
 
 
 func _build_drive_context(perception: PerceptionSnapshot) -> DriveContextRef:
@@ -2494,6 +2511,18 @@ func _processar_trilha(delta: float) -> void:
 				cross_dist = d
 				cross_bear = angle_difference(rotation,
 					global_position.direction_to(c.global_position).angle())
+		# a pedestrian has priority in the legacy trail path too
+		# (docs/tasks_trafego.md T2): merged into the same latch so the trail
+		# never runs over one either.
+		for n in get_tree().get_nodes_in_group("pedestre"):
+			var p := n as Node2D
+			if p == null:
+				continue
+			var d2 := global_position.distance_to(p.global_position)
+			if d2 < cross_dist:
+				cross_dist = d2
+				cross_bear = angle_difference(rotation,
+					global_position.direction_to(p.global_position).angle())
 		var gate := gate_cruzamento()
 		gate.enter_distance = 140.0
 		gate.exit_distance = 220.0

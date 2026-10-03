@@ -11,22 +11,24 @@ extends DriverBrain
 ## pushing, and the escape ladder cleans up.
 ##
 ## The Pilot adds the missing decision, in this order:
-##   1. YIELD. The crossing-traffic gate, unchanged (420/540 px, hysteresis).
+##   1. SAFETY. The pedestrian gate (docs/tasks_trafego.md T2) — a pedestrian
+##      has priority over everything; a stopped car cannot hurt a person.
+##   2. YIELD. The crossing-traffic gate, unchanged (420/540 px, hysteresis).
 ##      Body-less crosser, so the latch is the only thing keeping them apart.
-##   2. SENSE. The LocalMap, rebuilt from the 11 rays + 8 diagonals and mixed
+##   3. SENSE. The LocalMap, rebuilt from the 11 rays + 8 diagonals and mixed
 ##      with the Chart's clearance, at `local_rebuild_s`.
-##   3. `blocked_ahead`. The plan is not "I hit something", it is "the next
+##   4. `blocked_ahead`. The plan is not "I hit something", it is "the next
 ##      `bloqueado_dist_px` of the route is unusable". Measured by cost along
 ##      the route, needing `bloqueado_celulas` consecutive bad cells so a single
 ##      shadow does not fire it. This fires at ~3 m WHILE MOVING, which is the
 ##      distinction from the displacement watchdog (AGENTS #37) that only
 ##      notices after 2 s of not moving.
-##   4. DETOUR. On `blocked_ahead`, a BFS over the LocalMap finds a reachable
+##   5. DETOUR. On `blocked_ahead`, a BFS over the LocalMap finds a reachable
 ##      cell with better cost and asks the vehicle to REPLAN with the goal
 ##      moved there. The car goes AROUND, which is the whole point. It does not
 ##      reverse: reverse stays reserved for the escape ladder (AGENTS #43) and
 ##      the gates count an unjustified reverse frame as a failure.
-##   5. DRIVE. The DWA at `dwa_periodo_s` (10 Hz), with the pure-pursuit
+##   6. DRIVE. The DWA at `dwa_periodo_s` (10 Hz), with the pure-pursuit
 ##      command HELD in between and a rate limit on the steering change, so
 ##      the controller output cannot chatter at 60 Hz (the Locomotion ramp
 ##      would just turn noise into a full-lock oscillation).
@@ -44,6 +46,11 @@ var spec: FarolSpec = null
 var local: LocalMapRef = null
 var dwa: DwaRef = null
 var crosser_gate: CrosserGate = null
+## The pedestrian gate (docs/tasks_trafego.md T2): a pedestrian has PRIORITY —
+## ticked BEFORE the crosser gate, so a person in front wins over everything.
+## Latched generously (360/480 px): sensor-only, so the latch is the only
+## protection against ever running one over.
+var pedestrian_gate: CrosserGate = null
 ## The vehicle, injected. `null` keeps the Pilot testable headless: everything
 ## that needs the vehicle is behind a `Callable` the tests can supply.
 var veiculo = null
@@ -69,6 +76,7 @@ var bloqueado_dist: float = 0.0
 var chamadas: int = 0
 var desvios: int = 0
 var bloqueados: int = 0
+var pedestrian_latches: int = 0
 var ultima_ordem: String = "cruzeiro"
 
 
@@ -77,6 +85,7 @@ func _init(p_spec: FarolSpec = null) -> void:
 	local = LocalMapRef.new(spec)
 	dwa = DwaRef.new(spec)
 	crosser_gate = CrosserGate.new(420.0, 540.0)
+	pedestrian_gate = CrosserGate.new(360.0, 480.0)
 
 
 func kind() -> int:
@@ -114,11 +123,19 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 		delta: float) -> DriveCommand:
 	chamadas += 1
 	_t += delta
-	# 1. YIELD — ticked once per frame, before anything else moves.
+	# 1. SAFETY — a pedestrian has priority over everything (docs/tasks_trafego.md
+	#    T2). Sensor-only, so this latch is the only protection against ever
+	#    running one over; a stopped car cannot hurt a person.
+	if perception.pedestrian_distance < INF and pedestrian_gate.should_yield(
+			perception.pedestrian_distance, perception.pedestrian_bearing, delta):
+		pedestrian_latches += 1
+		ultima_ordem = "pedestre"
+		return DriveCommand.stop()
+	# 2. YIELD — ticked once per frame, before anything else moves.
 	if gate().should_yield(perception.crosser_distance, perception.crosser_bearing, delta):
 		ultima_ordem = "cedencia"
 		return DriveCommand.stop()
-	# 2. SENSE.
+	# 3. SENSE.
 	var rays: Dictionary = SensorArrayRef.collect_from(veiculo) if veiculo != null else {}
 	var meia_eixos: Vector2 = _meia_eixos()
 	var varrido: float = maxf(meia_eixos.length(), 1.0)
@@ -126,7 +143,7 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 		_t_rebuild = _t
 		local.atualizar(context.vehicle_position, rays, _carta(), varrido,
 			spec.local_rebuild_s, _folga_estatica_do_corpo)
-	# 3. blocked_ahead — the plan is unusable, not "I hit a wall".
+	# 4. blocked_ahead — the plan is unusable, not "I hit a wall".
 	var rota: Array = context.route
 	bloqueado = false
 	bloqueado_celulas = 0
@@ -138,7 +155,7 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 		bloqueado_dist = float(b[2])
 		if bloqueado:
 			bloqueados += 1
-			# 4. DETOUR — around, never backwards.
+			# 5. DETOUR — around, never backwards.
 			if _t - _ultimo_desvio >= spec.desvio_periodo_s:
 				_ultimo_desvio = _t
 				var alvo := _melhor_desvio(rota, context)
@@ -146,7 +163,7 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 					desvio_alvo = alvo
 					desvios += 1
 					ultima_ordem = "desvio"
-	# 5. DRIVE. The route speed, THEN the static-choke cap: the profile must
+	# 6. DRIVE. The route speed, THEN the static-choke cap: the profile must
 	# know how much room the WHOLE hull has, not just the route's cell centres.
 	var vel_alvo: float = _velocidade_do_roteiro(context)
 	vel_alvo = _velocidade_do_gargalo(vel_alvo)

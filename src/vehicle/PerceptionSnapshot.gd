@@ -26,6 +26,11 @@ var yaw_error: float = 0.0 ## signed radians to target_yaw (0 = aligned)
 var crosser_distance: float = INF ## px to scripted crossing car, INF = none
 var crosser_bearing: float = 0.0 ## signed radians, 0 = straight ahead
 var stuck_time: float = 0.0 ## seconds without progress (0 = moving fine)
+## Runtime-only pedestrian fields (docs/tasks_trafego.md T2). NOT part of the
+## 22-field ML contract — the recorders keep writing 22 columns; the
+## pedestrian is a yield hazard only (a pedestrian has priority).
+var pedestrian_distance: float = INF ## px to the nearest pedestrian, INF = none
+var pedestrian_bearing: float = 0.0 ## signed radians, 0 = straight ahead
 
 
 func front_blocked(threshold: float) -> bool:

@@ -9,6 +9,12 @@ var max_speed: float = 160.0
 ## (`Carro._brain_for_current_mode()`, C2b). A fresh brain per frame would
 ## never hold for even one frame.
 var crosser_gate: CrosserGate = null
+## The pedestrian gate (docs/tasks_trafego.md T2): a pedestrian has PRIORITY —
+## ticked BEFORE the crosser gate in both decide paths. Sensor-only, so the
+## latch is the only protection against ever running one over.
+var pedestrian_gate: CrosserGate = null
+## Shadow counter for the traffic gate (latches for a pedestrian).
+var pedestrian_latches: int = 0
 
 
 func kind() -> int:
@@ -25,7 +31,21 @@ func gate() -> CrosserGate:
 	return crosser_gate
 
 
+func gate_pedestre() -> CrosserGate:
+	if pedestrian_gate == null:
+		# 360/480 px, hold de 0,8 s: um pedestre e' LENTO e pequeno — o latch
+		# e' a unica protecao (sensor-only), entao ele entra mais cedo e segura
+		# mais que o gate do crosser.
+		pedestrian_gate = CrosserGate.new(360.0, 480.0)
+		pedestrian_gate.min_hold = 0.8
+	return pedestrian_gate
+
+
 func decide(perception: PerceptionSnapshot, delta: float) -> DriveCommand:
+	if perception.pedestrian_distance < INF and gate_pedestre().should_yield(
+			perception.pedestrian_distance, perception.pedestrian_bearing, delta):
+		pedestrian_latches += 1
+		return DriveCommand.stop()
 	if gate().should_yield(perception.crosser_distance, perception.crosser_bearing, delta):
 		return DriveCommand.stop()
 	return _steer_to_target(perception)
@@ -34,6 +54,10 @@ func decide(perception: PerceptionSnapshot, delta: float) -> DriveCommand:
 func decide_context(perception: PerceptionSnapshot, context: DriveContext, _delta: float) -> DriveCommand:
 	# The gate is ticked ONCE per frame here: `decide()` below would tick it a
 	# second time when there is no route, doubling the min hold.
+	if perception.pedestrian_distance < INF and gate_pedestre().should_yield(
+			perception.pedestrian_distance, perception.pedestrian_bearing, _delta):
+		pedestrian_latches += 1
+		return DriveCommand.stop()
 	if gate().should_yield(perception.crosser_distance, perception.crosser_bearing, _delta):
 		return DriveCommand.stop()
 	if context.route.is_empty():
