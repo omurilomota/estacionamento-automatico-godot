@@ -19,6 +19,12 @@ extends Node2D
 @export var pause_time: float = 2.0 ## seconds out of sight between passes
 @export var spawn_distance: float = 700.0 ## px before point_a it enters from
 @export var initial_delay: float = 0.0 ## seconds before the FIRST entry
+## HEAD START: the person begins this far ALONG its path (a person already
+## mid-crossing when the scene starts — a parking lot has people in it). The
+## walk from a sidewalk takes ~17.8 s to reach an aisle lane, so a crossing
+## that must coincide with the car's arrival NEEDS the head start; a negative
+## `initial_delay` is just a longer wait, not one.
+@export var head_start_px: float = 0.0
 @export var running: bool = true
 
 ## Collision-free radius the vehicle keeps from the figure (info only — there
@@ -35,6 +41,11 @@ func _ready() -> void:
 	add_to_group("pedestre")
 	_entry = _off_scene()
 	global_position = _entry
+	if head_start_px > 0.0:
+		var comprimento := point_a.distance_to(point_b)
+		if comprimento > 1.0:
+			global_position = point_a.lerp(point_b,
+				minf(1.0, head_start_px / comprimento))
 	rotation = (point_b - point_a).angle()
 	visible = true
 	if initial_delay > 0.0:

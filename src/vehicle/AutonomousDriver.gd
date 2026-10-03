@@ -15,6 +15,8 @@ var crosser_gate: CrosserGate = null
 var pedestrian_gate: CrosserGate = null
 ## Shadow counter for the traffic gate (latches for a pedestrian).
 var pedestrian_latches: int = 0
+## Edge-triggered [PED] log flag (first frame of a pedestrian latch).
+var _ped_log_recente: bool = false
 
 
 func kind() -> int:
@@ -38,6 +40,7 @@ func gate_pedestre() -> CrosserGate:
 		# mais que o gate do crosser.
 		pedestrian_gate = CrosserGate.new(360.0, 480.0)
 		pedestrian_gate.min_hold = 0.8
+		pedestrian_gate.strict_release = true
 	return pedestrian_gate
 
 
@@ -45,7 +48,11 @@ func decide(perception: PerceptionSnapshot, delta: float) -> DriveCommand:
 	if perception.pedestrian_distance < INF and gate_pedestre().should_yield(
 			perception.pedestrian_distance, perception.pedestrian_bearing, delta):
 		pedestrian_latches += 1
-		return DriveCommand.stop()
+		# GIVE-WAY glide (CrosserGate.PED_GIVEWAY_*): stops BEFORE the walking
+		# line, never on it — the person crosses in front (docs/tasks_trafego.md).
+		return DriveCommand.make(0.0, clampf(
+			(perception.pedestrian_distance - CrosserGate.PED_GIVEWAY_GAP)
+				/ CrosserGate.PED_GIVEWAY_RAMP, 0.0, 1.0))
 	if gate().should_yield(perception.crosser_distance, perception.crosser_bearing, delta):
 		return DriveCommand.stop()
 	return _steer_to_target(perception)
@@ -54,10 +61,20 @@ func decide(perception: PerceptionSnapshot, delta: float) -> DriveCommand:
 func decide_context(perception: PerceptionSnapshot, context: DriveContext, _delta: float) -> DriveCommand:
 	# The gate is ticked ONCE per frame here: `decide()` below would tick it a
 	# second time when there is no route, doubling the min hold.
+	# The PEDESTRIAN yield is the GIVE-WAY: the THROTTLE falls to zero at
+	# `PED_GIVEWAY_GAP` px from the pedestrian and the STEERING keeps coming
+	# from the drive path below — a steering-0 glide drove the car straight
+	# off its lane (measured on Fase11: 255 px off the route after a yield
+	# fired at the spawn, and the cte branch fired the reverse for 107
+	# frames). NOT returning early: the ceiling is applied at the end.
+	var ceiling := 1.0
 	if perception.pedestrian_distance < INF and gate_pedestre().should_yield(
 			perception.pedestrian_distance, perception.pedestrian_bearing, _delta):
 		pedestrian_latches += 1
-		return DriveCommand.stop()
+		_ped_log(perception)
+		ceiling = clampf(
+			(perception.pedestrian_distance - CrosserGate.PED_GIVEWAY_GAP)
+				/ CrosserGate.PED_GIVEWAY_RAMP, 0.0, 1.0)
 	if gate().should_yield(perception.crosser_distance, perception.crosser_bearing, _delta):
 		return DriveCommand.stop()
 	if context.route.is_empty():
@@ -103,7 +120,21 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext, _delt
 			context.distance_to_target, pursuit.speed, max_speed)
 		if context.arrived and context.distance_to_target < 200.0:
 			pursuit.speed = 0.0
+	# The give-way ceiling: the pedestrian yield's throttle ceiling, applied
+	# AFTER the drive path computed the steering (the Fase11 lesson).
+	pursuit.speed = minf(pursuit.speed, ceiling * max_speed)
 	return DriveCommandAdapter.from_pursuit(pursuit, max_steer, max_speed)
+
+
+## Edge-triggered [PED] log (the [RE-BRAIN] pattern): the first frame of a
+## pedestrian latch, with the numbers.
+func _ped_log(per: PerceptionSnapshot) -> void:
+	if _ped_log_recente:
+		return
+	_ped_log_recente = true
+	print("[PED] d=%.0f bearing=%.2f vel=%.0f pos=(%.0f,%.0f)" % [
+		per.pedestrian_distance, per.pedestrian_bearing, per.speed,
+		0.0, 0.0])
 
 
 ## Route-less fallback (no A* path yet): head for the target, stop if a real

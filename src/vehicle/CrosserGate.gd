@@ -30,6 +30,12 @@ var exit_distance: float = EXIT_DIST
 var min_hold: float = MIN_HOLD
 var enter_cone: float = ENTER_CONE
 var release_cone: float = RELEASE_CONE
+## Release only when BOTH the distance AND the bearing are clear. The default
+## (OR) is the crosser's measured-green rule; the PEDESTRIAN gate sets this:
+## an OR release let the car creep forward mid-crossing (the pedestrian was
+## still 288+ px lateral, well inside the lane) and it re-latched — 30 latches
+## measured on Fase11. Strict AND holds until the person is genuinely clear.
+var strict_release: bool = false
 
 ## Autonomia: 320/430 px. O padrao (220/340) era curto demais para o carro
 ## PARAR: a 220 px da faixa de cruzamento ele freava colado no carro que
@@ -37,6 +43,19 @@ var release_cone: float = RELEASE_CONE
 ## linha de preferencia e o transito passa NA FRENTE, com folga visivel.
 const AUTO_ENTER_DIST := 320.0
 const AUTO_EXIT_DIST := 430.0
+
+## PEDESTRE — a LINHA DE PREFERENCIA (docs/tasks_trafego.md T2; a divida do
+## backlog #14: "a parada acontece onde o latch pegou" fazia o carro parar
+## SOBRE a linha de travessia do pedestre, e a pessoa caminhava ATRAVES do
+## carro — min_gap medido 9,2 px). A cedencia ao pedestre nao e um stop()
+## seco: e um GLIDE ate `PED_GIVEWAY_GAP` px do pedestre (o throttle cai
+## linearmente ao longo de `PED_GIVEWAY_RAMP` px), entao o carro para ANTES
+## da pessoa e ela cruza NA FRENTE, com folga. So o yield do PEDESTRE usa
+## isso: o yield do crosser e autorado por fase e esta medido-verde (a parada
+## dele ~90 px antes da faixa e o release por distancia que o boot da Fase2
+## prova) — mexer nele muda a geometria medida.
+const PED_GIVEWAY_GAP := 120.0
+const PED_GIVEWAY_RAMP := 240.0
 
 
 func _init(p_enter: float = ENTER_DIST, p_exit: float = EXIT_DIST) -> void:
@@ -61,7 +80,10 @@ func should_yield(distance: float, bearing: float, delta: float) -> bool:
 			_held = 0.0
 		return _latched
 	_held += maxf(delta, 0.0)
-	if _held >= min_hold and (distance > exit_distance or absf(bearing) > release_cone):
+	var livre := distance > exit_distance or absf(bearing) > release_cone
+	if strict_release:
+		livre = distance > exit_distance and absf(bearing) > release_cone
+	if _held >= min_hold and livre:
 		_latched = false
 		_held = 0.0
 	return _latched

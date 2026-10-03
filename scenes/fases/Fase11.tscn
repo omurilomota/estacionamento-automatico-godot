@@ -183,50 +183,54 @@ scale = Vector2(1.62, 1.62)
 texture = ExtResource("11_tex0")
 
 [node name="Pedestre1" type="Node2D" parent="."]
-position = Vector2(-135, -700)
+position = Vector2(-600, -50)
 script = ExtResource("12_pede")
-point_a = Vector2(-135, -700)
-point_b = Vector2(-135, 700)
+point_a = Vector2(-600, -700)
+point_b = Vector2(-600, 700)
 walk_speed = 55.0
 pause_time = 3.0
 spawn_distance = 500.0
-initial_delay = 5.0
+initial_delay = 0.0
+head_start_px = 650.0
 
 [node name="Pedestre2" type="Node2D" parent="."]
-position = Vector2(135, 700)
+position = Vector2(400, -700)
 script = ExtResource("12_pede")
-point_a = Vector2(135, 700)
-point_b = Vector2(135, -700)
+point_a = Vector2(400, -700)
+point_b = Vector2(400, 700)
 walk_speed = 55.0
 pause_time = 3.0
 spawn_distance = 500.0
-initial_delay = 20.0
+initial_delay = 19.2
+head_start_px = 0.0
 
 [node name="Tire1" type="StaticBody2D" parent="."]
-position = Vector2(-1500, -200)
+position = Vector2(-700, -100)
 script = ExtResource("13_tire")
-point_a = Vector2(-1500, -200)
-point_b = Vector2(1500, -200)
+point_a = Vector2(-700, -800)
+point_b = Vector2(-700, 800)
 roll_speed = 70.0
 pause_time = 4.0
 spawn_distance = 500.0
-initial_delay = 8.0
+initial_delay = 0.0
+head_start_px = 700.0
 
 [node name="Tire2" type="StaticBody2D" parent="."]
-position = Vector2(1500, 200)
+position = Vector2(600, 800)
 script = ExtResource("13_tire")
-point_a = Vector2(1500, 200)
-point_b = Vector2(-1500, 200)
+point_a = Vector2(600, 800)
+point_b = Vector2(600, -800)
 roll_speed = 70.0
 pause_time = 4.0
 spawn_distance = 500.0
-initial_delay = 16.0
+initial_delay = 0.0
+head_start_px = 0.0
 
 [node name="CarroAcidentado" type="StaticBody2D" parent="."]
-position = Vector2(-1900, 0)
+position = Vector2(2200, 320.5)
 script = ExtResource("14_stalled")
-point_a = Vector2(-1900, 0)
-point_b = Vector2(1200, 0)
+point_a = Vector2(2200, 320.5)
+point_b = Vector2(-1200, 320.5)
 drive_speed = 250.0
 stall_after_px = 1900.0
 spawn_distance = 700.0

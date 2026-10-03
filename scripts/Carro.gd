@@ -1805,6 +1805,16 @@ func _cravou(delta: float) -> bool:
 		_ancora_deslocamento = global_position
 		_ancora_distancia = _distancia_ao_alvo_da_rota()
 		return false
+	# A CEDENCIA NAO E ENGANCO (docs/tasks_trafego.md): o carro parado para um
+	# pedestre/crosser e uma parada DELIBERADA — mas o watchdog via "2 s sem
+	# andar 26 px" e disparava a escada de fuga NO MEIO da cedencia: a rota
+	# replanejada nascia no carro parado, o carro se perdia (cte 512, RE em
+	# SEEKING, Fase11 medido NEG_FRAMES=22/REC=161). Enquanto houver quem ceder
+	# perto, a contagem suspende; quem zera a escada continua sendo o
+	# progresso real (TRAVA_RESET_PX).
+	if _cedendo_a_alguem():
+		_travado_ha = 0.0
+		return false
 	# Andar um tanto NAO zera a escada (ver TRAVA_RESET_PX): quem zera e' o
 	# progresso na ROTA (`_avancar_indice_rota`). Medido na Fase1: entre dois
 	# engasgos o carro anda 100-200 px e volta a encravar no mesmo lugar, entao
@@ -1822,6 +1832,40 @@ func _cravou(delta: float) -> bool:
 	_ancora_deslocamento = global_position
 	_travado_ha = 0.0
 	return true
+
+
+## Ha pedestre ou crosser no raio de cedencia? O exit do gate do crosser
+## (540 px) cobre o do pedestre (480) — um limiar so, os dois grupos.
+func _cedendo_a_alguem() -> bool:
+	# O gate em uso e o do CEREBRO (AGENTS #20): a LATCH e o que diz "estou
+	# parado de proposito". O broadcast so diz que ha alguem PERTO — e um
+	# pedestre perto de um carro ENCARADO num obstaculo estatico (o acidentado
+	# da Fase11, a 14,5 px) suspendia a escada enquanto ele andava por perto:
+	# o carro esperou os pedestres sairem do raio para desencravar (boot 72,5 s,
+	# REC 74 frames). A latch do cerebro e a verdade; a proximidade, nao.
+	var brain: Object = _brain_for_current_mode()
+	if brain != null:
+		var pg = brain.get("pedestrian_gate")
+		if pg != null and pg.is_latched():
+			return true
+		var cg = brain.get("crosser_gate")
+		if cg != null and cg.is_latched():
+			return true
+	# O PNEU PASSA (2-4 s de travessia): o carro para para ele (o veto — o
+	# pneu e SOLIDO, layer 2) e a escada via "2 s sem andar 26 px" — disparava
+	# a escada NO MEIO do encontro: a rota replanejada nascia no carro parado,
+	# o carro se perdia (cte 288, RE em SEEKING, Fase11 medido NEG_FRAMES=107).
+	# Enquanto um pneu estiver perto, a contagem suspende; o ACIDENTADO e
+	# estatico (um obstaculo de verdade), entao a escada dispara nele e o
+	# desvio/replan e a resposta certa.
+	if get_tree() != null:
+		for n in get_tree().get_nodes_in_group("tire"):
+			var t := n as Node2D
+			if t != null and is_instance_valid(t):
+				if global_position.distance_to(t.global_position) < 240.0:
+					_travado_ha = 0.0
+					return true
+	return false
 
 
 func _aplicar_movimento_trilha(delta: float) -> void:

@@ -439,6 +439,7 @@ def generate(spec):
         out.append("pause_time = %s" % p.get("pause_time", 2.0))
         out.append("spawn_distance = %s" % p.get("spawn_distance", 700.0))
         out.append("initial_delay = %s" % p.get("initial_delay", 0.0))
+        out.append("head_start_px = %s" % p.get("head_start_px", 0.0))
         out.append("")
 
     for i, t in enumerate(spec.get("tires", []), 1):
@@ -451,6 +452,7 @@ def generate(spec):
         out.append("pause_time = %s" % t.get("pause_time", 1.5))
         out.append("spawn_distance = %s" % t.get("spawn_distance", 500.0))
         out.append("initial_delay = %s" % t.get("initial_delay", 0.0))
+        out.append("head_start_px = %s" % t.get("head_start_px", 0.0))
         out.append("")
 
     for i, s in enumerate(spec.get("stalled_cars", []), 1):

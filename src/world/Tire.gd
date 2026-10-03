@@ -20,6 +20,10 @@ extends StaticBody2D
 @export var pause_time: float = 1.5 ## seconds out of sight between passes
 @export var spawn_distance: float = 500.0 ## px before point_a it enters from
 @export var initial_delay: float = 0.0 ## seconds before the FIRST entry
+## HEAD START: the tire begins this far ALONG its path (mid-lane when the
+## scene starts) — the crossing that must coincide with the car's arrival
+## needs it (the roll from off-scene takes ~15 s to reach an aisle lane).
+@export var head_start_px: float = 0.0
 @export var running: bool = true
 
 const RADIUS := 12.0
@@ -31,6 +35,7 @@ var _entry: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
+	add_to_group("tire")
 	collision_layer = 2
 	collision_mask = 0
 	# the body IS the contract: a small circle the rays (mask 2) see and the
@@ -44,6 +49,11 @@ func _ready() -> void:
 	add_child(forma)
 	_entry = _off_scene()
 	global_position = _entry
+	if head_start_px > 0.0:
+		var comprimento := point_a.distance_to(point_b)
+		if comprimento > 1.0:
+			global_position = point_a.lerp(point_b,
+				minf(1.0, head_start_px / comprimento))
 	visible = true
 	if initial_delay > 0.0:
 		_phase = 1

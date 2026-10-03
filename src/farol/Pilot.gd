@@ -66,6 +66,8 @@ var _throttle_hold: float = 0.0
 var _ultimo_desvio: float = -1.0e9
 var _t: float = 0.0
 var _steer_abs: float = 0.0
+## Edge-triggered [PED] log flag (first frame of a pedestrian latch).
+var _ped_log_recente: bool = false
 ## The detour goal the Pilot is asking for (the vehicle consumes and clears it).
 var desvio_alvo: Vector2 = Vector2.INF
 var desvio_contagem: int = 0
@@ -78,6 +80,10 @@ var desvios: int = 0
 var bloqueados: int = 0
 var pedestrian_latches: int = 0
 var ultima_ordem: String = "cruzeiro"
+## The give-way ceiling (0..1): the pedestrian yield's throttle ceiling,
+## applied to the DWA's command at the end of `decide_context` — the steering
+## keeps coming from the drive path (the Fase11 lesson).
+var give_way_ceiling: float = 1.0
 
 
 func _init(p_spec: FarolSpec = null) -> void:
@@ -86,6 +92,7 @@ func _init(p_spec: FarolSpec = null) -> void:
 	dwa = DwaRef.new(spec)
 	crosser_gate = CrosserGate.new(420.0, 540.0)
 	pedestrian_gate = CrosserGate.new(360.0, 480.0)
+	pedestrian_gate.strict_release = true
 
 
 func kind() -> int:
@@ -125,12 +132,24 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 	_t += delta
 	# 1. SAFETY — a pedestrian has priority over everything (docs/tasks_trafego.md
 	#    T2). Sensor-only, so this latch is the only protection against ever
-	#    running one over; a stopped car cannot hurt a person.
+	#    running one over; a stopped car cannot hurt a person. The command is
+	#    the GIVE-WAY: the THROTTLE falls to zero at `PED_GIVEWAY_GAP` px from
+	#    the pedestrian, and the STEERING keeps coming from the drive path
+	#    below — a steering-0 glide drove the car straight off its lane
+	#    (measured on Fase11: 255 px off the route after a yield fired at the
+	#    spawn, and the brain's cte branch fired the reverse for 107 frames).
+	#    NOT returning early: the drive path computes the steering, and the
+	#    give-way ceiling is applied to the throttle at the end.
 	if perception.pedestrian_distance < INF and pedestrian_gate.should_yield(
 			perception.pedestrian_distance, perception.pedestrian_bearing, delta):
 		pedestrian_latches += 1
 		ultima_ordem = "pedestre"
-		return DriveCommand.stop()
+		_ped_log(perception)
+		give_way_ceiling = clampf(
+			(perception.pedestrian_distance - CrosserGate.PED_GIVEWAY_GAP)
+				/ CrosserGate.PED_GIVEWAY_RAMP, 0.0, 1.0)
+	else:
+		give_way_ceiling = 1.0
 	# 2. YIELD — ticked once per frame, before anything else moves.
 	if gate().should_yield(perception.crosser_distance, perception.crosser_bearing, delta):
 		ultima_ordem = "cedencia"
@@ -189,7 +208,21 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 			ultima_ordem = "dwa vazio"
 	if ultima_ordem != "desvio":
 		ultima_ordem = "piloto"
-	return DriveCommand.make(clampf(_steer_hold, -1.0, 1.0), clampf(_throttle_hold, 0.0, 1.0))
+	return DriveCommand.make(clampf(_steer_hold, -1.0, 1.0),
+		clampf(minf(_throttle_hold, give_way_ceiling), 0.0, 1.0))
+
+
+## Edge-triggered [PED] log (the [RE-BRAIN] pattern): the first frame of a
+## pedestrian latch, with the numbers.
+func _ped_log(per: PerceptionSnapshot) -> void:
+	if _ped_log_recente:
+		return
+	_ped_log_recente = true
+	var pos := Vector2.INF
+	if veiculo != null:
+		pos = veiculo.global_position
+	print("[PED] d=%.0f bearing=%.2f vel=%.0f pos=(%.0f,%.0f)" % [
+		per.pedestrian_distance, per.pedestrian_bearing, per.speed, pos.x, pos.y])
 
 
 ## blocked_ahead, measured ALONG THE ROUTE (not by a single ray): how many
