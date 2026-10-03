@@ -380,6 +380,11 @@ def generate(spec):
     out.append("modo_trilha = false")
     out.append("brain_enabled = true")
     out.append("keep_right_shift = %s" % spec.get("keep_right_shift", 300.0))
+    # The declarative knob for "which spot should the route end in" (AGENTS
+    # #15: honoured by the autonomous branch too, exactly like the trail's).
+    # A transit level uses it to force the LONG route across the aisle.
+    if spec.get("vaga_prioritaria"):
+        out.append("vaga_prioritaria = NodePath(\"%s\")" % spec["vaga_prioritaria"])
     # FAROL rollout switch. DEFAULT 0 on purpose: a level is promoted one at a
     # time, by DECLARING it here, so regenerating a spec can never silently turn
     # the pilot on in a level nobody reviewed (the promotion rule is in
