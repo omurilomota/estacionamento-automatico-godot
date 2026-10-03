@@ -271,12 +271,21 @@ def generate(spec):
         ("PackedScene", "res://scenes/Seta.tscn", "8_seta"),
         ("PackedScene", "res://scenes/Cone.tscn", "9_cone"),
         ("Script", "res://src/world/Crosser.gd", "10_crosser"),
+        ("Script", "res://src/world/Pedestrian.gd", "12_pede"),
+        ("Script", "res://src/world/Tire.gd", "13_tire"),
+        ("Script", "res://src/world/StalledCar.gd", "14_stalled"),
     ]
-    # One ext_resource per UNIQUE crosser skin (a texture loaded twice is a
+    # One ext_resource per UNIQUE actor skin (a texture loaded twice is a
     # Godot warning, and the spec may want two cars of the same colour).
+    # The STALLED cars share the dedup list with the crossers: both draw a
+    # Kenney car, so the same colour must stay one ext_resource.
     crosser_tex = []
     for c in spec.get("crossers", []):
         t = c.get("texture", "res://assets/kenney/cars/car_yellow_5.png")
+        if t not in crosser_tex:
+            crosser_tex.append(t)
+    for s in spec.get("stalled_cars", []):
+        t = s.get("texture", "res://assets/kenney/cars/car_red_5.png")
         if t not in crosser_tex:
             crosser_tex.append(t)
     for i, t in enumerate(crosser_tex):
@@ -404,6 +413,58 @@ def generate(spec):
         # and the car never drives sideways (AGENTS #29).
         out.append('[node name="Sprite" type="Sprite2D" parent="%s"]'
                    % c.get("name", "CarroDeTransito%d" % i))
+        out.append("rotation = 1.5708")
+        out.append("scale = Vector2(1.62, 1.62)")
+        out.append('texture = %s' % (XL % ("11_tex%d" % crosser_tex.index(tex))))
+        out.append("")
+
+    # TRAZEGO actors (docs/tasks_trafego.md T2). The PEDESTRIAN is sensor-only
+    # (group "pedestre" — the car YIELDS, never runs one over); the TIRE is a
+    # solid hazard the car DODGES (its body is built in _ready, so no
+    # sub_resources here); the STALLED car is the accident that exercises the
+    # blocked_ahead -> detour reactive layer.
+    for i, p in enumerate(spec.get("pedestrians", []), 1):
+        nome = p.get("name", "Pedestre%d" % i)
+        out.append('[node name="%s" type="Node2D" parent="."]' % nome)
+        out.append("position = Vector2(%s, %s)" % (p["pos"][0], p["pos"][1]))
+        out.append('script = %s' % (XL % "12_pede"))
+        out.append("point_a = Vector2(%s, %s)" % (p["point_a"][0], p["point_a"][1]))
+        out.append("point_b = Vector2(%s, %s)" % (p["point_b"][0], p["point_b"][1]))
+        out.append("walk_speed = %s" % p.get("walk_speed", 55.0))
+        out.append("pause_time = %s" % p.get("pause_time", 2.0))
+        out.append("spawn_distance = %s" % p.get("spawn_distance", 700.0))
+        out.append("initial_delay = %s" % p.get("initial_delay", 0.0))
+        out.append("")
+
+    for i, t in enumerate(spec.get("tires", []), 1):
+        out.append('[node name="Tire%d" type="StaticBody2D" parent="."]' % i)
+        out.append("position = Vector2(%s, %s)" % (t["pos"][0], t["pos"][1]))
+        out.append('script = %s' % (XL % "13_tire"))
+        out.append("point_a = Vector2(%s, %s)" % (t["point_a"][0], t["point_a"][1]))
+        out.append("point_b = Vector2(%s, %s)" % (t["point_b"][0], t["point_b"][1]))
+        out.append("roll_speed = %s" % t.get("roll_speed", 70.0))
+        out.append("pause_time = %s" % t.get("pause_time", 1.5))
+        out.append("spawn_distance = %s" % t.get("spawn_distance", 500.0))
+        out.append("initial_delay = %s" % t.get("initial_delay", 0.0))
+        out.append("")
+
+    for i, s in enumerate(spec.get("stalled_cars", []), 1):
+        nome = s.get("name", "CarroAcidentado%d" % i)
+        tex = s.get("texture", "res://assets/kenney/cars/car_red_5.png")
+        out.append('[node name="%s" type="StaticBody2D" parent="."]' % nome)
+        out.append("position = Vector2(%s, %s)" % (s["pos"][0], s["pos"][1]))
+        out.append('script = %s' % (XL % "14_stalled"))
+        out.append("point_a = Vector2(%s, %s)" % (s["point_a"][0], s["point_a"][1]))
+        out.append("point_b = Vector2(%s, %s)" % (s["point_b"][0], s["point_b"][1]))
+        out.append("drive_speed = %s" % s.get("drive_speed", 140.0))
+        out.append("stall_after_px = %s" % s.get("stall_after_px", 600.0))
+        out.append("spawn_distance = %s" % s.get("spawn_distance", 700.0))
+        out.append("initial_delay = %s" % s.get("initial_delay", 0.0))
+        out.append("")
+        # The Kenney art faces -Y: the child carries the +90 deg, exactly like
+        # Carro.tscn / Crosser.gd (AGENTS #29). The collision box (190x88) is
+        # built by the script in _ready, long axis on node X = the facing.
+        out.append('[node name="Sprite" type="Sprite2D" parent="%s"]' % nome)
         out.append("rotation = 1.5708")
         out.append("scale = Vector2(1.62, 1.62)")
         out.append('texture = %s' % (XL % ("11_tex%d" % crosser_tex.index(tex))))
