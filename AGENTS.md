@@ -39,6 +39,28 @@
 - If a commit cannot be summarised in one sentence, the change is
   probably more than one commit.
 
+## 0.2. Unattended work ("vou sair do pc")
+
+- **When the user says they are leaving the PC** — "vou sair do pc, trabalhe
+  o máximo sem mim", "continue, pois vou sair do pc", or anything to that
+  effect — the AI works to the MAX without them: **forget about asking,
+  forget about stopping, just CONTINUE** until the planned work is done or
+  hits a wall only the user can decide.
+- The questions it would have asked become **DECISIONS, made by the AI and
+  RECORDED in the round's panel** (`docs/tasks_*.md`) with the evidence
+  behind each — never silently assumed. A decision that is truly the user's
+  (promoting a slower retrain to production, a paid service, deleting data,
+  publishing) waits recorded in the panel instead of blocking everything
+  else.
+- The invariants do NOT loosen for autonomy: never two Godot at once, kill
+  every spawned process at the end of each block (AGENTS §14), commit = one
+  sentence (§0.1), never loosen a shared park gate (#42), bounded `/tmp`
+  traces (#14), the ML contract and the other locked decisions stand.
+- Heavy one-shots (exports, renders, long gates) run in the FOREGROUND with
+  an explicit `timeout` whenever they fit the call budget; `setsid`+poll only
+  for the few that truly exceed it, and ALWAYS finish them before ending the
+  turn.
+
 ## 1. Language rule
 
 - **New code: English only** — file names, `class_name`, signals, methods,
