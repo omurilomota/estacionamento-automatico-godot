@@ -33,6 +33,15 @@ var _entry: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 0
+	# the body IS the contract: a small circle the rays (mask 2) see and the
+	# mover bumps into. Built here because the generator emits the actor as
+	# script + params, with no sub_resources in the scene.
+	var forma := CollisionShape2D.new()
+	var circulo := CircleShape2D.new()
+	circulo.radius = RADIUS
+	forma.shape = circulo
+	forma.name = "Colisao"
+	add_child(forma)
 	_entry = _off_scene()
 	global_position = _entry
 	visible = true

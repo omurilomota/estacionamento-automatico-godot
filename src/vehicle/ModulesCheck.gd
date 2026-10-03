@@ -181,9 +181,6 @@ func _init() -> void:
 	_check("Ped.walks", ped_mid.x > -600.0 and ped_mid.x < 600.0)
 	var ped_b: Vector2 = PedestrianRef.position_at(Vector2(-600, 0), Vector2(600, 0), 55.0, 40.0)
 	_check("Ped.clamped_at_b", ped_b.distance_to(Vector2(600, 0)) < 0.01)
-	var tire_probe = TireRef.new()
-	_check("Tire.body_is_solid", tire_probe.get_class() == "StaticBody2D")
-	tire_probe.free()
 	_check("Tire.radius", TireRef.RADIUS == 12.0)
 	var t_mid: Vector2 = TireRef.position_at(Vector2(-600, 0), Vector2(600, 0), 70.0, 4.0)
 	_check("Tire.rolls", t_mid.x > -600.0 and t_mid.x < 600.0)
@@ -618,6 +615,24 @@ func _init() -> void:
 	_check("Audio.cadencia_calma", EngineAudioRef.REVERSE_CUE_PERIOD >= 1.0)
 	audio.free()
 
+	_corpos_em_arvore()
+
+
+## Tree-entry tests: the Tire/StalledCar build their REAL body in _ready(), so
+## the check needs the node inside the tree — which only happens after one
+## frame (the root Window is not active yet when _init runs).
+func _corpos_em_arvore() -> void:
+	await process_frame
+	var tire_probe = TireRef.new()
+	root.add_child(tire_probe)
+	_check("Tire.body_is_solid", tire_probe.get_class() == "StaticBody2D"
+		and tire_probe.get_node_or_null("Colisao") != null)
+	tire_probe.free()
+	var stalled_probe = StalledCarRef.new()
+	root.add_child(stalled_probe)
+	_check("Accident.has_body", stalled_probe.get_class() == "StaticBody2D"
+		and stalled_probe.get_node_or_null("Colisao") != null)
+	stalled_probe.free()
 	print("MODULES_CHECK fails=%d" % _fails)
 	quit(_fails)
 

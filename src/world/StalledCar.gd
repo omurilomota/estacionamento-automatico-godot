@@ -40,6 +40,15 @@ var _entry: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 0
+	# the body IS the contract: a car-sized box (190x88 node-space, long axis
+	# on node X = the facing axis) the rays see and the mover bumps into.
+	# Built here because the generator emits the actor as script + params.
+	var forma := CollisionShape2D.new()
+	var retangulo := RectangleShape2D.new()
+	retangulo.size = Vector2(HALF_LONG * 2.0, HALF_WIDE * 2.0)
+	forma.shape = retangulo
+	forma.name = "Colisao"
+	add_child(forma)
 	_entry = _off_scene()
 	global_position = _entry
 	rotation = (point_b - point_a).angle()
