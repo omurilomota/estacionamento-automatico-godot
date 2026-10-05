@@ -63,6 +63,12 @@ func _init() -> void:
 	# diferente entre a chamada e o boot e o teste do PILOTO, nao da cena.
 	if _farol >= 0:
 		(cena.get_node("Carro") as Node).set("farol_mode", _farol)
+	# SEED POR FASE (o padrao do gate_drive, AGENTS #1.19): um boot sem seed e
+	# uma LOTERIA — a Fase6 endurecida mediu 6,5 s verdes numa rodada e
+	# NEG=22 noutra, so porque o spawn mudou. Um A/B com sorteios diferentes
+	# mede o SORTEIO, nao o codigo. O boot canônico fica reproduzivel; a
+	# matriz de seeds continua cobrindo os outros spawns.
+	seed(9000 + hash(_fase))
 	root.add_child(cena)
 	await process_frame
 	var carro: Node2D = cena.get_node_or_null("Carro") as Node2D
