@@ -2,7 +2,10 @@
   "id": "Fase10",
   "mapa": "res://estacionamento/gen_fase10.png",
   "art": "estacionamento/gen_fase10.png",
-  "import_size": [2200, 1800],
+  "import_size": [
+    2200,
+    1800
+  ],
   "escala_mapa": 1.0,
   "zoom_camera": 0.62,
   "car_scale": 1.4,
@@ -10,15 +13,66 @@
   "farol_mode": 0,
   "lane_cost_mode": 0,
   "posicao_aleatoria": true,
-  "car_pos": [-900, 0],
+  "car_pos": [
+    -900,
+    0
+  ],
   "output": "scenes/fases/Fase10.tscn",
   "sidewalks": [
-    {"name": "CalcadaNorte", "rect": [0, -865, 2200, 70]},
-    {"name": "CalcadaSul", "rect": [0, 865, 2200, 70]},
-    {"name": "CalcadaOeste", "rect": [-1065, 0, 70, 1800]},
-    {"name": "CalcadaLeste", "rect": [1065, 0, 70, 1800]},
-    {"name": "RefugoA", "rect": [-250, 175, 60, 270]},
-    {"name": "RefugoB", "rect": [250, -175, 60, 270]}
+    {
+      "name": "CalcadaNorte",
+      "rect": [
+        0,
+        -865,
+        2200,
+        70
+      ]
+    },
+    {
+      "name": "CalcadaSul",
+      "rect": [
+        0,
+        865,
+        2200,
+        70
+      ]
+    },
+    {
+      "name": "CalcadaOeste",
+      "rect": [
+        -1065,
+        0,
+        70,
+        1800
+      ]
+    },
+    {
+      "name": "CalcadaLeste",
+      "rect": [
+        1065,
+        0,
+        70,
+        1800
+      ]
+    },
+    {
+      "name": "RefugoA",
+      "rect": [
+        -250,
+        175,
+        60,
+        270
+      ]
+    },
+    {
+      "name": "RefugoB",
+      "rect": [
+        250,
+        -175,
+        60,
+        270
+      ]
+    }
   ],
   "rows": [
     {
@@ -30,9 +84,16 @@
       "from": -900,
       "to": 900,
       "count": 5,
-      "bay_scale": [2.2227, 3.659],
+      "bay_scale": [
+        2.2227,
+        3.659
+      ],
       "rot": -1.5708,
-      "parked": [0, 2, 4]
+      "parked": [
+        0,
+        2,
+        4
+      ]
     },
     {
       "name": "C",
@@ -43,9 +104,14 @@
       "from": -400,
       "to": 400,
       "count": 2,
-      "bay_scale": [2.2227, 3.659],
+      "bay_scale": [
+        2.2227,
+        3.659
+      ],
       "rot": -1.5708,
-      "parked": [0]
+      "parked": [
+        0
+      ]
     },
     {
       "name": "S",
@@ -56,22 +122,54 @@
       "from": -900,
       "to": 900,
       "count": 5,
-      "bay_scale": [2.2227, 3.659],
+      "bay_scale": [
+        2.2227,
+        3.659
+      ],
       "rot": 1.5708,
-      "parked": [0, 1, 2, 4]
+      "parked": [
+        0,
+        1,
+        2,
+        4
+      ]
     }
   ],
   "cones": [
-    {"pos": [-540, 60]},
-    {"pos": [540, -60]},
-    {"pos": [-700, 100]}
+    {
+      "pos": [
+        -540,
+        60
+      ]
+    },
+    {
+      "pos": [
+        540,
+        -60
+      ]
+    },
+    {
+      "pos": [
+        -700,
+        100
+      ]
+    }
   ],
   "crossers": [
     {
       "name": "CarroDeTransito",
-      "pos": [0, 900],
-      "point_a": [0, 900],
-      "point_b": [0, -900],
+      "pos": [
+        0,
+        900
+      ],
+      "point_a": [
+        0,
+        900
+      ],
+      "point_b": [
+        0,
+        -900
+      ],
       "cruise_speed": 160.0,
       "pause_time": 3.5,
       "spawn_distance": 700.0,
@@ -80,9 +178,18 @@
     },
     {
       "name": "CarroDeTransito2",
-      "pos": [-700, 900],
-      "point_a": [-700, 900],
-      "point_b": [-700, -900],
+      "pos": [
+        -700,
+        900
+      ],
+      "point_a": [
+        -700,
+        900
+      ],
+      "point_b": [
+        -700,
+        -900
+      ],
       "cruise_speed": 160.0,
       "pause_time": 3.5,
       "spawn_distance": 700.0,
@@ -91,13 +198,143 @@
     }
   ],
   "rotas": [
-    {"name": "RotaNorte", "points": [[-700, -270], [700, -270]]},
-    {"name": "RotaSul", "points": [[700, 250], [-700, 250]]}
+    {
+      "name": "RotaNorte",
+      "points": [
+        [
+          -700,
+          -270
+        ],
+        [
+          700,
+          -270
+        ]
+      ]
+    },
+    {
+      "name": "RotaSul",
+      "points": [
+        [
+          700,
+          250
+        ],
+        [
+          -700,
+          250
+        ]
+      ]
+    }
   ],
   "setas": [
-    {"pos": [-700, -270], "direcao": 0.0},
-    {"pos": [700, -270], "direcao": 0.0},
-    {"pos": [700, 250], "direcao": 3.1416},
-    {"pos": [-700, 250], "direcao": 3.1416}
+    {
+      "pos": [
+        -700,
+        -270
+      ],
+      "direcao": 0.0
+    },
+    {
+      "pos": [
+        700,
+        -270
+      ],
+      "direcao": 0.0
+    },
+    {
+      "pos": [
+        700,
+        250
+      ],
+      "direcao": 3.1416
+    },
+    {
+      "pos": [
+        -700,
+        250
+      ],
+      "direcao": 3.1416
+    }
+  ],
+  "pedestrians": [
+    {
+      "name": "Pedestre1",
+      "pos": [
+        -500,
+        -900
+      ],
+      "point_a": [
+        -500,
+        -900
+      ],
+      "point_b": [
+        -500,
+        900
+      ],
+      "walk_speed": 55.0,
+      "pause_time": 3.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 0.0,
+      "head_start_px": 700.0
+    },
+    {
+      "name": "Pedestre2",
+      "pos": [
+        600,
+        900
+      ],
+      "point_a": [
+        600,
+        900
+      ],
+      "point_b": [
+        600,
+        -900
+      ],
+      "walk_speed": 55.0,
+      "pause_time": 3.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 6.0,
+      "head_start_px": 0.0
+    }
+  ],
+  "tires": [
+    {
+      "pos": [
+        -100,
+        -900
+      ],
+      "point_a": [
+        -100,
+        -900
+      ],
+      "point_b": [
+        -100,
+        900
+      ],
+      "roll_speed": 70.0,
+      "pause_time": 4.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 9.0,
+      "head_start_px": 0.0
+    },
+    {
+      "pos": [
+        700,
+        900
+      ],
+      "point_a": [
+        700,
+        900
+      ],
+      "point_b": [
+        700,
+        -900
+      ],
+      "roll_speed": 70.0,
+      "pause_time": 4.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 12.0,
+      "head_start_px": 0.0
+    }
   ]
 }
