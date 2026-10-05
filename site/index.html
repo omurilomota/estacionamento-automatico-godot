@@ -41,8 +41,8 @@
       <a class="btn ghost" href="#rede-neural">brincar com a rede</a>
     </div>
     <ul class="chips">
-      <li>50 de 50 spawns aleatórios estacionaram (10 níveis × 5 seeds)</li>
-      <li>10 níveis, 82 vagas — 79 alcançáveis pelo A*</li>
+      <li>54 de 55 spawns aleatórios estacionaram (11 níveis × 5 seeds — a única exceção é um defeito registrado, não um segredo)</li>
+      <li>11 níveis, 101 vagas nas 7 fases geradas — 37 livres, a escolha de vaga é decisão de verdade</li>
       <li>faixa da direita: a rota encosta na guia leste a 190 px, o mínimo seguro, e o carro segue com 17 px de erro médio</li>
       <li>0 cone tocado, 0 raspada de carroceria</li>
       <li>sensores + A* visíveis ao vivo</li>
@@ -213,11 +213,11 @@
   <h2>Números da bancada <small>medidos em trace headless do jogo de verdade</small></h2>
   <div class="grid-num">
     <div><strong>10/10</strong><span>fases passam o boot real: estacionou, 0 cone tocado, 0 ré indevida</span></div>
-    <div><strong>50/50</strong><span>spawns aleatórios estacionaram — 10 níveis × 5 seeds, sem exceção</span></div>
+    <div><strong>54/55</strong><span>spawns aleatórios estacionaram — 11 níveis × 5 seeds; a única exceção (Fase 9, seed 9001) é um defeito registrado com a cadeia completa mapeada</span></div>
     <div><strong>45,0 s</strong><span>Fase 2 do boot ao ESTACIONADO, já com a cedência de passagem</span></div>
     <div><strong>64,3 s</strong><span>Fase 3 do boot ao ESTACIONADO · Fase 4 em 24,7 s</span></div>
-    <div><strong>6–15 s</strong><span>Fase 5 a Fase 10: 16, 13, 13, 10, 5 e 6 vagas, em 6,4 a 14,8 s</span></div>
-    <div><strong>82 vagas</strong><span>em 10 níveis — <strong>79</strong> alcançáveis pelo A*; 3 da Fase 6 ficam fora do alcance e o carro nunca as escolhe</span></div>
+    <div><strong>6,8–47 s</strong><span>Fase 5 a Fase 11: 10, 5, 6, 4, 3, 4 e 5 vagas livres, com pedestres, pneus e um carro acidentado no caminho</span></div>
+    <div><strong>37 livres</strong><span>de 101 vagas nas 7 fases geradas — o A* alcança todas as livres e o carro escolhe por custo e rumo</span></div>
     <div><strong>746 px · 459 px</strong><span>posição mediana do carro e distância até a guia direita (Fase 2) — o carro usa a via, mas não encosta na parede</span></div>
     <div><strong>190 px</strong><span>distância da rota até a guia leste dentro da RuaDireita — 1,5× o raio varrido, o mínimo seguro. O "100% dentro do box" que estava aqui nunca existiu: o carro tem de sair da rua para entrar na vaga, 700 px a oeste, então "tempo dentro da caixa" não é a medida da faixa</span></div>
     <div><strong>0</strong><span>violação de raio varrido: 145,2 px de folga mínima contra 126,5 exigidos, na rota já deslocada para a direita</span></div>
@@ -301,6 +301,7 @@
     <figure><img src="img/piso-fase8.png" alt="Piso gerado da Fase 8" loading="lazy" /><figcaption>Fase 8 — cruzamento perpendicular, 10 vagas</figcaption></figure>
     <figure><img src="img/piso-fase9.png" alt="Piso gerado da Fase 9" loading="lazy" /><figcaption>Fase 9 — paredes internas escalonadas (labirinto), 7 vagas</figcaption></figure>
     <figure><img src="img/piso-fase10.png" alt="Piso gerado da Fase 10" loading="lazy" /><figcaption>Fase 10 — baias centraleiras atrás de dois refúgios escalonados, 6 vagas</figcaption></figure>
+    <figure><img src="img/piso-fase11.png" alt="Piso gerado da Fase 11" loading="lazy" /><figcaption>Fase 11 · Trânsito — pedestres cruzando, pneus rolando e um acidentado na avenida; 5 vagas livres</figcaption></figure>
   </div>
 
   <h3>Os dez carros</h3>
