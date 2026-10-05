@@ -161,7 +161,7 @@ modo_trilha = false
 brain_enabled = true
 keep_right_shift = 120
 vaga_prioritaria = NodePath("../Vagas/S_4")
-farol_mode = 0
+farol_mode = 2
 lane_cost_mode = 0
 
 [node name="Planejador" type="Node2D" parent="."]
@@ -232,9 +232,10 @@ script = ExtResource("14_stalled")
 point_a = Vector2(2200, 320.5)
 point_b = Vector2(-1200, 320.5)
 drive_speed = 250.0
-stall_after_px = 1900.0
+stall_after_px = 2400.0
 spawn_distance = 700.0
 initial_delay = 0.0
+pre_stalled = true
 
 [node name="Sprite" type="Sprite2D" parent="CarroAcidentado"]
 rotation = 1.5708

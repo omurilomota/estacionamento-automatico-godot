@@ -27,6 +27,14 @@ extends StaticBody2D
 @export var stall_after_px: float = 600.0
 @export var spawn_distance: float = 700.0 ## px before point_a it enters from
 @export var initial_delay: float = 0.0 ## seconds before the car enters
+## PRE-STALED: the accident already happened — the car sits at its stall
+## point from t=0. WHY: a stalled car that DRIVES IN is invisible to the A*
+## grid (it is off-region at build time), so every route is born THROUGH it
+## and the escape depends on the ladder's replan — measured fragile across
+## random spawns (Fase11 seed matrix 3/5, the car oscillating 26-41 s). With
+## pre_stalled the grid rasterises it from the START and the A* routes around
+## it on the very first plan. The drive-in theater stays available (false).
+@export var pre_stalled: bool = false
 @export var running: bool = true
 
 const HALF_LONG := 95.0
@@ -49,9 +57,20 @@ func _ready() -> void:
 	forma.shape = retangulo
 	forma.name = "Colisao"
 	add_child(forma)
+	var rumo := (point_b - point_a).normalized()
+	if rumo == Vector2.ZERO:
+		rumo = Vector2.RIGHT
+	if pre_stalled:
+		# the accident already happened: sit at the stall point from t=0, so
+		# the planner's grid (built on the first physics frame) rasterises the
+		# car where it BLOCKS, and the very first A* route goes around it.
+		global_position = point_a + rumo * stall_after_px
+		rotation = rumo.angle()
+		_stalled = true
+		return
 	_entry = _off_scene()
 	global_position = _entry
-	rotation = (point_b - point_a).angle()
+	rotation = rumo.angle()
 	visible = true
 
 

@@ -10,7 +10,7 @@
   "zoom_camera": 0.62,
   "car_scale": 1.4,
   "keep_right_shift": 120,
-  "farol_mode": 0,
+  "farol_mode": 2,
   "lane_cost_mode": 0,
   "posicao_aleatoria": false,
   "car_pos": [
@@ -218,10 +218,11 @@
         320.5
       ],
       "drive_speed": 250.0,
-      "stall_after_px": 1900.0,
+      "stall_after_px": 2400.0,
       "spawn_distance": 700.0,
       "initial_delay": 0.0,
-      "texture": "res://assets/kenney/cars/car_red_5.png"
+      "texture": "res://assets/kenney/cars/car_red_5.png",
+      "pre_stalled": true
     }
   ],
   "rotas": [

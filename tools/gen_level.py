@@ -239,6 +239,35 @@ def check_solids(spec, world, bays):
             if d < clear:
                 die("cone %d at %s is %.0f px from prep of %s (needs %.0f)"
                     % (i, p, d, b["name"], clear))
+    # TRAZEGO invariant (docs/tasks_trafego.md): the ACCIDENT car's stall
+    # point must keep `swept + hull half-diagonal + 40` px from every bay
+    # centre and prep point. Measured the hard way on Fase11 seed 9001: a
+    # stall 150 px from the prep is swallowed by the planner's inflation
+    # (box 95 + inflar ~103 => the goal becomes a SOLID cell after any
+    # replan), the A* snaps the goal, and the car oscillates 26-41 s without
+    # parking. The stall may block the LANE — it may not block the GOALS.
+    stall_clear = swept_radius(spec["car_scale"]) + 103.0 + 40.0
+    for i, s in enumerate(spec.get("stalled_cars", []), 1):
+        a = s["point_a"]
+        b = s["point_b"]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = (dx * dx + dy * dy) ** 0.5
+        if n < 1.0:
+            die("stalled car %d: point_a == point_b" % i)
+        stall = (a[0] + dx / n * s.get("stall_after_px", 600.0),
+                 a[1] + dy / n * s.get("stall_after_px", 600.0))
+        if not (x0 < stall[0] < x1 and y0 < stall[1] < y1):
+            die("stalled car %d stalls at %s outside world" % (i, stall))
+        for bay in bays:
+            d = ((stall[0] - bay["pos"][0]) ** 2 + (stall[1] - bay["pos"][1]) ** 2) ** 0.5
+            if d < stall_clear:
+                die("stalled car %d stalls at (%.0f, %.0f), only %.0f px from bay %s"
+                    " (needs %.0f = swept + hull + 40)" % (i, stall[0], stall[1],
+                    d, bay["name"], stall_clear))
+            d = ((stall[0] - bay["prep"][0]) ** 2 + (stall[1] - bay["prep"][1]) ** 2) ** 0.5
+            if d < stall_clear:
+                die("stalled car %d stalls at (%.0f, %.0f), only %.0f px from prep of %s"
+                    " (needs %.0f)" % (i, stall[0], stall[1], d, bay["name"], stall_clear))
 
 
 def die(msg):
@@ -467,6 +496,7 @@ def generate(spec):
         out.append("stall_after_px = %s" % s.get("stall_after_px", 600.0))
         out.append("spawn_distance = %s" % s.get("spawn_distance", 700.0))
         out.append("initial_delay = %s" % s.get("initial_delay", 0.0))
+        out.append("pre_stalled = %s" % ("true" if s.get("pre_stalled", False) else "false"))
         out.append("")
         # The Kenney art faces -Y: the child carries the +90 deg, exactly like
         # Carro.tscn / Crosser.gd (AGENTS #29). The collision box (190x88) is
