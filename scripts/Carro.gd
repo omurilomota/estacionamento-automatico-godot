@@ -3236,10 +3236,16 @@ func _fim_recuperacao() -> void:
 ## caso em que a re deixa o carro virado para TRAS da rota, que e' o mesmo
 ## criterio que `_aplicar_rota` ja usa com o carro parado.
 func _orientar_para_rota() -> void:
-	if waypoints.size() < 2 or indice_waypoint >= waypoints.size() - 1:
+	# NAO desiste no ULTIMO waypoint: a saida da recuperacao perto do goal
+	# ficava com o nariz ~175 graus errado (o early return `indice >= size-1`
+	# pulava o alinhamento), o cerebro via angular > 2,2 e comandava RE — o
+	# rastro que os gates contam como NEG_FRAMES 22-27 (F6/F7 endurecidas,
+	# 2026-10-03). No fim da rota o alvo e' o PROPRIO ultimo waypoint.
+	if waypoints.size() < 2:
 		return
 	var origem: Vector2 = global_position
-	var dir: Vector2 = (waypoints[indice_waypoint] as Vector2) - origem
+	var alvo_atual: int = mini(indice_waypoint, waypoints.size() - 1)
+	var dir: Vector2 = (waypoints[alvo_atual] as Vector2) - origem
 	for k in range(indice_waypoint, waypoints.size()):
 		var cand: Vector2 = (waypoints[k] as Vector2) - origem
 		if cand.length() > 80.0:
