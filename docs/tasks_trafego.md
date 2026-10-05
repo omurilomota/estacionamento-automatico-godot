@@ -157,7 +157,7 @@
 - `comanda.md` was DELETED (2026-10-02): its work was verified realized (all
   §5 commits in the history), per the user's request.
 
-## 4. The A2 round — the levels 6-11 got HARD (2026-10-05, user request)
+## 1.5. The A2 round — the levels 6-11 got HARD (2026-10-05, user request)
 
 The user: *"achei bem ruim a simplicidade das fases 6 a 11 — dê uma complicada
 com vários passo a passo, tráfego, desviar de pessoas/obstáculos"*.
