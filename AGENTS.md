@@ -335,20 +335,18 @@ so `estado == 3` still means PARKED during migration.
   (8000 is already taken on this machine), kill by PID afterwards. Publish with
   `vercel --prod --yes` **from inside `site/`** — the project link lives in
   `site/.vercel/project.json` and `vercel.json` must exist ONLY there.
-- **LIVE URL: `https://site-pi-tan-51.vercel.app`** (measured 200 on
-  2026-10-01, deploy `estacionamento-automatico-ga6392lew`, after re-running
-  `export_site_data.sh` + `export_site_images.py` and the Web export: `/`,
-  `/game/index.html`, `/game/index.pck` (6,9 MB), `/game/index.wasm`,
-  `/img/piso-fase10.png`, `/data/pesos.json`, `/js/ml.js` all 200 with
-  **0 redirects**, which is the §33 check).
-  The project is under the team `murilohenriquemota935-1958s-projects`, so the
-  alias is SCOPED. **`estacionamento-automatico.vercel.app` is NOT an alias of
-  this project and returns 404** — it is in old commit messages, so grep finds
-  it and looks current. After every `vercel --prod`, read the real alias with
-  `vercel inspect <deploy-url> | grep -A2 Aliases`; do not trust a URL written
-  down months ago. The per-deployment URLs answer `302` to
-  `vercel.com/sso-api` (Deployment Protection), which is expected and is NOT a
-  broken site — test the alias, never the per-deployment URL.
+- **LIVE URL: `https://estacionamento-automatico.vercel.app`** (the BARE
+  domain, claimed 2026-10-05 — see #53). Measured 200 with **0 redirects** on
+  `/`, `/favicon.ico`, `/apple-touch-icon.png`, `/assets/icon.svg`,
+  `/game/index.html`, `/game/index.pck` (7,3 MB), `/img/piso-fase11.png`,
+  `/data/pesos.json` — the §33 check.
+  The legacy scoped alias `https://site-pi-tan-51.vercel.app` still serves
+  the same site (it is grandfathered past the SSO), but the bare domain is
+  the canonical one now. After every `vercel --prod`, **re-set the alias**:
+  `vercel alias set <deploy-url> estacionamento-automatico.vercel.app` —
+  the manually-set alias is PINNED to the deploy it was set on; it does not
+  follow the next one. Do not trust a URL written down months ago: read the
+  deploy output (or `vercel inspect <url> | grep -A2 Aliases`).
 
 
 ## 6. Gotchas learned the hard way
@@ -1027,3 +1025,23 @@ so `estado == 3` still means PARKED during migration.
     é a lição #46 aplicada ao custo do Pilot: ler a folga do Chart pelo
     CASCO, não pelo círculo circunscrito. Sessão dedicada, `gate_seeds` de
     juiz — o estado atual: F9 seed 9001 é a única falha da matriz 54/55.
+53. **O domínio nu foi REIVINDICADO e o SSO do time desligado (2026-10-05).**
+    O usuário pediu a URL `estacionamento-automatico.vercel.app`. Ela dava 404
+    (o #17.4 dizia "NOT an alias" — verdade NA ÉPOCA: o subdomínio estava
+    NÃO-ATRIBUÍDO). O projeto já se chama `estacionamento-automatico`, então:
+    1. `vercel alias set <deploy-producao> estacionamento-automatico.vercel.app`
+       — reivindicou e apontou (2 s).
+    2. O domínio nu caía no **SSO do time** (302 → `vercel.com/sso-api` →
+       login): o `ssoProtection` do projeto era
+       `all_except_custom_domains`. Desligado via API com o token local
+       (`~/.local/share/com.vercel.cli/auth.json`):
+       `PATCH /v9/projects/estacionamento-automatico?orgId=<org>
+       -d '{"ssoProtection": null}'` — produção pública (200, 0 redirects).
+       Os per-deploy `-<hash>.vercel.app` também ficaram públicos.
+    3. **A cada `vercel --prod`, re-setar o alias** (o manual é PINADO no
+       deploy; não segue o próximo).
+    O `preview_only` NÃO é valor válido nesse campo (a API rejeita; só
+    `null` ou o enum de origem). O favicon do Godot (o robô) saiu: agora é
+    um "P" de estacionamento (`site/assets/icon.svg` + `favicon.ico` 16/32/48
+    + `apple-touch-icon.png` 180, desenhados por path/PIL — conferência
+    numérica de pixel no stem/furo/boca).
