@@ -67,6 +67,17 @@
   for the few that truly exceed it, and ALWAYS finish them before ending the
   turn.
 
+## 0.3. Keep the opencode TODO list updated (user request, 2026-10-05)
+
+- **Update the `todowrite` TODO list as the work happens**, not at the
+  start/end of the session only: mark an item `in_progress` BEFORE working
+  on it and `completed` the moment its gates pass. The list is the visible
+  progress receipt for a user who is away — a stale TODO reads as no work.
+- One item per meaningful slice (a level, a fix, a gate sweep), with the
+  commit hash or the measured result in the text when it closes.
+- When the plan changes mid-round (a defect found, a slice split), rewrite
+  the list to match reality — the TODO is the plan, keep it honest.
+
 ## 1. Language rule
 
 - **New code: English only** — file names, `class_name`, signals, methods,

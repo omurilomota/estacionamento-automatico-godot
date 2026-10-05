@@ -61,7 +61,8 @@ func _process(delta: float) -> void:
 	match _phase:
 		0:
 			rotation = (point_b - point_a).angle()
-			global_position = _advance(_entry, point_b, delta)
+			global_position = _passo_contornando(
+				_advance(_entry, point_b, delta))
 			if global_position.distance_to(point_b) < 4.0:
 				_next_phase()
 		1:
@@ -85,6 +86,39 @@ func _advance(from_p: Vector2, to_p: Vector2, delta: float) -> Vector2:
 	if length < 0.001:
 		return to_p
 	return global_position + step / length * minf(walk_speed * delta, length)
+
+
+## WALKS AROUND STOPPED VEHICLES — a real person never walks through a car
+## (docs/tasks_trafego.md). Measured the class three times: the give-way stops
+## the CAR ~120 px short of the pedestrian, but the pedestrian KEEPS WALKING
+## and passes THROUGH the stopped car's hull (F11 seeds min_gap 9-24 px, F6
+## 70,8, F9 23,9). The fix is on the person: before each step, if the next
+## position falls inside a vehicle's hull circle (the swept radius + margin),
+## the step slides AROUND it on the circle's tangent, toward the goal side.
+## This also breaks the would-be mutual-yield deadlock for free: the car
+## waits for the person, the person walks around the car, both proceed.
+func _passo_contornando(next: Vector2) -> Vector2:
+	if get_tree() == null:
+		return next
+	for n in get_tree().get_nodes_in_group("veiculo"):
+		var v := n as Node2D
+		if v == null or not is_instance_valid(v):
+			continue
+		var raio := 95.0
+		if v.has_method("raio_varrido"):
+			raio = float(v.call("raio_varrido")) + 15.0
+		var rel: Vector2 = next - v.global_position
+		if rel.length() >= raio:
+			continue
+		# o passo cai dentro do circulo do casco: desliza pela tangente, no
+		# lado que aponta para o destino da caminhada
+		var rumo := (point_b - point_a).normalized()
+		var tang := rumo.orthogonal()
+		if tang.dot(rel) < 0.0:
+			tang = -tang
+		return v.global_position + rel.normalized() * raio \
+			+ tang * walk_speed * 0.05
+	return next
 
 
 func _next_phase() -> void:
