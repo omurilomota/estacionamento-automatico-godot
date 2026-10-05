@@ -150,9 +150,12 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 				/ CrosserGate.PED_GIVEWAY_RAMP, 0.0, 1.0)
 	else:
 		give_way_ceiling = 1.0
-	# 2. YIELD — ticked once per frame, before anything else moves.
+	# 2. YIELD — ticked once per frame, before anything else moves. The label
+	#    does not overwrite "pedestre": a pedestrian has priority, and the
+	#    command is a stop either way (safe for both).
 	if gate().should_yield(perception.crosser_distance, perception.crosser_bearing, delta):
-		ultima_ordem = "cedencia"
+		if ultima_ordem != "pedestre":
+			ultima_ordem = "cedencia"
 		return DriveCommand.stop()
 	# 3. SENSE.
 	var rays: Dictionary = SensorArrayRef.collect_from(veiculo) if veiculo != null else {}
@@ -206,7 +209,7 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext,
 			_steer_abs = _steer_hold * maxf(max_steer, 0.05)
 		else:
 			ultima_ordem = "dwa vazio"
-	if ultima_ordem != "desvio":
+	if ultima_ordem != "desvio" and ultima_ordem != "pedestre":
 		ultima_ordem = "piloto"
 	return DriveCommand.make(clampf(_steer_hold, -1.0, 1.0),
 		clampf(minf(_throttle_hold, give_way_ceiling), 0.0, 1.0))

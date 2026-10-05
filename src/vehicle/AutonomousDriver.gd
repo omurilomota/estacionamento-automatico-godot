@@ -48,11 +48,11 @@ func decide(perception: PerceptionSnapshot, delta: float) -> DriveCommand:
 	if perception.pedestrian_distance < INF and gate_pedestre().should_yield(
 			perception.pedestrian_distance, perception.pedestrian_bearing, delta):
 		pedestrian_latches += 1
-		# GIVE-WAY glide (CrosserGate.PED_GIVEWAY_*): stops BEFORE the walking
-		# line, never on it — the person crosses in front (docs/tasks_trafego.md).
-		return DriveCommand.make(0.0, clampf(
-			(perception.pedestrian_distance - CrosserGate.PED_GIVEWAY_GAP)
-				/ CrosserGate.PED_GIVEWAY_RAMP, 0.0, 1.0))
+		# Route-less fallback: there is no route to steer along here, so the
+		# give-way is a full stop (the GIVE-WAY GLIDE with its throttle ceiling
+		# only makes sense in `decide_context`, where the drive path below
+		# supplies the steering).
+		return DriveCommand.stop()
 	if gate().should_yield(perception.crosser_distance, perception.crosser_bearing, delta):
 		return DriveCommand.stop()
 	return _steer_to_target(perception)
@@ -71,7 +71,7 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext, _delt
 	if perception.pedestrian_distance < INF and gate_pedestre().should_yield(
 			perception.pedestrian_distance, perception.pedestrian_bearing, _delta):
 		pedestrian_latches += 1
-		_ped_log(perception)
+		_ped_log(perception, context.vehicle_position)
 		ceiling = clampf(
 			(perception.pedestrian_distance - CrosserGate.PED_GIVEWAY_GAP)
 				/ CrosserGate.PED_GIVEWAY_RAMP, 0.0, 1.0)
@@ -128,13 +128,17 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext, _delt
 
 ## Edge-triggered [PED] log (the [RE-BRAIN] pattern): the first frame of a
 ## pedestrian latch, with the numbers.
-func _ped_log(per: PerceptionSnapshot) -> void:
+func _ped_log(per: PerceptionSnapshot, pos := Vector2.INF) -> void:
 	if _ped_log_recente:
 		return
 	_ped_log_recente = true
-	print("[PED] d=%.0f bearing=%.2f vel=%.0f pos=(%.0f,%.0f)" % [
-		per.pedestrian_distance, per.pedestrian_bearing, per.speed,
-		0.0, 0.0])
+	if pos.is_finite():
+		print("[PED] d=%.0f bearing=%.2f vel=%.0f pos=(%.0f,%.0f)" % [
+			per.pedestrian_distance, per.pedestrian_bearing, per.speed,
+			pos.x, pos.y])
+	else:
+		print("[PED] d=%.0f bearing=%.2f vel=%.0f" % [
+			per.pedestrian_distance, per.pedestrian_bearing, per.speed])
 
 
 ## Route-less fallback (no A* path yet): head for the target, stop if a real
