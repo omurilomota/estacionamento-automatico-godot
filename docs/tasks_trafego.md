@@ -131,14 +131,12 @@
   `_garantir_folga` but not to the Pilot's cost. That is the registered
   follow-up — a dedicated session, `gate_seeds` as the judge.
 
-### T4 — Traffic gates — OPEN
-- `tools/gate_trafego.gd` (or gate_drive extension): `PARKED` + `desvios > 0`
-  + `blocked_ahead` activations + pedestrian near-miss (min gap) + TTC +
-  yields + `NEG_FRAMES=0`. The Pilot already counts `pedestrian_latches`,
-  `desvios`, `bloqueados` — the gate reads those.
-- `gate_boot` Fase11 + `gate_seeds` Fase11 (5 seeds, fixed seed) — the gates
-  that see bad spawns.
-- Full sweep of ALL levels in SEQUENCE (never two Godot at once, AGENTS §14).
+### T4 — Traffic gates — RESOLVED (2026-10-05, in `gate_boot`)
+- The `PEDESTRE` line (observable latches + min gap to a pedestrian node)
+  and the `TRAFICO` line (min gap to every tire and every accident car),
+  plus `seed(9000 + hash(fase))` — the canonical boot is DETERMINISTIC.
+- The full sweep: `bash tools/run_gates.sh --fases=Fase1,...,Fase11` —
+  **11/11 PASS, NEG_FRAMES=0** on the hardened levels.
 
 ### T5 — DAgger / Nervo (FAROL S5, never done) — OPEN
 - `ml/gravar.gd` records the new levels with the FAROL as PROFESSOR,
@@ -159,7 +157,76 @@
 - `comanda.md` was DELETED (2026-10-02): its work was verified realized (all
   §5 commits in the history), per the user's request.
 
+## 4. The A2 round — the levels 6-11 got HARD (2026-10-05, user request)
+
+The user: *"achei bem ruim a simplicidade das fases 6 a 11 — dê uma complicada
+com vários passo a passo, tráfego, desviar de pessoas/obstáculos"*.
+The axis chosen (user decision): **the TRAZEGO actors + few free bays** —
+the bay choice and the decision sequence become the challenge.
+
+| Level | Free bays | The step-by-step (measured canonical boot) | Matrix |
+|---|---|---|---|
+| F6 | 9→**5** | 2 pedestrians crossing the corridor + 2 rolling tires + the chicane kerbs → 23,0 s, ped yield at 257 px, NEG=0 | **5/5** |
+| F7 | 12→**6** | 2 pedestrians + 2 tires in the twin-cone corridor; the CAR CHOOSES the bay (6 candidates) → the seeds drive 7,9-72 s through the traffic | **5/5** |
+| F8 | 7→**4** | 2 pedestrians + 2 tires around the chicane → **46,9 s** (was 14 s!), ped 137 px, tire dodged at 67 px, NEG=0 | **5/5** |
+| F9 | 3 | **the ACCIDENT car in the serpentine aisle** (pre-stalled at (0,0) — the 782 px aisle is the only corridor that can host it) + pedestrian + 2 tires → 25,1 s, ped 95,5 px, stall met at 281 px | **4/5** |
+| F10 | 4→**3** | 2 pedestrians + 2 tires across the central corridor → 11,4 s, ped 133 px, NEG=0 | **5/5** |
+| F11 | 5 | the gauntlet (unchanged — the +1 ped/+1 tire densification broke seed 9003 and was REVERTED) | **4/5** |
+
+The full boot sweep after the hardening: **11/11 PASS, NEG_FRAMES=0
+everywhere** (12,4-64,2 s; the generated levels went from the 5-16 s
+"fumaça" range to 6-47 s).
+
+**The physics rule discovered (the generator enforces what it can):**
+- The ACCIDENT car needs `swept + hull-half-diagonal + 40` px from every
+  bay centre and prep (the new `gen_level.py` invariant — a stall 150 px
+  from a prep makes the goal a SOLID cell after any replan: the A* snaps
+  it and the car oscillates 26-41 s; measured on F11 seed 9001 before the
+  fix).
+- **A corridor hosts a stalled car only when one side keeps
+  `box-half (44) + car (161) + 2×inflation (103)` ≈ 450 px** — F6/F7/F8
+  corridors (398 px, the preps lining them at ~167 px) and F10's C-S aisle
+  (342 px) are SEALED by a stall; only the 782 px aisles (F9, F11) host it.
+- A stall that DRIVES IN is invisible to the A* grid (off-region at build)
+  → every route is born through it → the ladder-dependent escape is
+  fragile across spawns (3/5 measured). `pre_stalled: true` (the accident
+  already happened) puts it in the grid from t=0 — the F11 canonical went
+  83 s → 33,4 s with ZERO ladder frames.
+
+**The pedestrian WALKS AROUND stopped vehicles** (`Pedestrian.
+_passo_contornando`): the give-way stops the CAR ~120 px short, but the
+person kept walking THROUGH the stopped hull (measured 3×: F11 seeds
+9-24 px, F6 70,8, F9 23,9). The person now slides around the hull circle
+on the tangent toward the goal — F9's min_gap went 23,9 → **95,5 px** —
+and the would-be mutual-yield deadlock dissolves for free (the car waits,
+the person walks around, both proceed).
+
+**The two 4/5s — both instances of REGISTERED shared defects, with the
+full chains mapped:**
+- **F9 seed 9001** — the THIRD instance of the inflated-band freeze: the
+  pursuit's corner-cut enters the grid-solid-but-physically-free band
+  around `MuroOeste` (the shift probe and `_garantir_folga` check the
+  PHYSICAL walls only; the band is `inflar ≈ 103 px`, the physical
+  guarantee is the hull's 88) → the LocalMap's `misturar_carta` writes
+  cost 0,9 there → the DWA rejects every arc → the car freezes at 5-8 px/s
+  with `df inf` → the ladder cycles. The fix is the #46 lesson applied to
+  the Pilot's cost: the chart's clearance must be read by the HULL, not
+  the circumscribed circle (a dedicated session; `gate_seeds` is the judge).
+- **F11 seed 9003** — the ladder churn at the bay approach: the car
+  reaches `N_1`'s rect at a bad angle (from the NW), the replans inflate
+  the route 46→80 points and the recovery cycles at the approach. The
+  boot is otherwise green (33,4 s canonical, NEG=0, nobody touched). The
+  pre-sidestep matrix was 5/5 here — the choreography shifted; the #43
+  ladder-at-the-approach class.
+
 ## 2. Invariants (NOT to be broken)
+**The gate instrument (T4, in `gate_boot` now):** the `PEDESTRE` line
+(observable latches + min gap to a pedestrian node) and the `TRAFICO`
+line (min gap to every tire — r=12 solid — and every accident car), plus
+**`seed(9000 + hash(fase))`** — the canonical boot is now DETERMINISTIC
+(the gate_drive pattern, AGENTS #1.19: an unseeded boot is a lottery; the
+hardened F6 measured 6,5 s green in one run and NEG=22 in the next, same
+code, different spawn).
 - Never loosen a shared park gate — fix the scene or the spec (AGENTS #42).
 - `estado == 3` stays PARKED; the `VehicleState` order does not change.
 - ML contract: 22 inputs, 24 columns, `site/data/` only via
