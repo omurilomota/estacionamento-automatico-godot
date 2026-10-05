@@ -125,8 +125,16 @@ func _ao_mudar_modo(_modo: int) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	# Teclas de teste: 1/2/3/4 trocam de fase, R reinicia a atual.
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode >= KEY_1 and event.keycode <= KEY_1 + FASES.size() - 1:
-			var indice: int = event.keycode - KEY_1
+		# 1..9 e 0 para a decima (ver Mundo.gd: KEY_1 + 9 seria KEY_COLON).
+		# P abre a Fase11 (Trânsito): o teclado so tem dez digitos, e a
+		# decima primeira fase ficou sem digito — a letra e o mnemonico
+		# do nivel de pedestres/pneus/acidente (docs/tasks_trafego.md).
+		var indice: int = event.keycode - KEY_1
+		if event.keycode == KEY_0:
+			indice = 9
+		elif event.keycode == KEY_P:
+			indice = 10
+		if indice >= 0 and indice < FASES.size():
 			get_tree().change_scene_to_file(FASES[indice])
 		elif event.keycode == KEY_R:
 			get_tree().reload_current_scene()

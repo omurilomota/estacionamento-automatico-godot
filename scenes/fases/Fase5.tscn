@@ -8,59 +8,88 @@
 [ext_resource type="Script" path="res://scripts/Planejador.gd" id="6_plan"]
 [ext_resource type="PackedScene" path="res://scenes/Hud.tscn" id="7_hud"]
 [ext_resource type="PackedScene" path="res://scenes/Seta.tscn" id="8_seta"]
+[ext_resource type="PackedScene" path="res://scenes/Cone.tscn" id="9_cone"]
+[ext_resource type="Script" path="res://src/world/Crosser.gd" id="10_crosser"]
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaNorte"]
-size = Vector2(1901, 155.25)
+size = Vector2(1835, 80)
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaSul"]
-size = Vector2(1901, 91.8)
+size = Vector2(1835, 80)
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaOeste"]
-size = Vector2(94.5, 877.5)
+size = Vector2(80, 825)
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaLeste"]
-size = Vector2(118.8, 891)
+size = Vector2(80, 825)
 
 [node name="Fase5" type="Node2D"]
 script = ExtResource("1_base")
 mapa = ExtResource("2_map")
-escala_mapa = 1.35
+escala_mapa = 1.0
 zoom_camera = 0.95
 posicao_aleatoria = true
 
 [node name="Mapa" type="Sprite2D" parent="."]
-scale = Vector2(1.35, 1.35)
+scale = Vector2(1.0, 1.0)
 texture = ExtResource("2_map")
 
 [node name="Obstaculos" type="Node2D" parent="."]
 
 [node name="CalcadaNorte" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(0, -440.5)
+position = Vector2(0, -412.86)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/CalcadaNorte"]
 shape = SubResource("Rect_CalcadaNorte")
 
 [node name="CalcadaSul" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(0, 472.5)
+position = Vector2(0, 412.86)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/CalcadaSul"]
 shape = SubResource("Rect_CalcadaSul")
 
 [node name="CalcadaOeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(-903.5, 1.35)
+position = Vector2(-909.9891294072193, 0)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/CalcadaOeste"]
 shape = SubResource("Rect_CalcadaOeste")
 
 [node name="CalcadaLeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(903.5, 6.75)
+position = Vector2(909.9891294072193, 0)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/CalcadaLeste"]
 shape = SubResource("Rect_CalcadaLeste")
+
+[node name="Estacionado_N_2" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-550.0, -253.5)
+scale = Vector2(1.7898, 1.1724)
+
+[node name="Estacionado_N_5" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(110.0, -253.5)
+scale = Vector2(1.7898, 1.1724)
+
+[node name="Estacionado_N_7" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(550.0, -253.5)
+scale = Vector2(1.7898, 1.1724)
+
+[node name="Estacionado_S_3" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-330.0, 253.5)
+scale = Vector2(1.7898, 1.1724)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_4" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-110.0, 253.5)
+scale = Vector2(1.7898, 1.1724)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_6" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(330.0, 253.5)
+scale = Vector2(1.7898, 1.1724)
+rotation = 3.141592653589793
 
 [node name="Setas" type="Node2D" parent="."]
 
@@ -99,83 +128,53 @@ default_color = Color(0.2, 0.8, 1, 0.6)
 [node name="Vagas" type="Node2D" parent="."]
 
 [node name="N_1" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-665.0, -242.8)
-scale = Vector2(1.889, 2.0)
-rotacao_alvo = -1.5708
-
-[node name="N_2" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-475.0, -242.8)
-scale = Vector2(1.889, 2.0)
+position = Vector2(-770.0, -253.5)
+scale = Vector2(1.75, 1.85625)
 rotacao_alvo = -1.5708
 
 [node name="N_3" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-285.0, -242.8)
-scale = Vector2(1.889, 2.0)
+position = Vector2(-330.0, -253.5)
+scale = Vector2(1.75, 1.85625)
 rotacao_alvo = -1.5708
 
 [node name="N_4" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-95.0, -242.8)
-scale = Vector2(1.889, 2.0)
-rotacao_alvo = -1.5708
-
-[node name="N_5" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(95.0, -242.8)
-scale = Vector2(1.889, 2.0)
+position = Vector2(-110.0, -253.5)
+scale = Vector2(1.75, 1.85625)
 rotacao_alvo = -1.5708
 
 [node name="N_6" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(285.0, -242.8)
-scale = Vector2(1.889, 2.0)
-rotacao_alvo = -1.5708
-
-[node name="N_7" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(475.0, -242.8)
-scale = Vector2(1.889, 2.0)
+position = Vector2(330.0, -253.5)
+scale = Vector2(1.75, 1.85625)
 rotacao_alvo = -1.5708
 
 [node name="N_8" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(665.0, -242.8)
-scale = Vector2(1.889, 2.0)
+position = Vector2(770.0, -253.5)
+scale = Vector2(1.75, 1.85625)
 rotacao_alvo = -1.5708
 
 [node name="S_1" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-665.0, 306.6)
-scale = Vector2(1.889, 2.0)
+position = Vector2(-770.0, 253.5)
+scale = Vector2(1.75, 1.85625)
 rotacao_alvo = 1.5708
 
 [node name="S_2" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-475.0, 306.6)
-scale = Vector2(1.889, 2.0)
-rotacao_alvo = 1.5708
-
-[node name="S_3" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-285.0, 306.6)
-scale = Vector2(1.889, 2.0)
-rotacao_alvo = 1.5708
-
-[node name="S_4" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-95.0, 306.6)
-scale = Vector2(1.889, 2.0)
+position = Vector2(-550.0, 253.5)
+scale = Vector2(1.75, 1.85625)
 rotacao_alvo = 1.5708
 
 [node name="S_5" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(95.0, 306.6)
-scale = Vector2(1.889, 2.0)
-rotacao_alvo = 1.5708
-
-[node name="S_6" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(285.0, 306.6)
-scale = Vector2(1.889, 2.0)
+position = Vector2(110.0, 253.5)
+scale = Vector2(1.75, 1.85625)
 rotacao_alvo = 1.5708
 
 [node name="S_7" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(475.0, 306.6)
-scale = Vector2(1.889, 2.0)
+position = Vector2(550.0, 253.5)
+scale = Vector2(1.75, 1.85625)
 rotacao_alvo = 1.5708
 
 [node name="S_8" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(665.0, 306.6)
-scale = Vector2(1.889, 2.0)
+position = Vector2(770.0, 253.5)
+scale = Vector2(1.75, 1.85625)
 rotacao_alvo = 1.5708
 
 [node name="Carro" parent="." instance=ExtResource("5_carro")]
@@ -185,6 +184,8 @@ auto_navegacao = true
 modo_trilha = false
 brain_enabled = true
 keep_right_shift = 300.0
+farol_mode = 0
+lane_cost_mode = 0
 
 [node name="Planejador" type="Node2D" parent="."]
 script = ExtResource("6_plan")

@@ -2,56 +2,318 @@
   "id": "Fase6",
   "mapa": "res://estacionamento/gen_fase6.png",
   "art": "estacionamento/gen_fase6.png",
-  "import_size": [2400, 1400],
+  "import_size": [
+    2502,
+    1117
+  ],
   "escala_mapa": 1.0,
   "zoom_camera": 0.707,
   "car_scale": 1.4,
   "keep_right_shift": 300.0,
   "posicao_aleatoria": true,
-  "car_pos": [-1000, 120],
+  "car_pos": [
+    -1000,
+    120
+  ],
   "output": "scenes/fases/Fase6.tscn",
   "sidewalks": [
-    {"name": "CalcadaNorte", "rect": [0, -680, 2400, 40]},
-    {"name": "CalcadaSul", "rect": [0, 680, 2400, 40]},
-    {"name": "CalcadaOeste", "rect": [-1180, 0, 40, 1400]},
-    {"name": "CalcadaLeste", "rect": [1180, 0, 40, 1400]}
+    {
+      "name": "CalcadaNorte",
+      "rect": [
+        0,
+        -558.81,
+        2502,
+        80.0
+      ]
+    },
+    {
+      "name": "CalcadaSul",
+      "rect": [
+        0,
+        558.81,
+        2502,
+        80.0
+      ]
+    },
+    {
+      "name": "CalcadaOeste",
+      "rect": [
+        -1251.4347811701068,
+        0,
+        80.0,
+        1117
+      ]
+    },
+    {
+      "name": "CalcadaLeste",
+      "rect": [
+        1251.4347811701068,
+        0,
+        80.0,
+        1117
+      ]
+    },
+    {
+      "name": "EspigaoOeste",
+      "rect": [
+        -463.0499999999999,
+        -500.8103,
+        40,
+        131
+      ]
+    },
+    {
+      "name": "EspigaoMeio",
+      "rect": [
+        0.0,
+        -500.8103,
+        40,
+        131
+      ]
+    },
+    {
+      "name": "EspigaoLeste",
+      "rect": [
+        463.0499999999999,
+        -500.8103,
+        40,
+        131
+      ]
+    }
   ],
   "rows": [
     {
       "name": "N",
       "side": "north",
-      "y_edge": -660,
+      "y_edge": -510.81,
       "dir": 1,
-      "depth": 439.08,
-      "from": -1050,
-      "to": 1050,
+      "depth": 311.85,
+      "from": -1080.4499999999998,
+      "to": 1080.4499999999998,
       "count": 8,
-      "bay_scale": [2.2227, 3.659],
       "rot": -1.5708,
-      "parked": [1, 5]
+      "parked": [
+        0,
+        2,
+        4,
+        5,
+        7
+      ]
     },
     {
       "name": "S",
       "side": "south",
-      "y_edge": 660,
+      "y_edge": 510.81,
       "dir": -1,
-      "depth": 439.08,
-      "from": -1050,
-      "to": 1050,
+      "depth": 311.85,
+      "from": -1080.4499999999998,
+      "to": 1080.4499999999998,
       "count": 8,
-      "bay_scale": [2.2227, 3.659],
       "rot": 1.5708,
-      "parked": [3]
+      "parked": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        7
+      ]
+    }
+  ],
+  "cones": [
+    {
+      "pos": [
+        -1231,
+        0
+      ]
+    },
+    {
+      "pos": [
+        1231,
+        0
+      ]
+    }
+  ],
+  "crossers": [
+    {
+      "name": "CarroDeTransito",
+      "pos": [
+        300,
+        -740
+      ],
+      "point_a": [
+        300,
+        -740
+      ],
+      "point_b": [
+        300,
+        740
+      ],
+      "cruise_speed": 160.0,
+      "pause_time": 0.85,
+      "spawn_distance": 700.0,
+      "trigger_distancia": 900.0,
+      "texture": "res://assets/kenney/cars/car_red_5.png"
+    },
+    {
+      "name": "CarroDeTransito2",
+      "pos": [
+        -600,
+        -740
+      ],
+      "point_a": [
+        -600,
+        -740
+      ],
+      "point_b": [
+        -600,
+        740
+      ],
+      "cruise_speed": 160.0,
+      "pause_time": 0.85,
+      "spawn_distance": 700.0,
+      "trigger_distancia": 900.0,
+      "texture": "res://assets/kenney/cars/car_yellow_5.png"
     }
   ],
   "rotas": [
-    {"name": "RotaLeste", "points": [[-950, 120], [950, 120]]},
-    {"name": "RotaOeste", "points": [[950, -120], [-950, -120]]}
+    {
+      "name": "RotaLeste",
+      "points": [
+        [
+          -950,
+          120
+        ],
+        [
+          950,
+          120
+        ]
+      ]
+    },
+    {
+      "name": "RotaOeste",
+      "points": [
+        [
+          950,
+          -120
+        ],
+        [
+          -950,
+          -120
+        ]
+      ]
+    }
   ],
   "setas": [
-    {"pos": [-600, 120], "direcao": 0.0},
-    {"pos": [600, 120], "direcao": 0.0},
-    {"pos": [-600, -120], "direcao": 3.1416},
-    {"pos": [600, -120], "direcao": 3.1416}
+    {
+      "pos": [
+        -600,
+        120
+      ],
+      "direcao": 0.0
+    },
+    {
+      "pos": [
+        600,
+        120
+      ],
+      "direcao": 0.0
+    },
+    {
+      "pos": [
+        -600,
+        -120
+      ],
+      "direcao": 3.1416
+    },
+    {
+      "pos": [
+        600,
+        -120
+      ],
+      "direcao": 3.1416
+    }
+  ],
+  "pedestrians": [
+    {
+      "name": "Pedestre1",
+      "pos": [
+        -617,
+        -100
+      ],
+      "point_a": [
+        -617,
+        -560
+      ],
+      "point_b": [
+        -617,
+        560
+      ],
+      "walk_speed": 55.0,
+      "pause_time": 3.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 0.0,
+      "head_start_px": 460.0
+    },
+    {
+      "name": "Pedestre2",
+      "pos": [
+        308,
+        -485
+      ],
+      "point_a": [
+        308,
+        -560
+      ],
+      "point_b": [
+        308,
+        560
+      ],
+      "walk_speed": 55.0,
+      "pause_time": 3.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 0.0,
+      "head_start_px": 75.0
+    }
+  ],
+  "tires": [
+    {
+      "pos": [
+        -300,
+        -560
+      ],
+      "point_a": [
+        -300,
+        -560
+      ],
+      "point_b": [
+        -300,
+        560
+      ],
+      "roll_speed": 70.0,
+      "pause_time": 4.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 2.3,
+      "head_start_px": 0.0
+    },
+    {
+      "pos": [
+        700,
+        560
+      ],
+      "point_a": [
+        700,
+        560
+      ],
+      "point_b": [
+        700,
+        -560
+      ],
+      "roll_speed": 70.0,
+      "pause_time": 4.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 5.0,
+      "head_start_px": 0.0
+    }
   ]
 }

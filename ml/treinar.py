@@ -67,7 +67,15 @@ def carregar_dados(min_vel=0.0):
             continue
         total += m.shape[0]
         if min_vel > 0.0:
-            m = m[m[:, 19] > min_vel / 160.0]  # col 19 = vel_desejada/160 (última)
+            # A saida do professor e' a COLUNA N_ENTRADAS (22 no contrato de 24
+            # colunas = 22 entradas + 2 saidas). Este filtro usava a coluna 19,
+            # que no contrato v2 e' a FEATURE "largura do corredor / 2000" — ou
+            # seja, o filtro de "o professor queria andar" estava na verdade
+            # filtrando pela largura, e com `min_vel = 0` (o default) ele nem
+            # rodava: a rede treinava com os quadros paradoxais de "carro parado
+            # = professor parado" (engasgos) e aprendia "parado -> ficar",
+            # que e' exatamente o deadlock medido em 2026-10-01 (backlog §1.28).
+            m = m[m[:, N_ENTRADAS] > min_vel / 160.0]
         mantidos += m.shape[0]
         if m.shape[0] == 0:
             continue

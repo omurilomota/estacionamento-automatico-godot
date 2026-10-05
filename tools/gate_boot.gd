@@ -24,6 +24,7 @@ const NEG_GRACE_FRAMES := 25
 
 var _fase := "Fase2"
 var _secs := 75.0
+var _farol := -1
 var _neg := 0
 var _rec := 0
 var _desde_rec := 1 << 30
@@ -36,6 +37,15 @@ var _max_latch := 0.0
 var _max_stop := 0.0
 var _stopped_while_latched := 0.0
 var _min_crosser_gap := 1.0e9
+## PEDESTRE (docs/tasks_trafego.md T4): observable pedestrian yield + the min
+## gap the car ever kept from a pedestrian node (sensor-only — the latch is
+## the only protection, so a small min gap is the run-over).
+var _ped_latches := 0
+var _min_ped_gap := 1.0e9
+## TRAZEGO (T4): the min gap to the solid hazards (the tire's node includes
+## its r=12 body; the stalled car's node its 190x88 box).
+var _min_tire_gap := 1.0e9
+var _min_stall_gap := 1.0e9
 var _latched := false
 var _t := 0.0
 
@@ -46,7 +56,19 @@ func _init() -> void:
 			_fase = a.split("=")[1]
 		elif a.begins_with("--secs="):
 			_secs = float(a.split("=")[1])
+		elif a.begins_with("--farol="):
+			_farol = int(a.split("=")[1])
 	var cena = load("res://scenes/fases/%s.tscn" % _fase).instantiate()
+	# A/B medido sem editar a cena (o padrao do gate_drive): um farol_mode
+	# diferente entre a chamada e o boot e o teste do PILOTO, nao da cena.
+	if _farol >= 0:
+		(cena.get_node("Carro") as Node).set("farol_mode", _farol)
+	# SEED POR FASE (o padrao do gate_drive, AGENTS #1.19): um boot sem seed e
+	# uma LOTERIA — a Fase6 endurecida mediu 6,5 s verdes numa rodada e
+	# NEG=22 noutra, so porque o spawn mudou. Um A/B com sorteios diferentes
+	# mede o SORTEIO, nao o codigo. O boot canônico fica reproduzivel; a
+	# matriz de seeds continua cobrindo os outros spawns.
+	seed(9000 + hash(_fase))
 	root.add_child(cena)
 	await process_frame
 	var carro: Node2D = cena.get_node_or_null("Carro") as Node2D
@@ -61,6 +83,7 @@ func _init() -> void:
 	var parado := 0.0
 	var _parado_cont := 0.0
 	var _cedendo := false
+	var _cedendo_ped := false
 	var est: int = 0
 	while _t < _secs:
 		await physics_frame
@@ -99,6 +122,24 @@ func _init() -> void:
 			_max_latch = maxf(_max_latch, _latch_run)
 		else:
 			_latch_run = 0.0
+		# PEDESTRE (docs/tasks_trafego.md T4): a cedencia observavel de um
+		# pedestre tem prioridade — o carro NUNCA pode chegar perto demais do
+		# no dele (sensor-only; a latch e a unica protecao).
+		var dp: float = _pedestre_dist(carro)
+		if dp < 1.0e8:
+			_min_ped_gap = minf(_min_ped_gap, dp)
+			var parando_ped: bool = absf(v) < 5.0 and dp < 340.0
+			if parando_ped and not _cedendo_ped:
+				_ped_latches += 1
+			_cedendo_ped = parando_ped
+		else:
+			_cedendo_ped = false
+		# TRAZEGO (T4): o min gap aos pneus (solidos) e ao acidentado — o
+		# "ninguem tocado" da fase de transito. O pneu e' um corpo de raio 12:
+		# o casco (meia-largura ~52 na escala 1,4) precisa de ~64 px do no.
+		# O acidentado e' um box 190x88: ~139 px do no no eixo longo.
+		_min_tire_gap = minf(_min_tire_gap, _grupo_dist(carro, "tire"))
+		_min_stall_gap = minf(_min_stall_gap, _grupo_dist(carro, "acidente"))
 		if absf(v) < 5.0:
 			parado += 1.0 / 60.0
 		_max_stop = maxf(_max_stop, parado)
@@ -114,6 +155,9 @@ func _init() -> void:
 		_cone_hits, _cone_ray_seen, _min_cone_gap])
 	print("CROSSER latches=%d longest_latch=%.1fs longest_stop=%.1fs stopped_while_latched=%.1fs min_gap=%.1f px" % [
 		_latches, _max_latch, _max_stop, _stopped_while_latched, _min_crosser_gap])
+	print("PEDESTRE latches=%d min_gap=%.1f px" % [_ped_latches, _min_ped_gap])
+	print("TRAFICO tire_min_gap=%.1f px acidentado_min_gap=%.1f px" % [
+		_min_tire_gap, _min_stall_gap])
 	print("NEG_FRAMES=%d REC_FRAMES=%d" % [_neg, _rec])
 	var ok := est_final == 3 and _cone_hits == 0 and _neg == 0
 	print("GATE_BOOT_%s" % ("OK" if ok else "FALHOU"))
@@ -167,5 +211,20 @@ func _ray_frontal_bloqueada(carro: Node2D, cones: Array) -> bool:
 func _crosser_dist(carro: Node2D) -> float:
 	var melhor := 1.0e9
 	for n in get_nodes_in_group("crosser"):
+		melhor = minf(melhor, carro.global_position.distance_to((n as Node2D).global_position))
+	return melhor
+
+
+func _pedestre_dist(carro: Node2D) -> float:
+	var melhor := 1.0e9
+	for n in get_nodes_in_group("pedestre"):
+		melhor = minf(melhor, carro.global_position.distance_to((n as Node2D).global_position))
+	return melhor
+
+
+## Min gap from the car to every node of a group (INF when the group is empty).
+func _grupo_dist(carro: Node2D, grupo: StringName) -> float:
+	var melhor := 1.0e9
+	for n in get_nodes_in_group(grupo):
 		melhor = minf(melhor, carro.global_position.distance_to((n as Node2D).global_position))
 	return melhor

@@ -9,6 +9,14 @@ var max_speed: float = 160.0
 ## (`Carro._brain_for_current_mode()`, C2b). A fresh brain per frame would
 ## never hold for even one frame.
 var crosser_gate: CrosserGate = null
+## The pedestrian gate (docs/tasks_trafego.md T2): a pedestrian has PRIORITY —
+## ticked BEFORE the crosser gate in both decide paths. Sensor-only, so the
+## latch is the only protection against ever running one over.
+var pedestrian_gate: CrosserGate = null
+## Shadow counter for the traffic gate (latches for a pedestrian).
+var pedestrian_latches: int = 0
+## Edge-triggered [PED] log flag (first frame of a pedestrian latch).
+var _ped_log_recente: bool = false
 
 
 func kind() -> int:
@@ -25,7 +33,26 @@ func gate() -> CrosserGate:
 	return crosser_gate
 
 
+func gate_pedestre() -> CrosserGate:
+	if pedestrian_gate == null:
+		# 360/480 px, hold de 0,8 s: um pedestre e' LENTO e pequeno — o latch
+		# e' a unica protecao (sensor-only), entao ele entra mais cedo e segura
+		# mais que o gate do crosser.
+		pedestrian_gate = CrosserGate.new(360.0, 480.0)
+		pedestrian_gate.min_hold = 0.8
+		pedestrian_gate.strict_release = true
+	return pedestrian_gate
+
+
 func decide(perception: PerceptionSnapshot, delta: float) -> DriveCommand:
+	if perception.pedestrian_distance < INF and gate_pedestre().should_yield(
+			perception.pedestrian_distance, perception.pedestrian_bearing, delta):
+		pedestrian_latches += 1
+		# Route-less fallback: there is no route to steer along here, so the
+		# give-way is a full stop (the GIVE-WAY GLIDE with its throttle ceiling
+		# only makes sense in `decide_context`, where the drive path below
+		# supplies the steering).
+		return DriveCommand.stop()
 	if gate().should_yield(perception.crosser_distance, perception.crosser_bearing, delta):
 		return DriveCommand.stop()
 	return _steer_to_target(perception)
@@ -34,6 +61,20 @@ func decide(perception: PerceptionSnapshot, delta: float) -> DriveCommand:
 func decide_context(perception: PerceptionSnapshot, context: DriveContext, _delta: float) -> DriveCommand:
 	# The gate is ticked ONCE per frame here: `decide()` below would tick it a
 	# second time when there is no route, doubling the min hold.
+	# The PEDESTRIAN yield is the GIVE-WAY: the THROTTLE falls to zero at
+	# `PED_GIVEWAY_GAP` px from the pedestrian and the STEERING keeps coming
+	# from the drive path below — a steering-0 glide drove the car straight
+	# off its lane (measured on Fase11: 255 px off the route after a yield
+	# fired at the spawn, and the cte branch fired the reverse for 107
+	# frames). NOT returning early: the ceiling is applied at the end.
+	var ceiling := 1.0
+	if perception.pedestrian_distance < INF and gate_pedestre().should_yield(
+			perception.pedestrian_distance, perception.pedestrian_bearing, _delta):
+		pedestrian_latches += 1
+		_ped_log(perception, context.vehicle_position)
+		ceiling = clampf(
+			(perception.pedestrian_distance - CrosserGate.PED_GIVEWAY_GAP)
+				/ CrosserGate.PED_GIVEWAY_RAMP, 0.0, 1.0)
 	if gate().should_yield(perception.crosser_distance, perception.crosser_bearing, _delta):
 		return DriveCommand.stop()
 	if context.route.is_empty():
@@ -79,7 +120,25 @@ func decide_context(perception: PerceptionSnapshot, context: DriveContext, _delt
 			context.distance_to_target, pursuit.speed, max_speed)
 		if context.arrived and context.distance_to_target < 200.0:
 			pursuit.speed = 0.0
+	# The give-way ceiling: the pedestrian yield's throttle ceiling, applied
+	# AFTER the drive path computed the steering (the Fase11 lesson).
+	pursuit.speed = minf(pursuit.speed, ceiling * max_speed)
 	return DriveCommandAdapter.from_pursuit(pursuit, max_steer, max_speed)
+
+
+## Edge-triggered [PED] log (the [RE-BRAIN] pattern): the first frame of a
+## pedestrian latch, with the numbers.
+func _ped_log(per: PerceptionSnapshot, pos := Vector2.INF) -> void:
+	if _ped_log_recente:
+		return
+	_ped_log_recente = true
+	if pos.is_finite():
+		print("[PED] d=%.0f bearing=%.2f vel=%.0f pos=(%.0f,%.0f)" % [
+			per.pedestrian_distance, per.pedestrian_bearing, per.speed,
+			pos.x, pos.y])
+	else:
+		print("[PED] d=%.0f bearing=%.2f vel=%.0f" % [
+			per.pedestrian_distance, per.pedestrian_bearing, per.speed])
 
 
 ## Route-less fallback (no A* path yet): head for the target, stop if a real
@@ -120,7 +179,7 @@ static func solve_route(vehicle_pos: Vector2, vehicle_rot: float,
 ## 180px chord does not cut corners into walls (the classic pure-pursuit
 ## failure that made the A* pilot grind against obstacles).
 func _lookahead_for(context: DriveContext) -> float:
-	var base := 180.0
+	var base := clampf(70.0 + absf(context.speed) * 0.35, 70.0, 150.0)
 	if is_finite(context.front_distance):
 		base = minf(base, maxf(context.front_distance * 0.9, 60.0))
 	# v2 (F3 fix): the front rays do NOT see a corner the body is about to
@@ -128,13 +187,14 @@ func _lookahead_for(context: DriveContext) -> float:
 	# is not enough. Cap the chord to the next sharp bend as well.
 	base = minf(base, turn_cap(context.route, context.waypoint_index,
 		context.vehicle_position))
-	return clampf(base, 60.0, 180.0)
+	return clampf(base, 60.0, 150.0)
 
 
-## Sharper than this (~26 deg) between two route legs counts as a bend the
+## Sharper than this (~18 deg) between two route legs counts as a bend the
 ## pursuit chord must not cut across.
-const TURN_THRESHOLD := 0.45
+const TURN_THRESHOLD := 0.32
 const TURN_CAP_MIN := 60.0
+const LOOKAHEAD_MAX := 150.0
 
 
 ## Lookahead cap for the next sharp bend: aim AT the corner instead of
@@ -142,10 +202,10 @@ const TURN_CAP_MIN := 60.0
 ## 180px chord leaves the aisle leg (y = 1240.5, heading 0) to chase
 ## wp5 (heading -0.675) and drives the hull corner into the sidewalk.
 ## Bends already behind the vehicle are skipped (the hull cannot cut
-## what it has passed). Straight routes keep the full 180px chord.
+## what it has passed). Straight routes keep the full LOOKAHEAD_MAX chord.
 static func turn_cap(route: Array, idx: int, vehicle_pos: Vector2) -> float:
 	if route.size() < 3:
-		return 180.0
+		return LOOKAHEAD_MAX
 	var start := clampi(idx, 0, route.size() - 3)
 	for k in range(start, route.size() - 2):
 		var b: Vector2 = route[k + 1]
@@ -159,7 +219,7 @@ static func turn_cap(route: Array, idx: int, vehicle_pos: Vector2) -> float:
 			continue
 		if absf(angle_difference(leg_in.angle(), leg_out.angle())) > TURN_THRESHOLD:
 			return maxf(vehicle_pos.distance_to(b), TURN_CAP_MIN)
-	return 180.0
+	return LOOKAHEAD_MAX
 
 
 ## Yaw penalty for spot choice (mirrors Carro._penalidade_rumo): 0 when

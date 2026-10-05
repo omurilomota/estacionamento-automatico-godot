@@ -2,8 +2,34 @@ extends SceneTree
 ## Headless sanity checks for the decoupled vehicle modules (no scene).
 ## Run: godot --headless --path . --script src/vehicle/ModulesCheck.gd
 ## Exits 0 when every check passes, 1 otherwise.
+##
+## The FAROL layer is asserted here too: those modules are pure and take no
+## scene tree, so this is where their contract is pinned (see the FAROL block).
+
+const MooringRef = preload("res://src/farol/Mooring.gd")
+const FarolSpecRef = preload("res://src/farol/FarolSpec.gd")
+const FarolShieldRef = preload("res://src/farol/FarolShield.gd")
+const LocalMapRef = preload("res://src/farol/LocalMap.gd")
+const DwaRef = preload("res://src/farol/Dwa.gd")
+const EngineAudioRef = preload("res://src/vehicle/EngineAudio.gd")
+const ChartRef = preload("res://src/farol/Chart.gd")
+const RouteRef = preload("res://src/farol/Route.gd")
+const PilotRef = preload("res://src/farol/Pilot.gd")
+const PedestrianRef = preload("res://src/world/Pedestrian.gd")
+const TireRef = preload("res://src/world/Tire.gd")
+const StalledCarRef = preload("res://src/world/StalledCar.gd")
 
 var _fails: int = 0
+
+
+## Minimal stand-in for the vehicle: only the properties the Pilot reads from
+## it. Needed because the FIRST version of the scaled-wheelbase check only
+## exercised the `veiculo == null` fallback (a literal), and the mutation that
+## dropped the scale factor survived the suite (comanda §7: a test that does
+## not fail when the bug comes back is not a test).
+class FakeCarro:
+	var entre_eixos := 60.0
+	var global_scale := Vector2.ONE
 
 
 func _init() -> void:
@@ -146,6 +172,53 @@ func _init() -> void:
 	_check("Gate.reset", not beside.is_latched())
 	_check("Gate.no_crosser_clears", not _latched_then_lost(150.0))
 
+	# TRAZEGO (docs/tasks_trafego.md T2): the dynamic actors + the decision
+	# order. A pedestrian has PRIORITY (yield); a tire is a solid hazard to
+	# DODGE; a stalled car blocks the lane and triggers the detour.
+	var ped_a: Vector2 = PedestrianRef.position_at(Vector2(-600, 0), Vector2(600, 0), 55.0, 0.0)
+	_check("Ped.at_a", ped_a.distance_to(Vector2(-600, 0)) < 0.01)
+	var ped_mid: Vector2 = PedestrianRef.position_at(Vector2(-600, 0), Vector2(600, 0), 55.0, 5.0)
+	_check("Ped.walks", ped_mid.x > -600.0 and ped_mid.x < 600.0)
+	var ped_b: Vector2 = PedestrianRef.position_at(Vector2(-600, 0), Vector2(600, 0), 55.0, 40.0)
+	_check("Ped.clamped_at_b", ped_b.distance_to(Vector2(600, 0)) < 0.01)
+	_check("Tire.radius", TireRef.RADIUS == 12.0)
+	var t_mid: Vector2 = TireRef.position_at(Vector2(-600, 0), Vector2(600, 0), 70.0, 4.0)
+	_check("Tire.rolls", t_mid.x > -600.0 and t_mid.x < 600.0)
+	# the ACCIDENT car: drives to the stall point and NEVER moves again
+	var stall_a: Vector2 = StalledCarRef.position_at(Vector2(-600, 0), Vector2(600, 0), 140.0, 600.0, 0.0)
+	_check("Accident.at_entry", stall_a.distance_to(Vector2(-600, 0)) < 0.01)
+	var stall_point: Vector2 = StalledCarRef.position_at(Vector2(-600, 0), Vector2(600, 0), 140.0, 600.0, 5.0)
+	_check("Accident.stops_on_line", absf(stall_point.x - 0.0) < 0.01)
+	var stall_done: Vector2 = StalledCarRef.position_at(Vector2(-600, 0), Vector2(600, 0), 140.0, 600.0, 30.0)
+	_check("Accident.never_moves_after_stall", stall_done.distance_to(stall_point) < 0.01)
+	# the arbitration order: a pedestrian wins over a crosser, both yield before
+	# any detour; the pilot's last order names who commanded the stop
+	var ambos := PerceptionSnapshot.new()
+	ambos.pedestrian_distance = 150.0
+	ambos.pedestrian_bearing = 0.1
+	ambos.crosser_distance = 150.0
+	ambos.crosser_bearing = 0.1
+	var auto_ped := AutonomousDriver.new()
+	_check("Ped.auto_yields", auto_ped.decide(ambos, 0.016).throttle == 0.0)
+	var ctx_ped := DriveContext.new()
+	ctx_ped.route = [Vector2.ZERO, Vector2(600, 0)]
+	ctx_ped.cte = 5.0
+	var piloto_ped := PilotRef.new(FarolSpecRef.new())
+	piloto_ped.decide_context(ambos, ctx_ped, 0.016)
+	_check("Ped.piloto_pedestre_primeiro", piloto_ped.ultima_ordem == "pedestre"
+		and piloto_ped.pedestrian_latches >= 1)
+	var so_crosser := PerceptionSnapshot.new()
+	so_crosser.crosser_distance = 150.0
+	so_crosser.crosser_bearing = 0.1
+	var piloto_crosser := PilotRef.new(FarolSpecRef.new())
+	piloto_crosser.decide_context(so_crosser, ctx_ped, 0.016)
+	_check("Ped.piloto_sem_pedestre_cede_crosser", piloto_crosser.ultima_ordem == "cedencia")
+	var livre_ped := PerceptionSnapshot.new()
+	var piloto_livre := PilotRef.new(FarolSpecRef.new())
+	piloto_livre.decide_context(livre_ped, ctx_ped, 0.016)
+	_check("Ped.sem_pedestre_nao_para", piloto_livre.ultima_ordem != "pedestre"
+		and piloto_livre.pedestrian_latches == 0)
+
 	# LaneOffset: right-hand traffic (mão à direita). A straight eastbound route
 	# must shift SOUTH (+y in screen coords = the driver's right) and never past
 	# the requested offset; the ends stay on the planner's line so the parking
@@ -219,6 +292,169 @@ func _init() -> void:
 	_check("Lane.hairpin_holds", hairpin_shifted[1].is_equal_approx(hairpin[1]))
 	_check("Lane.wall_probe_invalid", not LaneOffset.wall_probe(null).is_valid())
 
+	# ---------------------------------------------------------------- FAROL ----
+	# The five FAROL layers are pure and headless (AGENTS §3), so they are
+	# asserted here with no scene. `farol_mode` is 0 in every scene today, so a
+	# failure here means the SHADOW code is already wrong — the cheapest moment
+	# to find out, before a level is promoted.
+	MooringRef.usar(FarolSpecRef.new())
+	# Shield (NERVO): the pupil may choose, the teacher may veto, a veto is about
+	# collision and never about taste.
+	var shield_rep: Dictionary = FarolShieldRef.check()
+	_check("Shield.check", (shield_rep.get("fails", []) as Array).is_empty())
+	# Mooring (ATRACAÇÃO): the phase sequence must be ALIGN -> ARC -> SLIDE and
+	# monotone, because the legacy cascade re-decided every frame and the phases
+	# oscillated (see src/farol/Mooring.gd).
+	# The hull is 88x74 at the level scales; use a 690x314 bay (Fase2) and a
+	# 162x439 one (Fase8, the tightest) — AGENTS #27: the BAY is the free
+	# variable and the Mooring has to fit the ones that exist.
+	var meia := Vector2(79.2, 49.6)
+	var centro := Vector2.ZERO
+	var spec: FarolSpecRef = FarolSpecRef.new()
+	# (1) On the approach, aligned, still short -> ARC (drive in, no turning).
+	var p_arc: Dictionary = MooringRef.passo(centro - Vector2(160, 0), 0.0, centro, 0.0, meia)
+	_check("Mooring.arc_on_approach", int(p_arc["fase"]) == MooringRef.Fase.ARCO)
+	# (2) REGRESSION: the same pose with 0.5 rad of yaw error must ALIGN. The
+	# first version gated ALIGN on `ao_longo < 0.0`, which IS the approach (the
+	# preparation point is `centro - nariz*alcance`), so this returned ARC and
+	# the squaring-up phase was dead exactly where it was needed.
+	var p_alinhar: Dictionary = MooringRef.passo(centro - Vector2(160, 0), 0.5, centro, 0.0, meia)
+	_check("Mooring.aligns_when_twisted", int(p_alinhar["fase"]) == MooringRef.Fase.ALINHAR)
+	# (3) REGRESSION: twisted INSIDE the bay, 13 px from the centre — the
+	# AGENTS #38 case that turns ALIGNING into eternal parking — must also
+	# ALIGN, and only then slide.
+	var p_dentro: Dictionary = MooringRef.passo(centro - Vector2(13, 0), 1.2, centro, 0.0, meia)
+	_check("Mooring.aligns_inside_bay", int(p_dentro["fase"]) == MooringRef.Fase.ALINHAR)
+	# (4) The ALIGN aim point must be AHEAD of the hull, never behind it: a
+	# target behind the car makes the pursuit steer the nose the wrong way.
+	var t_alinhar: Vector2 = p_alinhar["target"]
+	var carro_alinhar := Vector2(-160, 0)
+	_check("Mooring.align_target_ahead",
+		t_alinhar.dot(MooringRef.nariz(centro, 0.0)) > carro_alinhar.dot(MooringRef.nariz(centro, 0.0)))
+	# (5) Aligned and on the centre -> SLIDE (the last 12 px, AGENTS #16).
+	var p_slide: Dictionary = MooringRef.passo(centro - Vector2(10, 0), 0.0, centro, 0.0, meia)
+	_check("Mooring.slides_at_centre", int(p_slide["fase"]) == MooringRef.Fase.DESLIZAR)
+	# (6) A nose-WEST bay (rot_alvo = PI, how Fase2/Fase3 are really authored,
+	# AGENTS #15) must be geometrically identical to the nose-east one, or the
+	# arrival error is ~PI and the car reverses out (the AGENTS #15c defect).
+	var p_oeste: Dictionary = MooringRef.passo(Vector2(160, 0), PI, centro, PI, meia)
+	_check("Mooring.nose_west_same_phase", int(p_oeste["fase"]) == int(p_arc["fase"]))
+	# (7) ALIGN must creep, never freeze: the Locomotion refuses to yaw below
+	# 1 px/s, so a zero throttle would burn ALINHA_MAX_S and end in eternal
+	# parking (the exact failure AGENTS #38 describes).
+	var c_alinhar: Dictionary = MooringRef.comando(carro_alinhar, 0.5, centro, 0.0, meia, 160.0)
+	_check("Mooring.align_creeps",
+		float((c_alinhar["comando"] as DriveCommand).throttle) > 0.0)
+	# (8) The tightest real bay must not change the decision: a 162x439 bay has
+	# the car 1.60x longer than it is wide, so the arc threshold is the only
+	# thing that could differ.
+	var meia_estreita := Vector2(81.0, 49.6)
+	var p_estreita: Dictionary = MooringRef.passo(centro - Vector2(160, 0), 0.0, centro, 0.0, meia_estreita)
+	_check("Mooring.tight_bay_arc", int(p_estreita["fase"]) == MooringRef.Fase.ARCO)
+	# (9) A DIAGONAL bay (yaw 0.7 rad) — no level has one today, so the Mooring
+	# has never been asked to square up against a rotated aisle.
+	var p_diag: Dictionary = MooringRef.passo(centro - Vector2(160, 0).rotated(0.7),
+		0.7 + 0.4, centro, 0.7, meia)
+	_check("Mooring.diagonal_aligns", int(p_diag["fase"]) == MooringRef.Fase.ALINHAR)
+	# (10) The spec must actually reach the Mooring: `usar()` is what the vehicle
+	# calls every frame, and without it a scene's `farol_spec` was ignored here.
+	MooringRef.usar(spec)
+	spec.atracar_yaw_tol = 0.9   # absurdly loose
+	_check("Mooring.spec_is_used",
+		int(MooringRef.passo(carro_alinhar, 0.5, centro, 0.0, meia)["fase"]) != MooringRef.Fase.ALINHAR)
+	MooringRef.usar(FarolSpecRef.new())
+
+	# REGRESSION (Fase9, 2026-09-29): a ray that hits NOTHING used to paint a
+	# solid cell at its own MAXIMUM RANGE, because the contact cell was marked
+	# unconditionally. With 19 rays that rings an empty aisle with 19 phantom
+	# walls; the shield then vetoed every frame and the car stood still for 41 s.
+	#
+	# The rule lives in `_tracar_rastro`, and it has to be called DIRECTLY: an
+	# earlier version of this check passed `{}` as the ray dictionary, which
+	# never enters the loop and therefore proved nothing — reintroducing the bug
+	# left the suite green. `_tracar_rastro` IS the unit under test here, and
+	# ModulesCheck is in-repo, so calling it is the honest way to pin it.
+	var lm := LocalMapRef.de_teste(8, 20.0)
+	# An unobstructed beam: free to the end, and NO solid cell at its range.
+	lm._tracar_rastro(Vector2.ZERO, 150.0, 0.0, false)
+	_check("LocalMap.no_phantom_wall",
+		lm.custo_em(Vector2(140.0, 0.0)) == LocalMapRef.LIVRE)
+	_check("LocalMap.unhit_ray_marks_nothing", lm.celulas_ocupadas == 0)
+	# A beam that REPORTED a contact ends solid, with the short shadow behind it
+	# — the rule the fix must not have broken.
+	lm._tracar_rastro(Vector2.ZERO, 100.0, 0.0, true)
+	_check("LocalMap.hit_ray_marks_wall",
+		lm.custo_em(Vector2(100.0, 0.0)) >= 0.99)
+	_check("LocalMap.hit_ray_shadow",
+		lm.custo_em(Vector2(120.0, 0.0)) > 0.0)
+	# A cell OUTSIDE the window is unknown space, and reading it as solid is the
+	# safe direction (the shield must not read past what the car can see).
+	_check("LocalMap.outside_is_solid",
+		lm.custo_em(Vector2(100000.0, 0.0)) == LocalMapRef.OBSTACULO)
+
+	# REGRESSION (Fase9 choke, 2026-09-29): the DWA rollout must use the SAME
+	# model the mover executes — scaled wheelbase, actuator-limited steering —
+	# otherwise it proposes arcs the chassis cannot follow (+40% curvature
+	# measured) and the controller chases phantom geometry. Asserted with a
+	# REAL `LocalMap` (a free window with one painted wall) and the REAL
+	# signature: `avaliar(local, pos, rot, vel_max, meia_eixos, entre_eixos,
+	# rota_dir, steer_anterior, max_steer, v_atuador)`. This is the exact
+	# coverage gap the comanda flagged: `Dwa.avaliar` had NO headless exercise
+	# with real inputs, which is how three latent defects shipped.
+	var spec_dwa: FarolSpecRef = FarolSpecRef.new()
+	var dw := DwaRef.new(spec_dwa)
+	var lm_dwa := LocalMapRef.de_teste(12, 20.0)
+	# Wall on the LEFT of the corridor (cells x in [-8..-2] of the window), so
+	# arcs steering left die and arcs steering right survive.
+	for yy in range(lm_dwa.dim):
+		for xx in range(0, lm_dwa.dim / 2):
+			lm_dwa.custo[yy * lm_dwa.dim + xx] = LocalMapRef.OBSTACULO
+	var escolhido: Array = dw.avaliar(lm_dwa, Vector2(40.0, 240.0), 0.0,
+		120.0, Vector2(61.6, 51.8), 84.0, Vector2.RIGHT, 0.0, 0.9, 160.0)
+	_check("Dwa.returns_command", escolhido.size() >= 2)
+	_check("Dwa.steer_in_actuator_units",
+		absf(float(escolhido[0])) <= 1.0 + 0.001)
+	_check("Dwa.avoids_wall", float(escolhido[0]) >= -0.01)
+	_check("Dwa.produces_throttle", float(escolhido[1]) > 0.0)
+	_check("Dwa.at_least_one_arc", dw.avaliacoes >= 9)
+	# The wheelbase the window was GIVEN must be the scaled one (the Pilot now
+	# passes entre_eixos * escala). Pin the helper, not the scene: 60 * 1.4.
+	var piloto_probe = PilotRef.new(FarolSpecRef.new())
+	_check("Pilot.scaled_wheelbase_unit", absf(piloto_probe._entre_eixos() - 84.0) < 0.01)
+	# The REAL path: with a vehicle at scale 1.4 the mover turns with
+	# entre_eixos * escala = 84; the rollout must receive exactly that.
+	var fake := FakeCarro.new()
+	fake.entre_eixos = 60.0
+	fake.global_scale = Vector2(1.4, 1.4)
+	piloto_probe.injetar_veiculo(fake)
+	_check("Pilot.scaled_wheelbase_scene", absf(piloto_probe._entre_eixos() - 84.0) < 0.01)
+	# MODEL PARITY: with the wall only on the left, the DWA must NOT pick the
+	# full-left arc. (The old code sampled tan(1.0) — an arc the actuator
+	# clamps — so the window's best arc was unexecutable.)
+	_check("Dwa.actuator_clamped",
+		absf(float(escolhido[0])) <= 0.9001)
+
+	# The choke cap: a body-integral over the CHART's clearance cells. With no
+	# chart the metric is undefined (-1) and the cap must be a no-op, so the
+	# pilot never slows on a map that has no static truth.
+	var piloto_cap = PilotRef.new(FarolSpecRef.new())
+	_check("Pilot.cap_noop_without_chart",
+		piloto_cap._velocidade_do_gargalo(120.0) == 120.0)
+	# And the cap itself: folga_media_corpo near 1 (hull mostly buried) must
+	# crawl; 0 (open) must pass the speed through untouched.
+	piloto_cap.local.folga_media_corpo = 0.9
+	_check("Pilot.cap_crawls_in_choke",
+		piloto_cap._velocidade_do_gargalo(120.0) < 60.0)
+	piloto_cap.local.folga_media_corpo = 0.0
+	_check("Pilot.cap_open_passthrough",
+		piloto_cap._velocidade_do_gargalo(120.0) == 120.0)
+	# The detour cooldown survives `resetar()` (Fase5: 30 detours in 11 s when
+	# it did not — the vehicle consumes the request by resetting the pilot).
+	piloto_cap._ultimo_desvio = 9.0
+	piloto_cap.resetar()
+	_check("Pilot.detour_cooldown_survives_reset",
+		piloto_cap._ultimo_desvio == 9.0)
+
 	# Car menu (D1): 10 skins from TWO art families with different pixel sizes
 	# (Kenney 70x121 full-bleed, assets/sprites 100x100 trimmed). The contract
 	# that keeps the 88x74 collision box valid is no longer "same texture size"
@@ -278,8 +514,134 @@ func _init() -> void:
 		carro_node.free()
 	VehicleCatalog.current_id = VehicleCatalog.DEFAULT_ID
 
+	# DESVIO REATIVO (S3): `desvios = 0` nas 10 fases nao prova que a camada
+	# esta morta — prova que nenhuma rota fica bloqueada. Aqui a rota ATRAVESSA
+	# um obstaculo e o piloto tem de publicar um desvio ADiante e alcancavel.
+	var lm_desvio := LocalMapRef.de_teste(30, 20.0)
+	lm_desvio.ancora = Vector2(-600.0, -600.0)
+	# parede vertical em x = +240, com a abertura a NORTE (y < -300) e o desvio
+	# tem de ser para um dos lados, nunca para tras
+	for k in range(40):
+		for dy in range(-10, 12):
+			lm_desvio.call("_marcar", Vector2(240.0, 240.0 + float(dy) * 20.0), 1.0, 1.0)
+	var rota_bloqueada: Array[Vector2] = []
+	for k in range(12):
+		rota_bloqueada.append(Vector2(0.0, float(k) * 40.0))
+	rota_bloqueada.append(Vector2(240.0, 480.0))
+	var piloto := PilotRef.new(FarolSpecRef.new())
+	piloto.local = lm
+	var ctx_desvio := DriveContext.new()
+	ctx_desvio.vehicle_position = Vector2.ZERO
+	ctx_desvio.vehicle_rotation = 0.0
+	ctx_desvio.route = rota_bloqueada
+	ctx_desvio.speed = 120.0
+	ctx_desvio.target_position = rota_bloqueada[-1]
+	var percep_desvio := PerceptionSnapshot.new()
+	piloto.max_speed = 120.0
+	piloto.decide_context(percep_desvio, ctx_desvio, 0.05)
+	_check("Detour.detecta_bloqueio", piloto.bloqueado)
+	_check("Detour.celulas_consecutivas", piloto.bloqueado_celulas >= 4)
+	_check("Detour.publica_alvo", piloto.desvio_alvo.is_finite())
+	if piloto.desvio_alvo.is_finite():
+		# o desvio tem de ser ALCANCAVEL (BFS) e estar do lado certo: mais
+		# perto do destino que a propria rota, nunca atras do carro
+		var cam_livre := not lm_desvio.bfs(Vector2.ZERO, piloto.desvio_alvo, 0.0).is_empty()
+		var mais_perto: bool = piloto.desvio_alvo.distance_to(rota_bloqueada[-1]) \
+			< Vector2.ZERO.distance_to(rota_bloqueada[-1])
+		_check("Detour.alvo_alcancavel", cam_livre)
+		_check("Detour.alvo_a_frente", mais_perto)
+	_check("Detour.conta_desvio", piloto.desvios == 1)
+
+	# LACUNA CONHECIDA: o portao `bloqueado_celulas` (4 pontos de rota
+	# CONSECUTIVOS) ainda nao tem teste. A tentativa de monta-lo num LocalMap
+	# sintetico nao foi confiavel: uma marca de 20 px na rota contou 8 pontos
+	# seguidos, entao o cenario nao reproduz o campo de custo real e qualquer
+	# asercao sobre ele passaria no vacuo. Fica como proximo passo (backlog
+	# §1.27): o cenario tem de vir de um Chart de verdade, como o gate_chart faz.
+
+	# FAIXA NO CUSTO (S2): o alvo da faixa e' a DISTANCIA ate a guia direita, e
+	# o custo e' |fr - alvo| nos DOIS lados. A versao anterior definia `alvo` a
+	# partir do proprio `fr` da celula, entao `(alvo - fr)` era negativo em toda
+	# celula e a penalidade da metade direita era IDENTICAMENTE ZERO: `w_faixa`
+	# nao tinha efeito nenhum de 1.8 ate 40 (medido na Fase2 em 2026-10-01,
+	# backlog §1.22). Estes testes montam um Chart sintetico com um corredor e
+	# exigem a ORDEM que a regra promete.
+	var chart := ChartRef.new()
+	chart.configure(Vector2(-1000.0, -500.0), Vector2(2000.0, 1000.0), 20.0, 100.0)
+	chart.call("_criar_campos")
+	chart.call("carimbar_aabb", Rect2(-1000.0, -500.0, 60.0, 1000.0))    # guia oeste
+	chart.call("carimbar_aabb", Rect2(940.0, -500.0, 60.0, 1000.0))     # guia leste
+	chart.call("carimbar_aabb", Rect2(-1000.0, -500.0, 2000.0, 60.0))    # fundo norte
+	chart.call("carimbar_aabb", Rect2(-1000.0, 440.0, 2000.0, 60.0))     # fundo sul
+	chart.call("_transformada_distancia")
+	var rota_custo := RouteRef.new()
+	rota_custo.chart = chart
+	rota_custo.spec = FarolSpecRef.new()
+	var rai := 100.0
+	# `dir` e' a direcao ate o GOAL, entao o lado direito da faixa depende do
+	# rumo: cada celula e' avaliada com um goal ao NORTE dela, que e' o caso
+	# "carro subindo a rua" e deixa `right` = leste sem ambiguidade.
+	var c_alvo: float = _custo_norte(chart, rota_custo, 940.0 - rai * 1.5, rai)
+	var c_parede: float = _custo_norte(chart, rota_custo, 940.0 - 40.0, rai)
+	var c_meio: float = _custo_norte(chart, rota_custo, 0.0, rai)
+	var c_esquerda: float = _custo_norte(chart, rota_custo, -600.0, rai)
+	_check("Lane.alvo_mais_barato_que_o_meio", c_alvo < c_meio)
+	_check("Lane.alvo_mais_barato_que_a_parede", c_alvo < c_parede)
+	_check("Lane.meio_mais_barato_que_a_esquerda", c_meio < c_esquerda)
+
+	# Áudio: a pista de ré e o som da ESCADA DE FUGA (#43) — o único lugar onde
+	# o carro dá ré. Era um quadrado de 1 kHz a cada 0,75 s e o usuário chamou
+	# de terrível (2026-09-30). Estes 4 testes existem para o quadrado voltar a
+	# falhar: pico, degrau máximo entre amostras (o que faz o estalo) e a
+	# frequência média (o que faz a penetração).
+	var audio := EngineAudioRef.new()
+	var cue: PackedFloat32Array = audio.call("_beep_samples")
+	var pico := 0.0
+	var degrau := 0.0
+	var cruzes := 0
+	for i in cue.size():
+		pico = maxf(pico, absf(cue[i]))
+		if i > 0:
+			degrau = maxf(degrau, absf(cue[i] - cue[i - 1]))
+		if i > 0 and signf(cue[i]) != signf(cue[i - 1]) and cue[i] != 0.0:
+			cruzes += 1
+	var dur := float(cue.size()) / float(EngineAudioRef.SAMPLE_RATE)
+	var hz := float(cruzes) * 0.5 / maxf(dur, 0.001)
+	_check("Audio.cue_presente", cue.size() > 0 and pico > 0.05)
+	_check("Audio.cue_suave", pico <= 0.40)
+	_check("Audio.cue_sem_estalos", degrau <= 0.06)
+	_check("Audio.cue_grave", hz > 200.0 and hz < 700.0)
+	_check("Audio.cue_curta", dur >= 0.18 and dur <= 0.35)
+	_check("Audio.cadencia_calma", EngineAudioRef.REVERSE_CUE_PERIOD >= 1.0)
+	audio.free()
+
+	_corpos_em_arvore()
+
+
+## Tree-entry tests: the Tire/StalledCar build their REAL body in _ready(), so
+## the check needs the node inside the tree — which only happens after one
+## frame (the root Window is not active yet when _init runs).
+func _corpos_em_arvore() -> void:
+	await process_frame
+	var tire_probe = TireRef.new()
+	root.add_child(tire_probe)
+	_check("Tire.body_is_solid", tire_probe.get_class() == "StaticBody2D"
+		and tire_probe.get_node_or_null("Colisao") != null)
+	tire_probe.free()
+	var stalled_probe = StalledCarRef.new()
+	root.add_child(stalled_probe)
+	_check("Accident.has_body", stalled_probe.get_class() == "StaticBody2D"
+		and stalled_probe.get_node_or_null("Colisao") != null)
+	stalled_probe.free()
 	print("MODULES_CHECK fails=%d" % _fails)
 	quit(_fails)
+
+
+## Cost of the lane cell at world `x` on a corridor cell whose goal is due north.
+func _custo_norte(chart, rota, x: float, raio: float) -> float:
+	var cel: Vector2i = chart.celula_de(Vector2(x, 200.0))
+	var goal: Vector2i = chart.celula_de(Vector2(x, 0.0))
+	return rota.custo_celula(cel, goal, raio)
 
 
 ## Latches, then lets a crosser sitting at the edge go: the release must

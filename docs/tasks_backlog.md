@@ -945,6 +945,515 @@ no `vercel inspect`, nunca o primeiro URL da lista. Registrado no AGENTS §5.
 
 
 
+### 1.18 A boca da vaga em espaço global (2026-09-28, issue #6 — AGENTS #17)
+
+O defeito latente mais antigo do projeto: a boca (o trigger que anuncia
+"preparar para entrar") era `-dir * 74` no espaço LOCAL, então a escala do
+no a esticava — na Fase2 a banda ficava a **567 px** do centro (222 px
+alem da entrada) com um retângulo de **766×73** (766 de espessura no eixo
+de aproximação, 73 de largura). Nas geradas (nariz em ±90°) a boca ja
+quase acertava (~28 px fora da entrada), mas com espessura 2x e largura
+de baia inteira.
+
+A boca agora e ancorada na ENTRADA da baia em espaço GLOBAL:
+`offset_world = -dir * (meia_profundidade_escalada + 29)`, espessura
+fixa de 28 px no mundo, largura proporcional (28 locais, a fresta do
+design base) e copia propria do retângulo (`_forma_boca_propria`) porque
+o resource do `.tscn` e compartilhado por todas as instâncias. A receita
+literal "dividir 74 pela escala" foi rejeitada de proposito: 74 px do
+CENTRO ficam DENTRO de toda baia escalada (depois do trigger da Area) e
+mataria a banda de preparação. Na Fase2 a boca passou de 567 para
+**373,7 px** do centro (entrada + 29).
+
+| Gate | Resultado |
+|---|---|
+| `verify_scenes` / `ModulesCheck` | 16 cenas, 0 falhas / fails=0 |
+| `gate_trail` Fase2 | **PARKED 39,4 s**, dist_centro 10,8, neg_frames 0 (ref 39,2) |
+| `gate_boot` 9 fases | **9/9 PASS**, NEG_FRAMES=0 em todas (Fase1 8,1 / Fase2 45,7 / Fase3 49,8 / Fase4 13,5 / Fase5 7,2 / Fase6 16,6 / Fase7 9,5 / Fase8 11,7 / Fase9 10,5 s) |
+| `gate_seeds` 5×2 | **9/10** = referência (só a Fase3 seed 2, o defeito pré-existente da sonda de raio, §1.17.2) |
+| `ml/testar_ml.gd` | **ESTACIONADO 129,6 s** com fallback (ref 129,5) |
+
+Fase6 apareceu 1 boot com `REC_FRAMES=59` (escada de fuga, 16,6 s):
+3 reboots deram **3/3 PARKED em 6,0–21,5 s** — variação de spawn, não
+regressão.
+
+### 1.19 S0 — o placar de pilotagem, e a fragilidade de spawn que ele revelou (2026-09-29)
+
+O plano do FAROL exige um placar ANTES de qualquer código (§3 S0): sem número
+não há como provar que o carro entendeu mais. `tools/gate_drive.gd` mede, no
+boot real, `|CTE| médio/p95`, % de saturação do volante, folga do casco,
+replans, desvios, TTC e standstill.
+
+**O gate não media nada comparável.** `FaseBase.posicao_aleatoria` é `true`
+(AGENTS #28) e **nenhum gate fixava seed** — só o `gate_seeds` fixava
+(`seed(9000+i)`). O spawn sorteado decide todas as métricas. Medido na Fase7,
+mesmo commit, 3 processos:
+
+| Spawn sorteado | `sat_pct` | `folga_min` | `t` |
+|---|---|---|---|
+| (744, 352) | 58,5 % | 12,4 | 33,4 s |
+| (583, 383) | 77,4 % | 148,7 | 10,1 s |
+
+Um A/B com sorteios diferentes mede o **sorteio**, não o código. Foi assim que
+um `--all` de 9 fases deu `NOT_PARKED` na Fase7 **e** na Fase8 enquanto o
+`gate_boot` (processo novo, outro sorteio) dava 7,1 s e 6,6 s nas mesmas duas.
+Corrigido: `--seed` com **padrão 9000**, fixado **por fase** (`seed(9000 +
+hash(nome_da_fase))`, senão num `--all` o sorteio da Fase8 depende de quantas
+vezes o RNG foi consumido antes), a seed entra no JSON e uma seed diferente
+entre `--ref` e a nova medição **reprova** em vez de atribuir ao código uma
+diferença que veio do sorteio. O spawn também vai para o JSON: o placar sem a
+entrada que o produziu não é reproduzível nem julgável. Verificado: 3 runs
+seguidas da Fase7 deram saída **byte-idêntica**.
+
+**O placar (seed 9000, `farol_mode=0`, `docs/baseline_drive.json`):**
+
+| Fase | Resultado | `t` | `cte_med` | `cte_p95` | `sat` | `folga_min` | `ttc_min` | replans | spawn |
+|---|---|---|---|---|---|---|---|---|---|
+| Fase1 | PARKED | 12,4 | 18,1 | 35,3 | 26,1 % | 118,4 | 7,9 | 1 | (309, 103) |
+| Fase2 | PARKED | 45,0 | 9,1 | 29,0 | 16,3 % | 78,7 | 1,4 | 0 | (-744, 1511) |
+| Fase3 | PARKED | 64,3 | 13,6 | 46,9 | 34,1 % | 57,4 | 1,3 | 2 | (-983, 1490) |
+| Fase4 | PARKED | 24,8 | 21,3 | 38,9 | **58,4 %** | 399,7 | 8,6 | 3 | (-600, -15) |
+| Fase5 | PARKED | 7,6 | 18,9 | 31,0 | **73,3 %** | 316,4 | 4,3 | 1 | (462, 54) |
+| Fase6 | PARKED | 14,8 | 17,7 | 51,3 | 38,6 % | **53,5** | 0,9 | 0 | (948, 458) |
+| Fase7 | PARKED | 6,4 | 11,1 | 12,8 | 0,0 % | 228,1 | — | 0 | (72, -337) |
+| Fase8 | PARKED | 7,7 | 5,2 | 8,4 | 21,1 % | 112,5 | 7,5 | 1 | (-562, 93) |
+| Fase9 | **NOT_PARKED** | 75,0 | 18,0 | 46,9 | 3,4 % | **8,9** | 1,5 | **16** | (-797, -192) |
+
+Média de saturação **30,1 %**, `desvios=0` em todas (esperado: o piloto local
+só conta com o FAROL promovido).
+
+**O achado que o placar pagou: o carro é frágil ao spawn.** Na seed 9000 a
+**Fase9 não estaciona em 75 s** — e a falha é **reproduzível** (2 runs
+idênticos: 16 replans, `parado_max` 6,9 s, `folga_min` 8,9 px = casco
+encostando). O mesmo `gate_boot` com o spawn (-66, -271) estaciona em 8,5 s.
+Somando os três sorteios medidos hoje, **três fases diferentes já falharam**
+(Fase7 e Fase8 no sorteio livre, Fase9 na seed 9000), todas com o mesmo
+assinatura: `folga_min` < 60 px, 15–16 replans e ~7 s parado. É a
+escada de fuga (`AGENTS #43`) sendo consumida por um obstáculo que ela não
+resolve — exatamente o defeito que o FAROL · PILOTO ataca (`blocked_ahead` →
+replan com goal deslocado, em vez de dar ré).
+
+A saturação média de 30,1 % (73,3 % na Fase5) é a tradução numérica do
+"burro" do usuário: o volante no batente não é falta de tentativa, é a
+**lacuna entre a rota e a roda** que o plano §1 diagnostica.
+
+### 1.21 The right-hand lane produced routes the car could not drive (2026-09-30)
+
+The full-gate sweep on 2026-09-30 (10 levels: `gate_reach` + `run_gates.sh` +
+`gate_drive` + `gate_seeds` + `gate_lane` + `gate_trail` + ML) found **one
+regression and one rule that was weaker than documented**.
+
+**The regression: Fase3 seed 2 never parked.** `gate_seeds` printed
+`parked=false t=80.0s parado=40.1s` — the car sat at (451, -637) for 40 s,
+reversed, drove forward 2 s, wedged again, forever. `NEG_FRAMES` stayed 0 and
+`estado` stayed `SEEKING`, so no existing gate could see it. A/B on a worktree
+at `6e4b9a7` (the commit before the FAROL series):
+
+| Code | Fase3 scene | 5 seeds |
+|---|---|---|
+| `6e4b9a7` | as of `6e4b9a7` (trail, `keep_right_shift` default) | **5/5** (seed 2 took 75,0 s) |
+| `6e4b9a7` | as of HEAD (autonomous, shift 900, `vaga_prioritaria`) | **0/5** |
+| HEAD | as of HEAD | 4/5 |
+
+So the trigger is `8b0a48a` ("fix the SCENE, not the shared park gate"), which
+rewrote `Fase3.tscn` and switched it from trail to autonomous with
+`keep_right_shift = 900`. The proximate cause is **not** the scene: it is the
+lane rule.
+
+**The rule was weaker than AGENTS #18 claims.** That entry states the safety
+invariant `free_r' >= keep_clear` holds *by construction*. It holds on the axis
+the shift was measured on (the route normal) and **nowhere else**. Measuring
+each stage of the pipeline on the failing run (16 rays, layer 2, swept radius
+115 px):
+
+| Stage | min clearance at the VERTICES | min clearance along the SEGMENTS |
+|---|---|---|
+| raw A* | 213,4 px | 213,4 px |
+| Chaikin + resample | 213,4 px | 213,4 px |
+| after the right-hand shift | 73,3 px | **0,8 px** |
+| after `_garantir_folga` | 104,2 px | **0,8 px** |
+
+The shifted polyline passed **0,8 px** from the corner of the `Obstaculo` at
+(247, -781) — the car was asked to drive its own route through a wall, because
+two vertices that are each 121 px clear have a *segment* that cuts the convex
+corner between them. `_garantir_folga` only ever looked at vertices, so it
+repaired 73 → 104 px and never saw the segment. The car then pressed its nose
+into that corner, and the escape ladder (`AGENTS #43`) cycled replan → reverse
+→ the same corner forever: each reverse gave it 30 px of "real progress", and
+that is what resets the ladder.
+
+**The fix** (`scripts/Carro.gd`): the guarantee now runs over the swept
+corridor, not the vertices. For each leg it samples every `passo_rota * 0.4`
+px and asks `_casco_preso()`: for each of 12 wall directions, the distance from
+the centre to the first wall **minus the distance the car BODY reaches in that
+direction** (the hull is a 176×148 rectangle, so its reach is 74–88 px — *not*
+the 115 px circumscribed circle). When a leg is inside that reach, the point is
+pulled toward the planner's line by the **smallest** amount that clears it, by
+bisection. Two earlier variants were measured and rejected: reverting the whole
+leg cost Fase6 ten seconds and brought the car 19 px closer to an obstacle;
+sliding the point sideways instead cost Fase10 `cte_p95` 44 → 97 px.
+
+**Fase10's lane was the level-level cause** (its corridor between the two
+staggered refuges cannot hold a 300 px lane): sweeping `keep_right_shift` with
+the new `gate_drive --shift=` gave 300 → 23,8 s / `cte_p95` 48,0 / `folga` 91,
+200 → 19,8 s / 24,2 / 133, **120 → 12,6 s / 19,9 / 217**. The spec now declares
+120 (the cost: the car sits ~156 px left of where it sat, still ~505 px from
+the right guide in that 1000 px corridor). **Fase6's cones** were the other
+half: at (±1050, 0) they sat 110 px inside the sidewalk, and the car passed
+48–57 px from a solid cone on 1 of 3 free spawns. They now sit on
+`CalcadaOeste`/`CalcadaLeste` (±1180), where the `inflar` band already seals the
+area, so no route can come near (AGENTS #19's cheapest placement).
+
+**After the fix — the whole board, all green:**
+
+| Gate | Result |
+|---|---|
+| `ModulesCheck` | `fails=0` |
+| `verify_scenes` | `scenes=17 failures=0` |
+| `gate_chart --all` | 10 levels, `dif_sym=0` |
+| `gate_reach` | 10/10 levels (Fase6 10/13 bays) |
+| `run_gates.sh --fases=Fase1..Fase10` | **10/10 PARKED**, `CONES hits=0`, `NEG_FRAMES=0` |
+| `gate_seeds` (5 seeds × **10** levels) | **50/50 parked** |
+| `gate_drive --all` | `GATE_DRIVE_OK` — 10/10 PARKED, `docs/farol_drive.json` |
+| `gate_lane` Fase2/Fase3 | `GATE_LANE_OK`, `min_free_r` 145,2 / 118,8 px, 0 violations |
+| `gate_trail` (Fase2 forced trail) | `PARKED 39,5 s`, `dist_centro 10,8`, `neg_frames=0` |
+| `ml/testar_ml.gd` | `ESTACIONADO 68,1 s` (`usou_fallback=true`) |
+| `gate_ml_probe` (game vs site MLP) | `pior_diff 4,0e-13`, `GATE_ML_OK` |
+
+Fase6 and Fase10 got **better than the pre-fix board** on every metric, and the
+cone scrapes disappeared from both boots (Fase10: 27,1 s → 6,4 s,
+`ray_finite_while_passing` 269 → 0, `min_gap` 34,3 → 272,4 px, `REC_FRAMES`
+68 → 0).
+
+**Still open, measured, not fixed:** `gate_lane` on Fase2 is deterministic
+(3 identical runs) and reports `x_mediano=745,7`, **459 px from the right
+guide**, 21,4 % inside the box the user drew (832..1206). AGENTS #34 records
+`x=996`, 206 px, **100 %** — that number came from a `/tmp` script with a
+different sampling rule and is **not reproducible with the versioned gate**. The
+route itself does reach x ≈ 1001 (the wall is at 1206), so the lane exists; the
+car spends much of the run on legs that are not aisle legs. This is a tuning
+question about `LaneOffset`'s open-aisle branch (`LANE_OPEN_EDGE` →
+`RIGHT_HALF_BIAS`), not a regression: the numbers are identical before and
+after this fix.
+
+### 1.22 The A* cost lane is NOT a drop-in for the post-hoc shift (2026-10-01)
+
+§1.21 fixed the invariant. The obvious next move — the FAROL · S2 direction —
+is to move the right-hand rule from the post-hoc shift INTO the A* cost
+(`lane_cost_mode = 1`, the `Chart`), because that is what the planning
+literature does (Ferguson & Likhachev's *constrained cost map*: staying in the
+desired lane is a **soft cost** over the whole corridor, not an offset applied
+afterwards). Measured per level with `gate_drive --farol= --lane=` and the
+car's x tracked over the whole boot:
+
+| Fase | config | `t` | `cte_p95` | `sat` | `x_max` reached | time in the user's box |
+|---|---|---|---|---|---|---|
+| Fase2 | post-hoc shift (legacy) | 45,0 s | 29,1 | 16,1 % | **1003** | **22 %** |
+| Fase2 | lane as A* cost | **31,5 s** | 25,3 | **9,3 %** | 383 | **0 %** |
+| Fase3 | post-hoc shift (legacy) | 60,0 s | 24,0 | 33,8 % | **1019** | 11 % |
+| Fase3 | lane as A* cost | **29,3 s** | 24,1 | **5,9 %** | 406 | **0 %** |
+
+**The driving metrics are much better and the lane is much worse.** With the
+cost the route stops using the eastern corridor altogether (x range
+[-746, 364] in Fase2) — it takes the short diagonal to the bay. So `w_faixa`
+does not yet buy "keep right", it buys "go straight", and promoting it would
+have taken the user's complaint ("dirige no meio") from 22 % to **0 %** inside
+the box. **Not promoted** — the promotion was applied, measured and reverted.
+
+Two lessons worth keeping:
+
+1. **A verdict from 9 samples is not a verdict.** The first attempt measured
+   `x_mediano = 994,6`, 55,6 % inside the box — which is exactly what AGENTS
+   #34 claims and looked like the fix. It was 9 samples out of a 32 s window
+   (the gate only counts frames inside a corridor ≥ 1000 px wide), from a run
+   whose shell quoting had already mangled the flags. `tools/gate_lane.gd` now
+   **FAILS below 20 samples** instead of printing a median of a handful.
+2. **Per-level data, never a global switch.** The same `--farol=1 --lane=1`
+   run improved Fase2/3/4 (t −33 %, sat −70 %) and **hurt** Fase5, Fase8 and
+   Fase10 (`cte_p95` 8 → 19 and 20 → 49, `sat` 21 → 47 %): in the generated
+   levels the lane cost runs the route past the parked cars. This is the
+   promotion rule of the plan (one level at a time, with the board as the
+   referee), and `--farol=`/`--lane=` on both gates is how the next person runs
+   it.
+
+**What is left, precisely:** the post-hoc shift can only move the lane so far
+before the route stops fitting the car (§1.21: 260/400/900 all wedge in
+Fase3), and the A* cost currently abandons the corridor. The missing piece is
+`w_faixa` in `FarolSpec` tuned so the corridor is worth more than the diagonal
+— the plan's own diagnosis, now with the two ends of the trade-off measured.
+
+### 1.23 Two bugs in the lane cost, and what "rua direita" actually means (2026-10-01)
+
+§1.22 rejected the lane-as-cost because it sent the car away from the eastern
+street. Two real bugs turned up while chasing that, both of which made the
+weight `w_faixa` **unable to reorder anything**:
+
+1. **`alvo` was derived from the cell's own `fr`** (`alvo = fr - band` /
+   `fr - largura * 0.25`), so `(alvo - fr)` was negative for EVERY cell and the
+   right-half penalty was identically **zero**. Measured on Fase2,
+   `w_faixa` from 1.8 to 40 gave the same route to the metre (x_med 272→277).
+   `alvo` is now the lane target **as a distance from the right guide** (the
+   same number `LaneOffset` leaves between lane and guide) and the penalty is
+   `|alvo - fr|` — on **both** sides of the target, because measuring only "too
+   close to the wall" leaves everything from the target to the middle free.
+2. **`Chart.dominante_eixo` was mirrored on x.** The four sweeps in
+   `_varrer_direcoes` accumulate the distance to solid cells at *smaller*
+   coordinates, so index 0 reported the distance toward −x while
+   `dominante_eixo(+x)` returned 0. `Route.custo_celula` therefore read the lane
+   off the **LEFT** side of a northbound corridor. y was correct, which is why
+   the bug only showed on vertical legs — and why the lane looked plausible.
+
+Both are pinned in `ModulesCheck` with a synthetic corridor Chart
+(`Lane.alvo_mais_barato_que_o_meio/que_a_parede`, `Lane.meio_mais_barato_que_a_esquerda`),
+and **all three mutations were run**: mirrored axis → 3 FAIL, dead penalty → 2
+FAIL, one-sided penalty → 1 FAIL. The ordering they now enforce, measured on a
+1000 px corridor: target **1.16** < wall hug 2.60 < middle 2.77 < left half
+3.40.
+
+**But promoting it to Fase2 is still wrong, and now for a reason that is not a
+bug.** With the cost working, the car *still* does not enter the eastern street
+(`x_max` 431, 0 % inside the box, at any `w_faixa`): the street is not on the
+way. The bay is at x = −135 and the car starts at x = −742; driving to x ≈ 1000
+and back is a **detour**, and a per-cell weight cannot buy a detour that costs
+distance. What actually puts the car on that street is the **post-hoc shift**,
+which displaces the path sideways by up to 900 px. So the shift stays, and
+`lane_cost_mode = 1` remains Fase9's promotion.
+
+**What the lane actually measures, with the right instrument.** `tools/lane_track.gd`
+added in §1.22 counts boot time in a box, and that number is a poor proxy: the
+car *must* leave the eastern street to reach a bay 700 px west of it. Measuring
+the thing the rule is about:
+
+| pergunta | como | resultado |
+|---|---|---|
+| a rota encosta na guia leste? | `folga_dir` dos pontos da rota na rua leste | mediana **190 px** = `1.5 × raio varrido` (o mínimo seguro), 17 de 29 pontos dentro do box |
+| o carro segue a faixa? | `Carro._cte_para_rota()` no boot inteiro | média **17,3 px**; os piores momentos (257 px) são todos na manobra final (`estado = ALINHANDO`) |
+| o carro usa a rua? | `lane_track` | `x_max` = **1003** (a guia está em 1206), entrada pela corner sul-leste |
+
+Ou seja: **a faixa está certa**, e o número de "100% dentro do box" do §34 nunca
+existiu. O que a varredura entregou foram dois bugs reais no caminho do custo,
+um portão novo que recusa julgar uma faixa com menos de 20 amostras, e a
+correção do número publicado.
+
+### 1.24 Duaslevels com baias mortas, e a invariante que faltava no gerador (2026-10-01)
+
+A pendência "3 baias inalcançáveis na Fase6" era a ponta: **o gerador não tinha a
+invariante**. Ele abortava se a baia *encostava* numa parede, mas o planejador
+marca solida toda célula dentro de `raio varrido + 1.5 células` da parede — e
+uma baia a 110 px da guia tem o **centro** dentro dessa faixa. Duas variantes do
+mesmo defeito foram measure e corrigidas:
+
+| nível | defeito | como foi discovered |
+|---|---|---|
+| **Fase6** | 3 de 13 baias inalcançáveis (`N_8`, `S_7`, `S_8`): os **espigões** de 221 px de altura fechavam a faixa com a inflação de 118 px, e o ponto de preparo da fileira ficava dentro da faixa dos espigões | `gate_reach` (10/13) + a nova invariante |
+| **Fase9** | a prep de `N_4` ficava a **10 px DENTRO** do `MuroLeste` — o planejador só salvava arredondando o objetivo para a célula livre, e o gate_reach chamava a baia de alcançável | a nova invariante (o gate_reach sozinho não via) |
+
+**A invariante nova** (`tools/gen_level.py`): o **centro** da baia e o **ponto de
+preparo** precisam de `raio varrido + 2,5 células` de qualquer parede — exceto a
+parede contra a qual a fileira nasce (ali o carro encosta a traseira de
+propósito, como numa vaga de verdade). A margem de 2,5 células (e não 1,5) é o
+arrendondamento de célula: um centro a 103 px pode cair em célula sólida.
+
+**A correção da Fase6 preservou a dificuldade e MELHOROU a pilotagem.** Os
+espigões de 221 px viraram **meios-fios de 40×60 px** nos vãos entre baias (passo
+285,7 px): ainda obrigam a mudar de faixa, e deixam 381 px de faixa dirigível
+(o carro precisa de 2×103 = 206 px). O destino é a place where the car drives
+*worse* without them:
+
+| Fase6 | antes | depois |
+|---|---|---|
+| baias alcançáveis | **10/13** | **13/13** |
+| `t` | 6,4 s | 7,5 s |
+| `cte_med` | 12,6 px | **3,8 px** |
+| `cte_p95` | 17,2 px | **7,6 px** |
+| `sat` | 0 % | 0 % |
+| `folga_min` | 294,7 px | **312,6 px** |
+
+Ou seja: a faixa aberta e sem guia fazia o carro *pior*, não melhor.
+
+**E um bug do piloto (Fase9), encontrado de passagem**: com `farol_mode >= 2` o
+`Mooring` assumia o volante a 200 px da vaga, ignorava o waypoint de preparo e ia
+direto contra o meio-fio das costas — 25 s em `ALINHAR` a 0,6 px/s, porque o
+Locomotion recusa girar abaixo de 1 px/s e a rampa que o Mooring exige para girar
+em parado estava bloqueada pelos raios da frente. Agora `_no_ponto_de_preparo()`
+só entrega o volante ao Mooring quando o carro chegou ao ponto de preparo; antes
+disso o `ALINHANDO` legado conduz pela rota (o caminho que os 9 níveis
+históricos mediram). A seed 9003 da Fase9 passou de **não estaciona em 80 s** para
+**6,0 s**.
+
+### 1.25 Duas correções que eu aplicuei e reverti (a sorte de medir)
+
+Duas mudanças de comportamento compartilhado pareceram certas e **foram
+revertidas** porque a matriz de seeds reprovou:
+
+1. **Margem de spawn = `inflar` do planejador** (era 50 px fixos): com 50 px o carro
+   pode nascer com o nariz dentro da vaga (Fase9 seed 9003). Com a margem nova a
+   Fase9 seed 3 passou, **mas** a Fase8 e a Fase10 passaram a nascer dentro do
+   bolso do chicane e a falhar (50 s parado cada). Revertido.
+2. **Escada de fuga zera por aproximação, não por deslocamento**: dentro de um
+   bolso o carro dá ~50 px de ré por ciclo, o que contava como progresso. Troquei
+   por "chegou mais perto do alvo" e o sintoma mudou de nome — o carro passou a
+   **recusar todas as vagas** (`_recusar_vaga_atual` até `_sem_vagas`) e parar, em
+   vez de replanejar para sempre. Nenhum dos dois é o conserto; o que falta é o
+   **degrau que tira o carro do bolso** (o §43 tem "replanejar → ré → largar a
+   vaga" e não tem "sair do bolso"). Revertido, e registrado aqui como pendência.
+
+### 1.26 A escada de fuga ganhou o degrau que faltava: SAIR DO BOLSO (2026-10-01)
+
+O §1.25 deixou claro o buraco: a escada tem "replanejar → ré → largar a vaga", e
+**nenhum dos três tira o carro de um bolsão** — as duas primeiras devolvem o
+carro ao mesmo ponto e a terceira esgota o orçamento de desistências sem mover
+um pixel. Medido na Fase8 seed 9000: 66 s parado, `wp=0/39`, a escada recomeçando
+a cada ~30 px de ré.
+
+**O degrau novo** (`Carro._sair_do_bolso` + `Planejador.achar_celula_espacosa`):
+no 4º degrau, em vez de recusar a vaga, o carro planeja uma rota para **a célula
+livre mais espaçosa num raio**, com mais folga que a sua. O planejador lê a
+folga **real** (12 raios contra o layer 2, o mesmo que a grade usa para decidir
+solidez) e só aceita um destino que o A* sabe alcançar daqui. Uma vez por
+tentativa: `_bolso_resolvido` reabre no reset por progresso real, para um bolso
+*diferente* poder ser escapado.
+
+**O degrau só dispara quando o carro está DE FATO sem espaço.** A primeira
+versão disparava em qualquer engravamento de rotina e custou **28 s na Fase2**
+(`t` 44,9 → 72,9 s, `cte_med` 9,1 → 21,4 px): o desvio era um custo, não um
+resgate. Com a guarda `_sem_espaco_ao_redor()` (folga real em volta < 2× o raio
+varrido — num corredor normal são centenas de px), o degrau só entra onde
+manobrar é impossível.
+
+**Verificação**: seeds **50/50** nas 10 fases · `gate_drive` **GATE_DRIVE_OK**
+(sem regressão em nenhuma métrica) · boots 10/10 · `ModulesCheck fails=0` ·
+`verify_scenes 17/0`.
+
+**A margem de spawn, re-testada com o degrau novo** (medido, ainda em aberto):
+com a margem do `inflar` a **Fase8 seed 9000 passou a estacionar em 42,0 s**
+(antes: 80 s sem estacionar) — o degrau do bolso é o que faltava. A **Fase10
+continua falhando**, e a causa é geometria: com a margem o carro nasce em
+(-46, 48), no corredor entre os dois refúgios escalonados, e a 177 px de folga
+real ele fica com o nariz contra um `Estacionado` da fileira sul
+(`RayFrente* = Estacionado_S_3`), cycling recovery até (14, -197) aos 80 s. Não
+é bolsão (folga 177 px > 2× o raio varrido), então o degrau corretamente não
+dispara: é o corredor central da Fase10 que é apertado demais para nascer E
+atravessar.
+
+**O que fica em aberto (medido, não resolvido)**: a margem de spawn. Com 50 px o
+carro pode nascer com o nariz dentro de uma vaga (Fase9 seed 9003: 25 s em
+ALINHAR a 0,6 px/s — agora contornado pela guarda do Mooring, §1.24). Com a
+margem do `inflar` a Fase8 e a Fase10 passam a nascer dentro do bolso do chicane e
+não estacionam em 80 s. **O conserto não é a margem: é a Fase8 não ter bolsões
+que uma diferença de 30 px de spawn alcance** — o degrau novo evita o laço
+infinito, mas o carro ainda gasta os 80 s saindo e voltando. Isso é geometria de
+nível (`tools/specs/Fase8.json`), e é o candidato natural a seguir.
+
+### 1.27 `desvios = 0` nas 10 fases: a camada funciona, o problema é outro (2026-10-01)
+
+`gate_drive` reporta `desvios=0` em todas as fases e era a leitura natural
+"a camada reativa do piloto (S3) esta morta". **Nao esta.** O contrato esta
+agora pinado headless, com uma rota que ATRAVESSA um obstaculo:
+
+| teste | o que fixa |
+|---|---|
+| `Detour.detecta_bloqueio` / `.celulas_consecutivas` | `blocked_ahead` e' medido AO LONGO da rota, com `bloqueado_celulas` pontos seguidos |
+| `Detour.publica_alvo` / `.conta_desvio` | o desvio e' publicado e contabilizado (nunca "para tras") |
+| `Detour.alvo_alcancavel` | o alvo passa no BFS da LocalMap a partir do carro |
+| `Detour.alvo_a_frente` | o alvo esta mais perto do destino que a propria rota |
+
+**Mutacao rodada**: fazer `_melhor_desvio` devolver INF → 2 FAIL. A mutacao
+"bloqueado = >= 1 celula" **sobrevive**, e a razao e' uma lacuna real de teste
+(abaixo).
+
+**Por que `desvios=0` e' o resultado certo**: o desvio so dispara quando a rota
+*ja* esta bloqueada, e o planejador nunca produz uma rota bloqueada (a garantia
+do corredor varrido, §1.21) — e nenhum obstaculo dinamico tem corpo: o
+`Crosser` e' sensor-only de proposito (§39). Entao hoje a camada e' uma rede de
+seguranca que **nada** exercita. Para ela rodar de verdade seria preciso um
+cenario com bloqueio dinamico no plano (um carro de transito com corpo, ou uma
+vaga ocupada que muda depois do plano), e essa e' uma decisao de conteudo de
+nivel, nao de codigo.
+
+**Lacuna de teste que a tentativa expôs**: o portao `bloqueado_celulas` (4 pontos
+de rota CONSECUTIVOS) nao tem teste. A tentativa de monta-lo num `LocalMap`
+sintetico **nao foi confiavel** — uma marca de 20 px sobre a rota contou 8 pontos
+seguidos, ou seja, o cenario nao reproduz o campo de custo real (que em jogo
+mista o Chart com gradiente). Um teste sobre esse cenario passaria no vacuo, entao
+**preferi nao shippar** e registrei a lacuna. O cenario tem de vir de um Chart de
+verdade, como o `tools/gate_chart.gd` faz.
+
+### 1.28 Por que a rede entrega o volante em 4,0 s (2026-10-01)
+
+`ml/testar_ml.gd` reporta `ESTACIONADO 68,1 s (usou_fallback=true)`. Rastreado
+frame a frame, o handover acontece em **t = 4,0 s**, depois de andar **5 px**:
+
+```
+t=0.0 modo_ml=true  estado=0  v=  3.4  wp=0/0
+t=2.0 modo_ml=true  estado=0  v=  0.0  wp=0/0     <- a rede mandou parar
+t=4.0 modo_ml=false estado=0  v= 66.8  wp=2/92    <- o watchdog de 4 s assumiu
+```
+
+E a rede **comanda 0,0 px/s com a via livre**: `inferir(_ml_features())` devolve
+`sterro = -1.66, vel = -0.0025` no spawn (todos os 11 raios a 1,0).
+
+**Não é fiação nem é o watchdog.** O watchdog está certo: uma rede que não anda
+em 4 s não é a rede. E a rede está boa **dentro** da distribuição em que foi
+treinada: nos dados de cruiseamento ela reproduz o professor (0,85 contra 1,0),
+e o dataset tem **2222 linhas (60% de um episódio) de "carro parado + frente
+livre" com 100 % de "acelerar"**.
+
+**O que falha é a cobertura do ponto de partida.** Comparando o vetor de runtime
+com as 2222 linhas de lançamento, **6 das 22 features ficam fora da faixa
+p10–p90** do dataset:
+
+| feature | runtime | dataset (p10–p90) |
+|---|---|---|
+| `ray_long_c` / `_esq` / `_dir` | 1,000 | 0,253–0,295 |
+| `sin(erro_vaga)` | −0,806 | 0,516 |
+| `cos(erro_vaga)` | 0,592 | −0,856 |
+| `erro_rot/PI` | −0,999 | 0,502 |
+| `largura/2000` | 1,000 | 0,167 |
+
+O episódio gravado com spawn aleatório aconteceu num **corredor estreito, com o
+carro apontado ~120° para fora da vaga**; o spawn de `testar_ml.gd` é um
+**largo aberto com o carro apontado para o lado oposto da vaga** (`erro_rot/PI =
+−0,999`). Nenhuma feature isolada decide: trocadas uma a uma, três delas viram
+a saída positiva (54, 57 e 35 px/s) — a rede está **extrapolando** numa superfície
+que ela nunca viu, e extrapolação nesta rede dá zero.
+
+**O conserto é dado, não código**: `ml/gravar.gd` já tem no plano
+`["Fase3", 1..3, true]` (spawn aleatório), mas no disco há um episódio com
+lançamento e dois sem nenhuma linha parada — a gravação anterior foi interrompida
+ou rodou com o carro ja em movimento. Regravar os episódios (o `gravar.gd` leva
+poucos minutos) e retreinar (`python3 ml/treinar.py`, segundos) fecha o buraco.
+**Achei também o bug que fechava a porta:** `ml/treinar.py` filtrava por
+`m[:, 19]` achando que era a "velocidade desejada do professor", mas no contrato
+de 24 colunas a coluna 19 é a **feature** `largura do corredor / 2000` — a saída do
+professor é a coluna `N_ENTRADAS` (22). Com o default `min_vel = 0` o filtro nem
+rodava (a rede treinava com os quadros paradoxais de "parado = professor
+parado"); com `min_vel > 0` ele apagava as linhas por **largura de corredor**,
+justamente as de lançamento (que vivem num corredor estreito, 0,167 < 0,25).
+Corrigido para `m[:, N_ENTRADAS]`.
+
+**Gravando mais 4 episódios e retreinando com o filtro corrigido**:
+
+| | antes | depois |
+|---|---|---|
+| comando da rede no spawn | **0,0 px/s** | **27 px/s** (o deadlock de largada acabou) |
+| tempo dirigindo antes do watchdog | 4,0 s / 5 px | **24,0 s / 1820 px** |
+| onde entrega o volante | t = 4,0 s, parado | t = 24,0 s em (898, 1572), sem progresso |
+| regressão ML | `ESTACIONADO 68,1 s`, fallback | `ESTACIONADO 83,6 s`, fallback |
+
+**Não retreinei em produção, deliberadamente**: a rede dirigindo 24 s é uma
+melhora real do que a pendência pedia, mas a regressão ponta a ponta ficou 15 s
+mais lenta, e trocar `ml/modelo/pesos.json` toca o dado do site (`site/data/`) e o
+ML do jogo. Os pesos publicados foram restaurados, a paridade jogo × site segue
+`GATE_ML_OK` (4,0e-13) e a regressão segue 68,1 s. **Promover o retreino é decisão
+do usuário**: com o dado novo no disco basta `python3 ml/treinar.py 40`,
+`bash tools/export_site_data.sh` e republicar.
+
+O conserto é dado, não código (`git checkout
+ml/modelo/pesos.json`), e a verificação é a regressão ML + a paridade jogo×site
+(`gate_ml_probe`). O que NÃO é automático é o **redeploy**: `pesos.json` vai para
+`site/data/` e é servido em produção — esse passo é decisão do usuário.
+
 ## 2. Blockers for the deliverable
 
 ### B1/B2 — autonomous parking in Fase2 + Fase3 — **FIXED** (§1.5: 10/10 seeds)

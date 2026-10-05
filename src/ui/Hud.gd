@@ -32,7 +32,7 @@ extends Control
 
 ## Cosmetic: 1 px = 1 cm, so px/s * 0.36 reads as km/h for the player.
 const PX_S_TO_KMH := 0.36
-const LEGEND := "1-7 fase · R reinicia · T modo · C carro · H debug"
+const LEGEND := "1-9/0/P fase · R reinicia · T modo · C carro · H debug"
 
 var _status: Label = null
 var _info: Label = null

@@ -73,14 +73,14 @@ carro (88 × 74 na escala 1.0; 123 × 104 na 1.4):
 Ou seja: a Fase 5 é apertada **e** a que tem menos obstáculos. O aperto nunca
 chega a ser testado contra nada.
 
-**e) O defeito que governa a entrada na vaga continua aberto.** `AGENTS #17`:
-`Vaga._atualizar_boca_pos()` escreve `colisao_boca.position = -dir * 74.0` no
-espaço **local**, mas o nó da vaga tem escala. A boca — o trigger que anuncia
-"entre na vaga" — acaba a `74 × escala` do centro: ~140 px na Fase 5 e ~165 px
-nas Fases 6 a 9, em vez dos 74 pretendidos. **Enquanto isso não for corrigido,
-nenhuma das fases geradas estaciona no momento certo**, porque o carro só "vê"
-a vaga no instante errado. É a primeira coisa a atacar se a intenção é que a
-Fase 5 teste percepção de verdade.
+**e) O defeito que governa a entrada na vaga — CORRIGIDO em 28/09/2026
+(issue #6, AGENTS #17).** `Vaga._atualizar_boca_pos()` escrevia
+`colisao_boca.position = -dir * 74.0` no espaço **local**, mas o nó da
+vaga tem escala. A boca — o trigger que anuncia "entre na vaga" — acabava
+a `74 × escala` do centro: ~140 px na Fase 5 e ~165 px nas Fases 6 a 9.
+A boca agora é ancorada na ENTRADA em espaço global (meia-profundidade
+escalada + 29 px, espessura 28 px no mundo); gates 9/9 boot, 9/10 seeds
+(referência) e trail inalterado — ver docs/tasks_backlog.md §1.18.
 
 
 ## 4. Por que as Fases 6 a 9 são simples
@@ -126,8 +126,8 @@ em 6,8 s.
 
 Ordem de ataque sugerida — do que destrava mais pelo menos esforço:
 
-1. **Corrigir o AGENTS #17** (posição da boca em espaço global). Sem isso a
-   detecção de vaga chega atrasada em todas as fases geradas.
+1. ~~**Corrigir o AGENTS #17** (posição da boca em espaço global).~~ **FEITO
+   em 28/09/2026** (issue #6) — ver docs/tasks_backlog.md §1.18.
 2. **Ocupar vagas** no spec (`parked: [...]`), pelo menos metade das 16. Só isso
    cria a decisão que hoje não existe.
 3. **Cones na faixa de circulação**, respeitando a folga medida do AGENTS #19
@@ -162,3 +162,66 @@ bash tools/run_gates.sh --fases=Fase5,Fase6,Fase7,Fase8,Fase9 --secs=75
 
 Toda linha da tabela da §2 sai desses dois comandos. Nada aqui é opinião sem
 lastro — exceto a tese da §1, que é avaliação da equipe.
+
+## 8. Endurecimento das Fases 6–9 + correção da direção (29/09/2026)
+
+Dois pedidos do usuário, atacados juntos: o carro cortava curvas com o volante
+saturado, e as Fases 6–9 eram retas idênticas sem pressão.
+
+**Direção (medido com `/tmp/steer_trace.gd`):** na Fase6 o volante saturava em
+10/29 amostras (~34%) com CTE de até 37 px. Causa: `FsmProfiles.route_speed`
+só freava com curvatura > 0,05, mas as rotas reais têm 0,005–0,04 — nunca
+freava — e o lookahead fixo de 180 px cortava a quina. Correção em
+`src/vehicle/FsmProfiles.gd` (limiar 0,05 → 0,005, mesma fórmula) e
+`src/vehicle/AutonomousDriver.gd` (lookahead adaptativo 70+0,35·v máx 150 px,
+`TURN_THRESHOLD` 0,45 → 0,32). Depois: saturação 6/39, vel nas curvas 45–70
+em vez de 117–128, `gate_lane` Fase2 OK (0 violações), trail OK, boots Fase2
+(67 s) e Fase3 (41 s) OK com `NEG_FRAMES=0`. Custo: ~2× mais lento nas fases
+longas; regressão ML Fase3 estaciona em 108 s com fallback (passa, era 78 s).
+
+**Fases 6–9 (só `tools/specs/*.json`, nunca `.tscn` na mão):** cada uma ganhou
+uma identidade — F6 chicane de 3 esporões + 2 cones + 1 crosser; F7 corredores
+gêmeos de 300 px + 2 cones + 1 crosser no fim + pesado `parked`; F8 chicane
+dupla + 2 cones + 1 crosser; F9 muros desencontrados + 2 cones + 1 crosser +
+5/10 vagas ocupadas. Três armadilhas medidas no caminho: (1) cone na linha
+central sela o corredor (sombra de ~334 px > 442 px do corredor) — cones de
+slalom no meio do corredor são impossíveis com `inflar=110`, viraram chicane
+de parede; (2) F6 2/11 alcançável por ilhas longas + `parked` flanqueando os
+esporões — resolvido encurtando e tirando os flanqueadores (10/13); (3) crosser
+cruzando o funil lento = armadilha de cedência (52 s parado EM CIMA da faixa,
+o gate precisa de 540 px para soltar) — a faixa do crosser foi para água
+aberta (F9 x=225 → x=700). Resultado: `gate_reach` 10/13 + 13/13 + 10/10 +
+5/5, `gate_boot` verde nas 4, `gate_seeds` 5/5 nas 4 (F6 6–16 s, F7 7–53 s,
+F8 9–70 s, F9 7–38 s).
+
+## 9. Dificuldade das Fases 6–10 + deadlock da cedência mútua (01/10/2026)
+
+As Fases 6–10 estavam fáceis demais (retas longas, 1 crosser, poucas vagas
+ocupadas). Cada uma ganhou pressão — mais `parked`, cones reais no corredor,
+2º crosser e caminhos de cruzamento estendidos (±740–900 px) — tudo só em
+`tools/specs/*.json` (Fase é dado, #41): F6 4→7 vagas ocupadas + crosser 2 em
+x=−600; F7 6→9 + 2 cones no corredor M-S (±154,4) + crosser 2 em x=−500;
+F8 5→9 + crosser 2 em x=−700; F9 5→7 + crosser 2 em x=−700; F10 6→8 + cone
+em (−700,100) + crosser 2 em x=−700 (northbound). `gen_level.py` +
+`render_lot.py` regeneraram cenas e pisos (pintura e colisão não podem
+discordar).
+
+**Deadlock da cedência mútua (o achado da rodada).** `gate_seeds` deu 23/25:
+Fase7 seed=2 (74 s parado) e Fase10 seed=3 (62 s parado). Trace em `/tmp`
+reproduziu as duas: o carro parado a ~98 px da faixa de cruzamento (dentro da
+zona de conflito do Crosser, 120 px) e o crosser parado a ~316 px (dentro do
+`enter_distance` 420 do `CrosserGate`). O Crosser segura esperando o carro sair
+da zona de conflito; o carro cede esperando o crosser sair — ninguém se move, e a
+escada de fuga (#43) replaneia sem resolver porque cada rota nova nasce na mesma
+posição. Correção em `src/world/Crosser.gd`: o Crosser só segura se o veículo
+estiver **se movendo** (`velocidade_atual ≥ 5`); carro parado não vai atravessar
+ninguém, então o crosser passa. Medido depois: Fase7 seed=2 estaciona em
+17,5 s, Fase10 seed=3 em 24,3 s, e a Fase9 boot perdeu os 135 REC_FRAMES que
+tinha antes.
+
+**Resultado final:** `gate_reach` 9/9 + 12/12 + 7/7 + 3/3 + 4/4 (todas as
+baias livres alcançáveis), `gate_boot` 5/5 PASS com `NEG_FRAMES=0` e
+`REC_FRAMES=0`, `gate_seeds` **25/25** estacionou (Fase6 5/5, F7 5/5, F8 5/5,
+F9 5/5, F10 5/5), `gate_drive` 5/5 OK. Placar em `docs/farol_drive.json`
+atualizado (Fase6 t=13,4 cte_p95=54,3; F7 t=26,2 cte_p95=38,6; F8 t=20,7
+cte_p95=32,1; F9 t=16,7 cte_p95=112,7; F10 t=10,2 cte_p95=104,6).

@@ -39,6 +39,45 @@
 - If a commit cannot be summarised in one sentence, the change is
   probably more than one commit.
 
+## 0.2. Unattended work ("vou sair do pc")
+
+- **When the user says they are leaving the PC** — "vou sair do pc, trabalhe
+  o máximo sem mim", "continue, pois vou sair do pc", or anything to that
+  effect — the AI works to the MAX without them: **forget about asking,
+  forget about stopping, just CONTINUE** until the planned work is done or
+  hits a wall only the user can decide.
+- The questions it would have asked become **DECISIONS, made by the AI and
+  RECORDED in the round's panel** (`docs/tasks_*.md`) with the evidence
+  behind each — never silently assumed. A decision that is truly the user's
+  (promoting a slower retrain to production, a paid service, deleting data,
+  publishing) waits recorded in the panel instead of blocking everything
+  else.
+- **And the authority is explicit: while the user is away, the AI CREATES
+  tasks for itself and RESOLVES the project's pendências on its own**
+  (the backlog items, the open issues in `docs/tasks_*.md`) — it does not
+  wait to be handed work. Pick the next item from the panel, do it, close it
+  with its gates, open the next. Only a decision that is truly the user's
+  waits recorded instead of blocking.
+- The invariants do NOT loosen for autonomy: never two Godot at once, kill
+  every spawned process at the end of each block (AGENTS §14), commit = one
+  sentence (§0.1), never loosen a shared park gate (#42), bounded `/tmp`
+  traces (#14), the ML contract and the other locked decisions stand.
+- Heavy one-shots (exports, renders, long gates) run in the FOREGROUND with
+  an explicit `timeout` whenever they fit the call budget; `setsid`+poll only
+  for the few that truly exceed it, and ALWAYS finish them before ending the
+  turn.
+
+## 0.3. Keep the opencode TODO list updated (user request, 2026-10-05)
+
+- **Update the `todowrite` TODO list as the work happens**, not at the
+  start/end of the session only: mark an item `in_progress` BEFORE working
+  on it and `completed` the moment its gates pass. The list is the visible
+  progress receipt for a user who is away — a stale TODO reads as no work.
+- One item per meaningful slice (a level, a fix, a gate sweep), with the
+  commit hash or the measured result in the text when it closes.
+- When the plan changes mid-round (a defect found, a slice split), rewrite
+  the list to match reality — the TODO is the plan, keep it honest.
+
 ## 1. Language rule
 
 - **New code: English only** — file names, `class_name`, signals, methods,
@@ -233,6 +272,16 @@ so `estado == 3` still means PARKED during migration.
   like `Carro._escolher_vaga()` does. It prints per-bay REACHABLE/UNREACHABLE and
   exits non-zero if not one bay is reachable. This is the gate that showed Fase1
   and Fase5 had **zero** usable bays.
+- **Reachability is not "the point is routable"** (`tools/gate_reach.gd` only
+  asks the planner for a route to the preparation point, and the planner will
+  happily snap a goal that is INSIDE a wall to the nearest free cell). The
+  generator is the real gate: the bay CENTRE and its preparation point must keep
+  `raio varrido + 2.5 cells` from every wall except the one the row is built
+  against (`tools/gen_level.py`, 2026-10-01). Two levels were shipping dead bays
+  past `gate_reach`: Fase6 (3 of 13, its 221 px spikes sealed the aisle once the
+  swept radius inflated it) and Fase9 (`N_4`'s prep point 10 px inside an
+  interior wall). A perimeter wall the car parks *against* is not a clearance
+  violation — the hull touches the kerb by design.
 - **Level generator** (declarative, asserts before writing):
   `python3 tools/gen_level.py tools/specs/FaseN.json` emits the scene; the stall
   grid is derived from the car footprint and the script ABORTS if a bay would
@@ -247,13 +296,24 @@ so `estado == 3` still means PARKED during migration.
     player is stopped; it deliberately does NOT read the car's `CrosserGate`,
     because with a brain active the gate in use is the brain's, AGENTS #20) +
     `neg_frames`. Non-zero exit on failure.
-  - `tools/gate_seeds.gd -- --secs=80` — 5 seeds x {Fase2, Fase3} with random
-    spawn. This is the gate that catches what a single boot cannot.
-  - `tools/gate_lane.gd -- --fase=FaseN --secs=32` — the right-hand rule by
-    ABSOLUTE position: median x, distance to the right guide and the fraction
-    inside the box the user drew (x 832..1206 in Fase2), plus the route's
-    `free_r' >= raio varrido` invariant. Never judge the lane with a lateral
-    offset in a wide aisle (#31).
+  - `tools/gate_seeds.gd -- --fases=Fase1,...,Fase10 --secs=80` — 5 seeds per
+    level with random spawn (50 boots; the default is still Fase2,Fase3).
+    This is the gate that catches what a single boot cannot — it is the one that
+    caught Fase3 seed 2 wedging forever on an undrivable lane (§46).
+  - `tools/gate_drive.gd -- --fase=FaseN --secs=75 [--ref=<json>]
+    [--shift=X] [--farol=M] [--lane=M]` — the driving-quality board:
+    `|CTE| med/p95`, steering saturation %, minimum hull clearance, replans,
+    local detours, TTC and total time, on the fixed seed 9000 **per level**.
+    `--ref` compares against a stored scoreboard and fails on a regression
+    (a different seed between the two is itself a failure); `docs/farol_drive.json`
+    is the current board (10 levels). Never judge a lane width from the scene:
+    sweep it with `--shift=` (AGENTS §46).
+  - `tools/gate_lane.gd -- --fase=FaseN --secs=32 [--shift=X]` — the right-hand
+    rule by ABSOLUTE position: median x, distance to the right guide and the
+    fraction inside the box the user drew (x 832..1206 in Fase2), plus the
+    route's `free_r' >= raio varrido` invariant. Never judge the lane with a
+    lateral offset in a wide aisle (#31). `--shift=` sweeps the lane width of a
+    level without touching the scene (§46).
   - `tools/gate_trail.gd -- --secs=70` — Fase2 in forced trail mode.
   - `tools/gate_ml_probe.gd` + `tools/gate_ml_probe.js` (+ the fixed
     `tools/ml_probe_vector.json`) — the browser's MLP must equal the game's.
@@ -276,7 +336,11 @@ so `estado == 3` still means PARKED during migration.
   `vercel --prod --yes` **from inside `site/`** — the project link lives in
   `site/.vercel/project.json` and `vercel.json` must exist ONLY there.
 - **LIVE URL: `https://site-pi-tan-51.vercel.app`** (measured 200 on
-  2026-09-27 for `/`, `/game/index.html`, `/game/index.pck`, `/game/index.wasm`).
+  2026-10-01, deploy `estacionamento-automatico-ga6392lew`, after re-running
+  `export_site_data.sh` + `export_site_images.py` and the Web export: `/`,
+  `/game/index.html`, `/game/index.pck` (6,9 MB), `/game/index.wasm`,
+  `/img/piso-fase10.png`, `/data/pesos.json`, `/js/ml.js` all 200 with
+  **0 redirects**, which is the §33 check).
   The project is under the team `murilohenriquemota935-1958s-projects`, so the
   alias is SCOPED. **`estacionamento-automatico.vercel.app` is NOT an alias of
   this project and returns 404** — it is in old commit messages, so grep finds
@@ -407,14 +471,22 @@ so `estado == 3` still means PARKED during migration.
     (which only lerps below 8 px) never pulled it in. The snap gate keeps
     the finish as a short glide instead of a ~250 px "ghost slide".
 
-17. **Latent, NOT fixed — `Vaga._atualizar_boca_pos()` scale**: it writes
-    `colisao_boca.position = -dir * 74.0` in the spot's LOCAL space, but
-    the Vaga node is scaled (Fase2 `7.66×2.62`), so the mouth lands
-    `74 × scale` ≈ 567 px from the centre (and the mouth rect is scaled
-    too). Today it acts as a harmless "prepare early" band (Fase2 triggers
-    prep on Rota3 near `(600, −340)`); dividing the offset by
-    `global_scale` shifts trigger timing in EVERY level, so do it as its
-    own change with per-level validation.
+17. **FIXED (2026-09-28, issue #6) — `Vaga._atualizar_boca_pos()` scale**:
+    it used to write `colisao_boca.position = -dir * 74.0` in the spot's
+    LOCAL space, so a scaled Vaga (Fase2 `7.66×2.62`) landed the mouth
+    `74 × scale` ≈ 567 px out with a 766×73 rect — a "prepare early"
+    blob, not a mouth. The mouth is now anchored to the bay ENTRANCE in
+    WORLD space: `offset_world = -dir * (world_half_depth + 29)` (margin
+    const `MARGEM_BOCA_WORLD`), thickness fixed at 28 world px on the
+    approach axis (`ESPESSURA_BOCA_WORLD`), across-width kept at 28 local
+    (the base design's slit), all divided by `scale` back into local
+    space. The shape is a PER-INSTANCE copy (`_forma_boca_propria`) —
+    the `.tscn` rect resource is shared by every Vaga, so resizing it
+    in place would leak to all of them. The literal "divide 74 by
+    `global_scale`" recipe was REJECTED on purpose: 74 world px from
+    the centre is INSIDE every scaled bay, i.e. after the Area trigger,
+    which would make the mouth dead code. Keep the anchor world-space;
+    any local-space offset is wrong under non-uniform scale.
 
 18. **Right-hand traffic (`Carro.keep_right_shift`, default 110 px)**: A*
     minimizes DISTANCE, so on the measured routes the car ran ~40 px to the
@@ -826,3 +898,132 @@ so `estado == 3` still means PARKED during migration.
     sendo RE-CODIFICADA pelo script versionado (nunca copiada crua, §26) —
     o script roda em segundos porque o trabalho pesado (SVG -> PNG) e' feito
     pelo Godot a 1x (#24).
+
+46. **A invariante da faixa (#18) vale num EIXO so — e o carro dirige o
+    SEGMENTO, nao o vertice.** `shift = fr - keep_clear` garante folga na
+    normal da rota e em mais nada. Medido em 2026-09-30 na Fase3 (seed 9001,
+    `keep_right_shift=900`), por estagio, com 16 raios e raio varrido 115 px:
+
+    | estagio | folga nos VERTICES | folga nos SEGMENTOS |
+    |---|---|---|
+    | A* cru | 213,4 px | 213,4 px |
+    | Chaikin + reamostra | 213,4 px | 213,4 px |
+    | depois da faixa | 73,3 px | **0,8 px** |
+    | depois de `_garantir_folga` | 104,2 px | **0,8 px** |
+
+    A polilinha deslocada passava a **0,8 px** da quina do `Obstaculo` de
+    (247, -781): dois vertices com 121 px de folga tem um segmento que corta a
+    quina convexa entre eles. O carro tentava dirigir a propria rota atraves da
+    parede, `NEG_FRAMES` ficava 0 e `estado` continuava `SEEKING` — **nenhum
+    portao via**. A escada de fuga (#43) ciclava replan -> re -> a mesma quina
+    para sempre, porque cada re de ~30 px contava como "progresso real".
+    **A correcao:** a garantia passou a ser sobre o **corredor varrido** —
+    `Carro._casco_preso()` amostra cada perna a cada `passo_rota * 0.4` px e
+    compara a distancia ate a parede com o alcance do **CASCO** (retangulo de
+    176x148 px, alcance de 74 a 88 px por direcao), **nao com o circulo
+    circunscrito de 115 px**: exigir o circulo "conserta" rotas que o carro
+    dirigia (custou 10 s na Fase6 e aproximou o carro de um obstaculo). O ponto
+    ofendido recua pelo **menor** trecho que resolve, por bisecao, em direcao a
+    linha do planejador (que o A* prova dirigivel). Duas variantes foram
+    medidas e REJEITADAS: reverter a perna inteira (Fase6 +10 s) e deslizar o
+    ponto para longe da parede (Fase10 `cte_p95` 44 -> 97 px).
+    **Corolario de nivel:** a faixa tem de caber no corredor. Na Fase10 o
+    `keep_right_shift` de 300 nao cabia entre os dois refugios escalonados —
+    medido com `gate_drive --shift=`: 300 -> 23,8 s / `cte_p95` 48,0 / folga
+    91 px, 200 -> 19,8 s / 24,2 / 133, **120 -> 12,6 s / 19,9 / 217**. O spec
+    passou a 120. Use `--shift=` para medir, `--fase=` para isolar; nunca
+    edite a cena na mao para tunar isso (a fase e' DADO, #41).
+    **A faixa NO CUSTO do A\* (`lane_cost_mode=1`) NAO e' substituto imediato
+    do shift** (medido em 2026-10-01, `gate_drive --farol= --lane=` + o x do
+    carro boot inteiro): nas fases feitas a mao ela MELHORA a pilotagem
+    (Fase2 `t` 45 -> 31,5 s, `sat` 16 -> 9 %; Fase3 60 -> 29,3 s, 34 -> 6 %)
+    e **DESTROI a faixa** (Fase2: 22% -> **0%** do tempo dentro do box do
+    usuario, `x_max` 1003 -> 383): a rota deixa de usar o corredor leste e vai
+    pelo diagonal curto, porque `w_faixa` ainda nao paga o corredor. Nas fases
+    geradas e' pior (Fase8 `cte_p95` 8 -> 19 px, `sat` 21 -> 47 %). Regra:
+    um modo de faixa so entra porNIVEL, com o placar de arbitro, e
+    `gate_lane` agora **FALHA com menos de 20 amostras** — uma mediana de 9
+    pontos ja deu um veredito falso ("55,6% dentro do box") neste dia.
+    **E o custo tinha DOIS bugs que o tornavam inerte** (achados em 2026-10-01,
+    backlog §1.23): (a) `alvo` era derivado do proprio `fr` da celula, entao
+    `(alvo - fr)` era negativo em TODAS as celulas e a penalidade da metade
+    direita era zero — `w_faixa` de 1.8 a 40 deu a mesma rota; (b)
+    `Chart.dominante_eixo` estava ESPELHADO no eixo x (as varreduras de
+    `_varrer_direcoes` acumulam a distancia para celulas de coordenada MENOR, e
+    o indice 0 devolvia a distancia para -x), entao a faixa era lida do lado
+    ESQUERDO num corredor vertical — o eixo y estava certo, por isso o defeito
+    so aparecia em perna vertical. Corrigido: `alvo` e' a distancia da faixa ate
+    a guia e a penalidade e' `|alvo - fr|` nos DOIS lados. Tres testes novos
+    (`Lane.*`) com mutacao rodada.
+    **Ainda assim nao promove a fase:** a rua leste da Fase2 nao esta no caminho
+    (a vaga esta a x=-135 e o carro nasce a x=-742), e entrar nela e' um
+    DETURNO — preco de distancia que peso por celula nao compra. Quem põe o
+    carro naquela rua e' o shift pos-A*, que desloca o caminho ate 900 px.
+    **E o numero certo para julgar a faixa** nao e' "tempo dentro do box" (o
+    carro tem de SAIR da rua para entrar na vaga, 700 px a oeste): e' a distancia
+    da ROTA ate a guia dentro da rua (mediana **190 px** = `1.5 x raio varrido`)
+    e o erro lateral do carro nela (`_cte_para_rota`, media **17 px**).
+
+47. **TRAZEGO: os atores dinâmicos e as três regras físicas (2026-10-05).**
+    Os atores (`src/world/Pedestrian.gd`, `Tire.gd`, `StalledCar.gd`) são
+    emitidos pelo `gen_level.py` dos specs (`pedestrians`/`tires`/
+    `stalled_cars`); o `gate_boot` reporta as linhas `PEDESTRE` (latches +
+    min gap) e `TRAFICO` (pneu r=12 sólido + acidentado 190×88).
+    - **O ACIDENTADO é `pre_stalled`**: um carro que ENTRA dirigindo fica
+      FORA da região da grade no build → toda rota nasce atravessando ele e a
+      fuga depende da escada (frágil por spawn, 3/5 medido). Com `pre_stalled`
+      a grade o rasteriza em t=0 e a primeira rota A* já contorna (F11: 83 s
+      → 33,4 s, ZERO frames de escada).
+    - **O acidentado precisa de `raio varrido + meia-diagonal-do-casco + 40`
+      px de toda baia e prep** (invariante do gerador): a 150 px do prep o
+      goal vira célula SÓLIDA após qualquer replan, o A* faz snap e o carro
+      oscila 26-41 s (medido na seed 9001 da F11 antes do fix).
+    - **Um corredor só hospeda acidentado se um lado mantiver
+      `44 (meia-caixa) + 161 (carro) + 2×103 (inflar)` ≈ 450 px**: corredores
+      de 342-398 px (F6/F7/F8/F10) SELAM com um acidentado; só as avenidas de
+      782 px (F9/F11) hospedam. Nessas, a dificuldade vem de pedestres + pneus
+      + poucas vagas.
+    - **O PEDESTRE contorna veículos parados** (`Pedestrian._passo_contornando`):
+      o give-way para o CARRO a ~120 px do pedestre, mas a pessoa seguia
+      andando ATRAVÉS do casco parado (medido 3×: min_gap 9-24 px). A pessoa
+      desliza pelo círculo do casco na tangente — e o deadlock mútuo de
+      cedência dissolve de graça (o carro espera, a pessoa contorna).
+48. **A cedência ao pedestre é TETO no acelerador, nunca volante zero
+    (2026-10-05).** O yield original retornava `steering 0`: o carro dirigia
+    RETO durante o glide e saía 255 px da rota, o ramo `cte > 220` do cérebro
+    disparava ré (NEG=107, F11). Agora o yield é um TETO (`give_way_ceiling`
+    no Pilot; `minf(pursuit.speed, ceiling*max_speed)` no AutonomousDriver)
+    aplicado DEPOIS do caminho de direção — o volante continua vindo da rota.
+    O release do gate do pedestre é ESTRITO (distância E fora do cone;
+    `CrosserGate.strict_release`); o release por OU deixava o carro engatinhar
+    no meio da travessia (30 latches medidos).
+49. **A suspensão do `_cravou` durante a cedência foi medida em 3 variantes
+    e REMOVIDA (2026-10-05).** Congelar ou zerar o relógio da escada durante
+    a latch de cedência QUEBROU a Fase7 seed 9002 em TODAS as variantes (A/B
+    contra `3a7565b`: o código antigo estaciona em 62,3 s; reset: wander;
+    freeze: >100 s) — a cascade daquela seed precisa da escada nos momentos
+    originais. A suspensão era workaround de um bug que o teto do §48 já
+    matou. Quem zera a escada continua sendo o progresso real.
+50. **O boot canônico é SEMEADO; o relógio do gate importa (2026-10-05).**
+    `gate_boot` agora faz `seed(9000 + hash(fase))` (o padrão do gate_drive,
+    §1.19): um boot sem seed é LOTERIA — a F6 endurecida mediu 6,5 s verdes
+    numa rodada e NEG=22 noutra, mesmo código. E o resultado da MATRIZ é
+    dependente do contexto do processo (a seed 9003 da F11 falha na matriz
+    só-F11 e passa na matriz completa — o consumo de RNG do processo inteiro
+    muda o spawn): o veredito é o da invocação padrão (`gate_seeds` com a
+    lista completa), nunca o de uma invocação recortada.
+51. **`pgrep -c godot` dá FALSO NEGATIVO — o binário é `Godot_` (2026-10-05).**
+    A checagem de órfãos do §14 com `pgrep -c godot` (minúsculo) reportou "0
+    godot" com uma matriz INTEIRA rodando. Use `pgrep -ic godot` (case-
+    insensitive) ou `pgrep -f "Godot_v|gate_seeds"` — e NÃO mate processos
+    de OUTRO projeto do usuário (o editor dele roda na mesma máquina).
+52. **O carro entra na banda inflada e o Pilot congela — a pendência
+    registrada, com a cadeia completa (2026-10-05).** Terceira instância
+    (F11 seeds, F9 seed 9001): o corner-cut do pursuit entra na banda
+    `inflar ≈ 103 px` (fisicamente livre, grid-sólida — a sonda da faixa e o
+    `_garantir_folga` olham as paredes FÍSICAS, o casco garante 88 px) → o
+    `LocalMap.misturar_carta` escreve custo 0,9 lá → o DWA rejeita todos os
+    arcos → o carro congela a 5-8 px/s com `df inf` → a escada cicla. O fix
+    é a lição #46 aplicada ao custo do Pilot: ler a folga do Chart pelo
+    CASCO, não pelo círculo circunscrito. Sessão dedicada, `gate_seeds` de
+    juiz — o estado atual: F9 seed 9001 é a única falha da matriz 54/55.

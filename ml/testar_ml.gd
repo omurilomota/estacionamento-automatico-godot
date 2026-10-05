@@ -38,7 +38,15 @@ func _init() -> void:
 		var frames := int(LIMITE_SEGUNDOS * 60.0)
 		var t_fim := LIMITE_SEGUNDOS
 		for i in range(frames):
-			await process_frame
+			# PHYSICS frames, not process frames (2026-09-29): the old loop
+			# counted RENDER frames as if each were 1/60 s of game time. In
+			# headless the two do not march 1:1, so the "150 s" budget was an
+			# unknown number of game seconds — the car kept failing "at 150 s"
+			# while a physics-paced trace of the SAME spawn parked at 70.4 s
+			# (measured A/B, same seed family). AGENTS #14 already names
+			# `--headless` + `await physics_frame` as the way to reproduce a
+			# run; the budget now means what it says.
+			await physics_frame
 			if i % 300 == 0:
 				print("t %.1f pos %s vel %.0f state %s fallback %s" % [
 					i / 60.0, carro.global_position, carro.velocidade_atual,

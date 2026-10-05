@@ -43,8 +43,12 @@ func _process(_d: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode >= KEY_1 and event.keycode <= KEY_1 + LevelRegistry.LEVELS.size() - 1:
-			get_tree().change_scene_to_file(LevelRegistry.LEVELS[event.keycode - KEY_1])
+		# 1..9 e 0 para a decima (ver Mundo.gd: KEY_1 + 9 seria KEY_COLON).
+		var indice: int = event.keycode - KEY_1
+		if event.keycode == KEY_0:
+			indice = 9
+		if indice >= 0 and indice < LevelRegistry.LEVELS.size():
+			get_tree().change_scene_to_file(LevelRegistry.LEVELS[indice])
 		elif event.keycode == KEY_R:
 			get_tree().reload_current_scene()
 

@@ -1,0 +1,287 @@
+{
+  "id": "Fase11",
+  "mapa": "res://estacionamento/gen_fase11.png",
+  "art": "estacionamento/gen_fase11.png",
+  "import_size": [
+    2200,
+    1800
+  ],
+  "escala_mapa": 1,
+  "zoom_camera": 0.62,
+  "car_scale": 1.4,
+  "keep_right_shift": 120,
+  "farol_mode": 2,
+  "lane_cost_mode": 0,
+  "posicao_aleatoria": false,
+  "car_pos": [
+    -950,
+    0
+  ],
+  "output": "scenes/fases/Fase11.tscn",
+  "sidewalks": [
+    {
+      "name": "CalcadaNorte",
+      "rect": [
+        0,
+        -865,
+        2200,
+        70
+      ]
+    },
+    {
+      "name": "CalcadaSul",
+      "rect": [
+        0,
+        865,
+        2200,
+        70
+      ]
+    },
+    {
+      "name": "CalcadaOeste",
+      "rect": [
+        -1065,
+        0,
+        70,
+        1800
+      ]
+    },
+    {
+      "name": "CalcadaLeste",
+      "rect": [
+        1065,
+        0,
+        70,
+        1800
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "name": "N",
+      "side": "north",
+      "y_edge": -830,
+      "dir": 1,
+      "depth": 439.08,
+      "from": -900,
+      "to": 900,
+      "count": 5,
+      "bay_scale": [
+        2.2227,
+        3.659
+      ],
+      "rot": -1.5708,
+      "parked": [
+        1,
+        3
+      ]
+    },
+    {
+      "name": "S",
+      "side": "south",
+      "y_edge": 830,
+      "dir": -1,
+      "depth": 439.08,
+      "from": -900,
+      "to": 900,
+      "count": 5,
+      "bay_scale": [
+        2.2227,
+        3.659
+      ],
+      "rot": 1.5708,
+      "parked": [
+        0,
+        2,
+        4
+      ]
+    }
+  ],
+  "cones": [],
+  "crossers": [
+    {
+      "name": "CarroDeTransito",
+      "pos": [
+        -700,
+        900
+      ],
+      "point_a": [
+        -700,
+        900
+      ],
+      "point_b": [
+        -700,
+        -900
+      ],
+      "cruise_speed": 160.0,
+      "pause_time": 3.5,
+      "spawn_distance": 700.0,
+      "trigger_distancia": 550.0,
+      "texture": "res://assets/kenney/cars/car_blue_5.png"
+    }
+  ],
+  "pedestrians": [
+    {
+      "name": "Pedestre1",
+      "pos": [
+        -600,
+        -50
+      ],
+      "point_a": [
+        -600,
+        -700
+      ],
+      "point_b": [
+        -600,
+        700
+      ],
+      "walk_speed": 55.0,
+      "pause_time": 3.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 0.0,
+      "head_start_px": 650.0
+    },
+    {
+      "name": "Pedestre2",
+      "pos": [
+        400,
+        -700
+      ],
+      "point_a": [
+        400,
+        -700
+      ],
+      "point_b": [
+        400,
+        700
+      ],
+      "walk_speed": 55.0,
+      "pause_time": 3.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 19.2,
+      "head_start_px": 0.0
+    }
+  ],
+  "tires": [
+    {
+      "pos": [
+        -700,
+        -100
+      ],
+      "point_a": [
+        -700,
+        -800
+      ],
+      "point_b": [
+        -700,
+        800
+      ],
+      "roll_speed": 70.0,
+      "pause_time": 4.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 0.0,
+      "head_start_px": 700.0
+    },
+    {
+      "pos": [
+        600,
+        800
+      ],
+      "point_a": [
+        600,
+        800
+      ],
+      "point_b": [
+        600,
+        -800
+      ],
+      "roll_speed": 70.0,
+      "pause_time": 4.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 0.0,
+      "head_start_px": 0.0
+    }
+  ],
+  "stalled_cars": [
+    {
+      "name": "CarroAcidentado",
+      "pos": [
+        2200,
+        320.5
+      ],
+      "point_a": [
+        2200,
+        320.5
+      ],
+      "point_b": [
+        -1200,
+        320.5
+      ],
+      "drive_speed": 250.0,
+      "stall_after_px": 2200.0,
+      "spawn_distance": 700.0,
+      "initial_delay": 0.0,
+      "texture": "res://assets/kenney/cars/car_red_5.png",
+      "pre_stalled": true
+    }
+  ],
+  "rotas": [
+    {
+      "name": "RotaNorte",
+      "points": [
+        [
+          -700,
+          -270
+        ],
+        [
+          700,
+          -270
+        ]
+      ]
+    },
+    {
+      "name": "RotaSul",
+      "points": [
+        [
+          700,
+          250
+        ],
+        [
+          -700,
+          250
+        ]
+      ]
+    }
+  ],
+  "setas": [
+    {
+      "pos": [
+        -700,
+        -270
+      ],
+      "direcao": 0.0
+    },
+    {
+      "pos": [
+        700,
+        -270
+      ],
+      "direcao": 0.0
+    },
+    {
+      "pos": [
+        700,
+        250
+      ],
+      "direcao": 3.1416
+    },
+    {
+      "pos": [
+        -700,
+        250
+      ],
+      "direcao": 3.1416
+    }
+  ],
+  "vaga_prioritaria": "../Vagas/S_4"
+}

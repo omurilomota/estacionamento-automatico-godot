@@ -10,6 +10,12 @@
 [ext_resource type="PackedScene" path="res://scenes/Seta.tscn" id="8_seta"]
 [ext_resource type="PackedScene" path="res://scenes/Cone.tscn" id="9_cone"]
 [ext_resource type="Script" path="res://src/world/Crosser.gd" id="10_crosser"]
+[ext_resource type="Script" path="res://src/world/Pedestrian.gd" id="12_pede"]
+[ext_resource type="Script" path="res://src/world/Tire.gd" id="13_tire"]
+[ext_resource type="Script" path="res://src/world/StalledCar.gd" id="14_stalled"]
+[ext_resource type="Texture2D" path="res://assets/kenney/cars/car_blue_5.png" id="11_tex0"]
+[ext_resource type="Texture2D" path="res://assets/kenney/cars/car_yellow_5.png" id="11_tex1"]
+[ext_resource type="Texture2D" path="res://assets/kenney/cars/car_red_5.png" id="11_tex2"]
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaNorte"]
 size = Vector2(2200, 70)
@@ -24,10 +30,10 @@ size = Vector2(70, 1800)
 size = Vector2(70, 1800)
 
 [sub_resource type="RectangleShape2D" id="Rect_MuroOeste"]
-size = Vector2(60, 380)
+size = Vector2(60, 270)
 
 [sub_resource type="RectangleShape2D" id="Rect_MuroLeste"]
-size = Vector2(60, 380)
+size = Vector2(60, 162)
 
 [node name="Fase9" type="Node2D"]
 script = ExtResource("1_base")
@@ -71,14 +77,14 @@ collision_layer = 2
 shape = SubResource("Rect_CalcadaLeste")
 
 [node name="MuroOeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(-450, 120)
+position = Vector2(-450, 175)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/MuroOeste"]
 shape = SubResource("Rect_MuroOeste")
 
 [node name="MuroLeste" type="StaticBody2D" parent="Obstaculos"]
-position = Vector2(450, -120)
+position = Vector2(450, -121)
 collision_layer = 2
 
 [node name="Colisao" type="CollisionShape2D" parent="Obstaculos/MuroLeste"]
@@ -88,26 +94,39 @@ shape = SubResource("Rect_MuroLeste")
 position = Vector2(-900.0, -610.5)
 scale = Vector2(2.2732, 2.3109)
 
+[node name="Estacionado_N_3" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(0.0, -610.5)
+scale = Vector2(2.2732, 2.3109)
+
 [node name="Estacionado_N_5" parent="Obstaculos" instance=ExtResource("3_obs")]
 position = Vector2(900.0, -610.5)
 scale = Vector2(2.2732, 2.3109)
 
-[node name="Estacionado_S_3" parent="Obstaculos" instance=ExtResource("3_obs")]
-position = Vector2(0.0, 610.5)
+[node name="Estacionado_S_1" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-900.0, 610.5)
+scale = Vector2(2.2732, 2.3109)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_2" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(-450.0, 610.5)
+scale = Vector2(2.2732, 2.3109)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_4" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(450.0, 610.5)
+scale = Vector2(2.2732, 2.3109)
+rotation = 3.141592653589793
+
+[node name="Estacionado_S_5" parent="Obstaculos" instance=ExtResource("3_obs")]
+position = Vector2(900.0, 610.5)
 scale = Vector2(2.2732, 2.3109)
 rotation = 3.141592653589793
 
 [node name="Cone1" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(-950, -865)
+position = Vector2(-340, 60)
 
 [node name="Cone2" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(950, -865)
-
-[node name="Cone3" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(-950, 865)
-
-[node name="Cone4" parent="Obstaculos" instance=ExtResource("9_cone")]
-position = Vector2(950, 865)
+position = Vector2(340, -60)
 
 [node name="Setas" type="Node2D" parent="."]
 
@@ -150,33 +169,13 @@ position = Vector2(-450.0, -610.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
-[node name="N_3" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(0.0, -610.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = -1.5708
-
 [node name="N_4" parent="Vagas" instance=ExtResource("4_vaga")]
 position = Vector2(450.0, -610.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = -1.5708
 
-[node name="S_1" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-900.0, 610.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
-[node name="S_2" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(-450.0, 610.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
-[node name="S_4" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(450.0, 610.5)
-scale = Vector2(2.2227, 3.659)
-rotacao_alvo = 1.5708
-
-[node name="S_5" parent="Vagas" instance=ExtResource("4_vaga")]
-position = Vector2(900.0, 610.5)
+[node name="S_3" parent="Vagas" instance=ExtResource("4_vaga")]
+position = Vector2(0.0, 610.5)
 scale = Vector2(2.2227, 3.659)
 rotacao_alvo = 1.5708
 
@@ -186,10 +185,91 @@ scale = Vector2(1.4, 1.4)
 auto_navegacao = true
 modo_trilha = false
 brain_enabled = true
-keep_right_shift = 300.0
+keep_right_shift = 120.0
+farol_mode = 2
+lane_cost_mode = 1
 
 [node name="Planejador" type="Node2D" parent="."]
 script = ExtResource("6_plan")
+
+[node name="CarroDeTransito" type="Node2D" parent="."]
+position = Vector2(700, -900)
+script = ExtResource("10_crosser")
+point_a = Vector2(700, -900)
+point_b = Vector2(700, 900)
+cruise_speed = 160.0
+pause_time = 3.5
+spawn_distance = 700.0
+trigger_distancia = 550.0
+
+[node name="Sprite" type="Sprite2D" parent="CarroDeTransito"]
+rotation = 1.5708
+scale = Vector2(1.62, 1.62)
+texture = ExtResource("11_tex0")
+
+[node name="CarroDeTransito2" type="Node2D" parent="."]
+position = Vector2(-700, -900)
+script = ExtResource("10_crosser")
+point_a = Vector2(-700, -900)
+point_b = Vector2(-700, 900)
+cruise_speed = 160.0
+pause_time = 3.5
+spawn_distance = 700.0
+trigger_distancia = 550.0
+
+[node name="Sprite" type="Sprite2D" parent="CarroDeTransito2"]
+rotation = 1.5708
+scale = Vector2(1.62, 1.62)
+texture = ExtResource("11_tex1")
+
+[node name="Pedestre1" type="Node2D" parent="."]
+position = Vector2(-300, -275)
+script = ExtResource("12_pede")
+point_a = Vector2(-300, -900)
+point_b = Vector2(-300, 900)
+walk_speed = 55.0
+pause_time = 3.0
+spawn_distance = 500.0
+initial_delay = 0.0
+head_start_px = 625.0
+
+[node name="Tire1" type="StaticBody2D" parent="."]
+position = Vector2(-600, -182)
+script = ExtResource("13_tire")
+point_a = Vector2(-600, -900)
+point_b = Vector2(-600, 900)
+roll_speed = 70.0
+pause_time = 4.0
+spawn_distance = 500.0
+initial_delay = 0.0
+head_start_px = 718.0
+
+[node name="Tire2" type="StaticBody2D" parent="."]
+position = Vector2(600, -840)
+script = ExtResource("13_tire")
+point_a = Vector2(600, -900)
+point_b = Vector2(600, 900)
+roll_speed = 70.0
+pause_time = 4.0
+spawn_distance = 500.0
+initial_delay = 0.0
+head_start_px = 60.0
+
+[node name="CarroAcidentado" type="StaticBody2D" parent="."]
+position = Vector2(2200, 0)
+script = ExtResource("14_stalled")
+point_a = Vector2(2200, 0)
+point_b = Vector2(-1200, 0)
+drive_speed = 250.0
+stall_after_px = 2200.0
+spawn_distance = 700.0
+initial_delay = 0.0
+pre_stalled = true
+
+[node name="Sprite" type="Sprite2D" parent="CarroAcidentado"]
+rotation = 1.5708
+scale = Vector2(1.62, 1.62)
+texture = ExtResource("11_tex2")
 
 [node name="Camera" type="Camera2D" parent="."]
 

@@ -36,6 +36,37 @@ CARRO_SPRITE = (70.0, 121.0)   # Kenney texture, before the child's 1.62 scale
 CARRO_SPRITE_SCALE = 1.62
 ENTRE_EIXOS = 60.0
 
+# --- TAMANHO DA VAGA: DADO DO MUNDO REAL, NAO NUMERO SOLTO NO SPEC ----------
+# Uma vaga perpendicular de verdade mede 2,50 x 5,00 m. O carro de verdade
+# mede 1,80 x 4,40 m — e o que o JOGO mostra e' o sprite (70 x 121 px antes da
+# escala do filho), entao e' pelo sprite que a vaga tem de ser cotada:
+#
+#   largura = 1,80 * (2,50 / 1,80) = 2,50 m -> 1,389 x a largura do carro
+#   profun. = 4,40 * (5,00 / 4,40) = 5,00 m -> 1,136 x o comprimento do carro
+#
+# MEDIDO (2026-10-01, erro do usuario): o `bay_scale` dos specs era dado solto e
+# media 2,30 x 2,73 carros na Fase5 e 1,93 x 3,56 nas Fase6..Fase10 — ou seja,
+# 12 m e 22 m de profundidade, contra 5 m na realidade. Agora a vaga e' DERIVADA
+# e nao ha como um nivel nascer com vaga de outro mundo.
+VAGA_M = (2.50, 5.00)            # metros: largura x profundidade
+CARRO_M = (1.80, 4.40)           # metros
+VAGA_REAL_PX = (VAGA_M[0] / CARRO_M[0], VAGA_M[1] / CARRO_M[1])  # (1.389, 1.136)
+
+
+def bay_scale_do_carro(scale):
+    """`bay_scale` do spec para a Area de Vaga de uma vaga de verdade.
+
+    `car_footprint()[1]` devolve (COMPRIMENTO, LARGURA) do sprite ja escalado —
+    a textura do Kenney e' retrato (70 x 121) e o eixo do mundo X aponta para a
+    frente, entao a primeira componente e' o comprimento.
+    """
+    comprimento, largura = car_footprint(scale)[1]
+    return (VAGA_REAL_PX[0] * largura / VAGA_BASE[0],
+            VAGA_REAL_PX[1] * comprimento / VAGA_BASE[1])
+
+
+RESOLUCAO = 15.0   # Planejador.resolucao (scripts/Planejador.gd)
+
 
 def car_footprint(scale):
     """Collision box and visual box of the car at a level scale."""
@@ -78,7 +109,8 @@ def build_bays(spec, world):
             pitch = span
         else:
             pitch = span / (count - 1)
-        bw = VAGA_BASE[0] * row["bay_scale"][0]
+        bs = row.get("bay_scale") or bay_scale_do_carro(spec["car_scale"])
+        bw = VAGA_BASE[0] * bs[0]
         if count > 1 and pitch < bw:
             die("row %s: pitch %.1f < bay width %.1f -> bays would overlap"
                 % (row["name"], pitch, bw))
@@ -87,7 +119,7 @@ def build_bays(spec, world):
             cy = float(row["y_edge"]) + (row["depth"] / 2.0) * row["dir"]
             cx = round(cx, 1)
             cy = round(cy, 1)
-            r = bay_rect({"scale": row["bay_scale"]}, cx, cy)
+            r = bay_rect({"scale": bs}, cx, cy)
             if r[0] < x0 or r[2] > x1 or r[1] < y0 or r[3] > y1:
                 die("row %s bay %d: rect %s outside world %s"
                     % (row["name"], k, r, (x0, y0, x1, y1)))
@@ -107,7 +139,8 @@ def build_bays(spec, world):
                     rot=0.0 if row["rot"] < 0 else 3.141592653589793))
                 continue
             bays.append(dict(name=name, pos=(cx, cy),
-                             scale=row["bay_scale"], rot=row["rot"], prep=prep))
+                             scale=bs, rot=row["rot"], prep=prep,
+                             y_edge=float(row["y_edge"])))
     # cross-row overlap check (cheap AABB sweep)
     for i in range(len(bays)):
         for j in range(i + 1, len(bays)):
@@ -136,6 +169,13 @@ def inside(pt, r):
     return r[0] <= pt[0] <= r[2] and r[1] <= pt[1] <= r[3]
 
 
+def dist_pt_rect(pt, r):
+    """Gap in px from a point to an axis-aligned rect (0 when inside)."""
+    dx = max(r[0] - pt[0], pt[0] - r[2], 0.0)
+    dy = max(r[1] - pt[1], pt[1] - r[3], 0.0)
+    return (dx * dx + dy * dy) ** 0.5
+
+
 def check_solids(spec, world, bays):
     """Invariants about the STATIC BODIES (walls/sidewalks) and the cones.
 
@@ -157,6 +197,34 @@ def check_solids(spec, world, bays):
             if inside(b["prep"], w):
                 die("bay %s prep point %s is inside wall rect %s"
                     % (b["name"], b["prep"], w))
+        # AGENTS §1.24: nao encostar na parede NAO e' suficiente. A grade do
+        # planejador marca solida toda celula dentro de `raio varrido + 1.5
+        # celulas` da parede, entao uma baia a 110 px da guia (Fase6, 3 de 13
+        # inalcancaveis) tem o CENTRO dentro da faixa inflada e nunca pode ser
+        # alcancada — o `gate_reach` e' que mede isso, e o gerador precisa
+        # abortar antes, como aborta para sobreposicao.
+        need = swept_radius(spec["car_scale"]) + 1.5 * RESOLUCAO + RESOLUCAO
+        for w in walls:
+            # A parede contra a qual a baia esta ENCOSTADA de proposito (a
+            # fileira nasce dela) nao conta: o carro entra de frente e o casco
+            # encosta na traseira, como numa vaga de verdade. O que a grade do
+            # planejador marca solido e o CENTRO da celula, entao e' o CENTRO da
+            # baia (e o ponto de preparacao) que precisa de folga — e com uma
+            # celula a mais, porque um centro a 103 px da parede pode cair em
+            # celula solida por causa do arredondamento (Fase6: 3 de 13 baias
+            # inalcancaveis por causa dos espigões fecharem a faixa, AGENTS §1.24).
+            if abs(w[3] - b["y_edge"]) < 0.5 or abs(w[1] - b["y_edge"]) < 0.5:
+                continue
+            d = dist_pt_rect(b["pos"], w)
+            if d < need:
+                die("bay %s centre is only %.0f px from wall rect %s (needs "
+                    "%.0f = swept radius + 2.5 cells)"
+                    % (b["name"], d, w, need))
+            dp = dist_pt_rect(b["prep"], w)
+            if dp < need:
+                die("prep of bay %s is only %.0f px from wall rect %s (needs "
+                    "%.0f = swept radius + 2.5 cells)"
+                    % (b["name"], dp, w, need))
     clear = swept_radius(spec["car_scale"]) + 18.0 + 40.0
     for i, cone in enumerate(spec.get("cones", []), 1):
         p = (cone["pos"][0], cone["pos"][1])
@@ -171,6 +239,35 @@ def check_solids(spec, world, bays):
             if d < clear:
                 die("cone %d at %s is %.0f px from prep of %s (needs %.0f)"
                     % (i, p, d, b["name"], clear))
+    # TRAZEGO invariant (docs/tasks_trafego.md): the ACCIDENT car's stall
+    # point must keep `swept + hull half-diagonal + 40` px from every bay
+    # centre and prep point. Measured the hard way on Fase11 seed 9001: a
+    # stall 150 px from the prep is swallowed by the planner's inflation
+    # (box 95 + inflar ~103 => the goal becomes a SOLID cell after any
+    # replan), the A* snaps the goal, and the car oscillates 26-41 s without
+    # parking. The stall may block the LANE — it may not block the GOALS.
+    stall_clear = swept_radius(spec["car_scale"]) + 103.0 + 40.0
+    for i, s in enumerate(spec.get("stalled_cars", []), 1):
+        a = s["point_a"]
+        b = s["point_b"]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = (dx * dx + dy * dy) ** 0.5
+        if n < 1.0:
+            die("stalled car %d: point_a == point_b" % i)
+        stall = (a[0] + dx / n * s.get("stall_after_px", 600.0),
+                 a[1] + dy / n * s.get("stall_after_px", 600.0))
+        if not (x0 < stall[0] < x1 and y0 < stall[1] < y1):
+            die("stalled car %d stalls at %s outside world" % (i, stall))
+        for bay in bays:
+            d = ((stall[0] - bay["pos"][0]) ** 2 + (stall[1] - bay["pos"][1]) ** 2) ** 0.5
+            if d < stall_clear:
+                die("stalled car %d stalls at (%.0f, %.0f), only %.0f px from bay %s"
+                    " (needs %.0f = swept + hull + 40)" % (i, stall[0], stall[1],
+                    d, bay["name"], stall_clear))
+            d = ((stall[0] - bay["prep"][0]) ** 2 + (stall[1] - bay["prep"][1]) ** 2) ** 0.5
+            if d < stall_clear:
+                die("stalled car %d stalls at (%.0f, %.0f), only %.0f px from prep of %s"
+                    " (needs %.0f)" % (i, stall[0], stall[1], d, bay["name"], stall_clear))
 
 
 def die(msg):
@@ -203,12 +300,21 @@ def generate(spec):
         ("PackedScene", "res://scenes/Seta.tscn", "8_seta"),
         ("PackedScene", "res://scenes/Cone.tscn", "9_cone"),
         ("Script", "res://src/world/Crosser.gd", "10_crosser"),
+        ("Script", "res://src/world/Pedestrian.gd", "12_pede"),
+        ("Script", "res://src/world/Tire.gd", "13_tire"),
+        ("Script", "res://src/world/StalledCar.gd", "14_stalled"),
     ]
-    # One ext_resource per UNIQUE crosser skin (a texture loaded twice is a
+    # One ext_resource per UNIQUE actor skin (a texture loaded twice is a
     # Godot warning, and the spec may want two cars of the same colour).
+    # The STALLED cars share the dedup list with the crossers: both draw a
+    # Kenney car, so the same colour must stay one ext_resource.
     crosser_tex = []
     for c in spec.get("crossers", []):
         t = c.get("texture", "res://assets/kenney/cars/car_yellow_5.png")
+        if t not in crosser_tex:
+            crosser_tex.append(t)
+    for s in spec.get("stalled_cars", []):
+        t = s.get("texture", "res://assets/kenney/cars/car_red_5.png")
         if t not in crosser_tex:
             crosser_tex.append(t)
     for i, t in enumerate(crosser_tex):
@@ -303,6 +409,21 @@ def generate(spec):
     out.append("modo_trilha = false")
     out.append("brain_enabled = true")
     out.append("keep_right_shift = %s" % spec.get("keep_right_shift", 300.0))
+    # The declarative knob for "which spot should the route end in" (AGENTS
+    # #15: honoured by the autonomous branch too, exactly like the trail's).
+    # A transit level uses it to force the LONG route across the aisle.
+    if spec.get("vaga_prioritaria"):
+        out.append("vaga_prioritaria = NodePath(\"%s\")" % spec["vaga_prioritaria"])
+    # FAROL rollout switch. DEFAULT 0 on purpose: a level is promoted one at a
+    # time, by DECLARING it here, so regenerating a spec can never silently turn
+    # the pilot on in a level nobody reviewed (the promotion rule is in
+    # .kilo/plans/1790717727010-swift-squid.md §4: 0 = legacy, 1 = shadow
+    # (measures, does not drive), 2 = the FAROL pilot drives).
+    out.append("farol_mode = %d" % int(spec.get("farol_mode", 0)))
+    # FAROL · ROTA (S2): the right-hand rule as A* cost. Same promotion
+    # discipline as farol_mode: default 0 (the post-hoc LaneOffset shift),
+    # declared per level in the spec, reviewed one level at a time.
+    out.append("lane_cost_mode = %d" % int(spec.get("lane_cost_mode", 0)))
     out.append("")
 
     out.append('[node name="Planejador" type="Node2D" parent="."]')
@@ -326,6 +447,61 @@ def generate(spec):
         # and the car never drives sideways (AGENTS #29).
         out.append('[node name="Sprite" type="Sprite2D" parent="%s"]'
                    % c.get("name", "CarroDeTransito%d" % i))
+        out.append("rotation = 1.5708")
+        out.append("scale = Vector2(1.62, 1.62)")
+        out.append('texture = %s' % (XL % ("11_tex%d" % crosser_tex.index(tex))))
+        out.append("")
+
+    # TRAZEGO actors (docs/tasks_trafego.md T2). The PEDESTRIAN is sensor-only
+    # (group "pedestre" — the car YIELDS, never runs one over); the TIRE is a
+    # solid hazard the car DODGES (its body is built in _ready, so no
+    # sub_resources here); the STALLED car is the accident that exercises the
+    # blocked_ahead -> detour reactive layer.
+    for i, p in enumerate(spec.get("pedestrians", []), 1):
+        nome = p.get("name", "Pedestre%d" % i)
+        out.append('[node name="%s" type="Node2D" parent="."]' % nome)
+        out.append("position = Vector2(%s, %s)" % (p["pos"][0], p["pos"][1]))
+        out.append('script = %s' % (XL % "12_pede"))
+        out.append("point_a = Vector2(%s, %s)" % (p["point_a"][0], p["point_a"][1]))
+        out.append("point_b = Vector2(%s, %s)" % (p["point_b"][0], p["point_b"][1]))
+        out.append("walk_speed = %s" % p.get("walk_speed", 55.0))
+        out.append("pause_time = %s" % p.get("pause_time", 2.0))
+        out.append("spawn_distance = %s" % p.get("spawn_distance", 700.0))
+        out.append("initial_delay = %s" % p.get("initial_delay", 0.0))
+        out.append("head_start_px = %s" % p.get("head_start_px", 0.0))
+        out.append("")
+
+    for i, t in enumerate(spec.get("tires", []), 1):
+        out.append('[node name="Tire%d" type="StaticBody2D" parent="."]' % i)
+        out.append("position = Vector2(%s, %s)" % (t["pos"][0], t["pos"][1]))
+        out.append('script = %s' % (XL % "13_tire"))
+        out.append("point_a = Vector2(%s, %s)" % (t["point_a"][0], t["point_a"][1]))
+        out.append("point_b = Vector2(%s, %s)" % (t["point_b"][0], t["point_b"][1]))
+        out.append("roll_speed = %s" % t.get("roll_speed", 70.0))
+        out.append("pause_time = %s" % t.get("pause_time", 1.5))
+        out.append("spawn_distance = %s" % t.get("spawn_distance", 500.0))
+        out.append("initial_delay = %s" % t.get("initial_delay", 0.0))
+        out.append("head_start_px = %s" % t.get("head_start_px", 0.0))
+        out.append("")
+
+    for i, s in enumerate(spec.get("stalled_cars", []), 1):
+        nome = s.get("name", "CarroAcidentado%d" % i)
+        tex = s.get("texture", "res://assets/kenney/cars/car_red_5.png")
+        out.append('[node name="%s" type="StaticBody2D" parent="."]' % nome)
+        out.append("position = Vector2(%s, %s)" % (s["pos"][0], s["pos"][1]))
+        out.append('script = %s' % (XL % "14_stalled"))
+        out.append("point_a = Vector2(%s, %s)" % (s["point_a"][0], s["point_a"][1]))
+        out.append("point_b = Vector2(%s, %s)" % (s["point_b"][0], s["point_b"][1]))
+        out.append("drive_speed = %s" % s.get("drive_speed", 140.0))
+        out.append("stall_after_px = %s" % s.get("stall_after_px", 600.0))
+        out.append("spawn_distance = %s" % s.get("spawn_distance", 700.0))
+        out.append("initial_delay = %s" % s.get("initial_delay", 0.0))
+        out.append("pre_stalled = %s" % ("true" if s.get("pre_stalled", False) else "false"))
+        out.append("")
+        # The Kenney art faces -Y: the child carries the +90 deg, exactly like
+        # Carro.tscn / Crosser.gd (AGENTS #29). The collision box (190x88) is
+        # built by the script in _ready, long axis on node X = the facing.
+        out.append('[node name="Sprite" type="Sprite2D" parent="%s"]' % nome)
         out.append("rotation = 1.5708")
         out.append("scale = Vector2(1.62, 1.62)")
         out.append('texture = %s' % (XL % ("11_tex%d" % crosser_tex.index(tex))))
