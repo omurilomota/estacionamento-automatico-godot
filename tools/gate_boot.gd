@@ -42,6 +42,10 @@ var _min_crosser_gap := 1.0e9
 ## the only protection, so a small min gap is the run-over).
 var _ped_latches := 0
 var _min_ped_gap := 1.0e9
+## TRAZEGO (T4): the min gap to the solid hazards (the tire's node includes
+## its r=12 body; the stalled car's node its 190x88 box).
+var _min_tire_gap := 1.0e9
+var _min_stall_gap := 1.0e9
 var _latched := false
 var _t := 0.0
 
@@ -124,6 +128,12 @@ func _init() -> void:
 			_cedendo_ped = parando_ped
 		else:
 			_cedendo_ped = false
+		# TRAZEGO (T4): o min gap aos pneus (solidos) e ao acidentado — o
+		# "ninguem tocado" da fase de transito. O pneu e' um corpo de raio 12:
+		# o casco (meia-largura ~52 na escala 1,4) precisa de ~64 px do no.
+		# O acidentado e' um box 190x88: ~139 px do no no eixo longo.
+		_min_tire_gap = minf(_min_tire_gap, _grupo_dist(carro, "tire"))
+		_min_stall_gap = minf(_min_stall_gap, _grupo_dist(carro, "acidente"))
 		if absf(v) < 5.0:
 			parado += 1.0 / 60.0
 		_max_stop = maxf(_max_stop, parado)
@@ -140,6 +150,8 @@ func _init() -> void:
 	print("CROSSER latches=%d longest_latch=%.1fs longest_stop=%.1fs stopped_while_latched=%.1fs min_gap=%.1f px" % [
 		_latches, _max_latch, _max_stop, _stopped_while_latched, _min_crosser_gap])
 	print("PEDESTRE latches=%d min_gap=%.1f px" % [_ped_latches, _min_ped_gap])
+	print("TRAFICO tire_min_gap=%.1f px acidentado_min_gap=%.1f px" % [
+		_min_tire_gap, _min_stall_gap])
 	print("NEG_FRAMES=%d REC_FRAMES=%d" % [_neg, _rec])
 	var ok := est_final == 3 and _cone_hits == 0 and _neg == 0
 	print("GATE_BOOT_%s" % ("OK" if ok else "FALHOU"))
@@ -200,5 +212,13 @@ func _crosser_dist(carro: Node2D) -> float:
 func _pedestre_dist(carro: Node2D) -> float:
 	var melhor := 1.0e9
 	for n in get_nodes_in_group("pedestre"):
+		melhor = minf(melhor, carro.global_position.distance_to((n as Node2D).global_position))
+	return melhor
+
+
+## Min gap from the car to every node of a group (INF when the group is empty).
+func _grupo_dist(carro: Node2D, grupo: StringName) -> float:
+	var melhor := 1.0e9
+	for n in get_nodes_in_group(grupo):
 		melhor = minf(melhor, carro.global_position.distance_to((n as Node2D).global_position))
 	return melhor

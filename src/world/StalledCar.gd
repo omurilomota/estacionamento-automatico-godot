@@ -46,6 +46,7 @@ var _entry: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
+	add_to_group("acidente")
 	collision_layer = 2
 	collision_mask = 0
 	# the body IS the contract: a car-sized box (190x88 node-space, long axis
