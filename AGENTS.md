@@ -963,3 +963,67 @@ so `estado == 3` still means PARKED during migration.
     carro tem de SAIR da rua para entrar na vaga, 700 px a oeste): e' a distancia
     da ROTA ate a guia dentro da rua (mediana **190 px** = `1.5 x raio varrido`)
     e o erro lateral do carro nela (`_cte_para_rota`, media **17 px**).
+
+47. **TRAZEGO: os atores dinâmicos e as três regras físicas (2026-10-05).**
+    Os atores (`src/world/Pedestrian.gd`, `Tire.gd`, `StalledCar.gd`) são
+    emitidos pelo `gen_level.py` dos specs (`pedestrians`/`tires`/
+    `stalled_cars`); o `gate_boot` reporta as linhas `PEDESTRE` (latches +
+    min gap) e `TRAFICO` (pneu r=12 sólido + acidentado 190×88).
+    - **O ACIDENTADO é `pre_stalled`**: um carro que ENTRA dirigindo fica
+      FORA da região da grade no build → toda rota nasce atravessando ele e a
+      fuga depende da escada (frágil por spawn, 3/5 medido). Com `pre_stalled`
+      a grade o rasteriza em t=0 e a primeira rota A* já contorna (F11: 83 s
+      → 33,4 s, ZERO frames de escada).
+    - **O acidentado precisa de `raio varrido + meia-diagonal-do-casco + 40`
+      px de toda baia e prep** (invariante do gerador): a 150 px do prep o
+      goal vira célula SÓLIDA após qualquer replan, o A* faz snap e o carro
+      oscila 26-41 s (medido na seed 9001 da F11 antes do fix).
+    - **Um corredor só hospeda acidentado se um lado mantiver
+      `44 (meia-caixa) + 161 (carro) + 2×103 (inflar)` ≈ 450 px**: corredores
+      de 342-398 px (F6/F7/F8/F10) SELAM com um acidentado; só as avenidas de
+      782 px (F9/F11) hospedam. Nessas, a dificuldade vem de pedestres + pneus
+      + poucas vagas.
+    - **O PEDESTRE contorna veículos parados** (`Pedestrian._passo_contornando`):
+      o give-way para o CARRO a ~120 px do pedestre, mas a pessoa seguia
+      andando ATRAVÉS do casco parado (medido 3×: min_gap 9-24 px). A pessoa
+      desliza pelo círculo do casco na tangente — e o deadlock mútuo de
+      cedência dissolve de graça (o carro espera, a pessoa contorna).
+48. **A cedência ao pedestre é TETO no acelerador, nunca volante zero
+    (2026-10-05).** O yield original retornava `steering 0`: o carro dirigia
+    RETO durante o glide e saía 255 px da rota, o ramo `cte > 220` do cérebro
+    disparava ré (NEG=107, F11). Agora o yield é um TETO (`give_way_ceiling`
+    no Pilot; `minf(pursuit.speed, ceiling*max_speed)` no AutonomousDriver)
+    aplicado DEPOIS do caminho de direção — o volante continua vindo da rota.
+    O release do gate do pedestre é ESTRITO (distância E fora do cone;
+    `CrosserGate.strict_release`); o release por OU deixava o carro engatinhar
+    no meio da travessia (30 latches medidos).
+49. **A suspensão do `_cravou` durante a cedência foi medida em 3 variantes
+    e REMOVIDA (2026-10-05).** Congelar ou zerar o relógio da escada durante
+    a latch de cedência QUEBROU a Fase7 seed 9002 em TODAS as variantes (A/B
+    contra `3a7565b`: o código antigo estaciona em 62,3 s; reset: wander;
+    freeze: >100 s) — a cascade daquela seed precisa da escada nos momentos
+    originais. A suspensão era workaround de um bug que o teto do §48 já
+    matou. Quem zera a escada continua sendo o progresso real.
+50. **O boot canônico é SEMEADO; o relógio do gate importa (2026-10-05).**
+    `gate_boot` agora faz `seed(9000 + hash(fase))` (o padrão do gate_drive,
+    §1.19): um boot sem seed é LOTERIA — a F6 endurecida mediu 6,5 s verdes
+    numa rodada e NEG=22 noutra, mesmo código. E o resultado da MATRIZ é
+    dependente do contexto do processo (a seed 9003 da F11 falha na matriz
+    só-F11 e passa na matriz completa — o consumo de RNG do processo inteiro
+    muda o spawn): o veredito é o da invocação padrão (`gate_seeds` com a
+    lista completa), nunca o de uma invocação recortada.
+51. **`pgrep -c godot` dá FALSO NEGATIVO — o binário é `Godot_` (2026-10-05).**
+    A checagem de órfãos do §14 com `pgrep -c godot` (minúsculo) reportou "0
+    godot" com uma matriz INTEIRA rodando. Use `pgrep -ic godot` (case-
+    insensitive) ou `pgrep -f "Godot_v|gate_seeds"` — e NÃO mate processos
+    de OUTRO projeto do usuário (o editor dele roda na mesma máquina).
+52. **O carro entra na banda inflada e o Pilot congela — a pendência
+    registrada, com a cadeia completa (2026-10-05).** Terceira instância
+    (F11 seeds, F9 seed 9001): o corner-cut do pursuit entra na banda
+    `inflar ≈ 103 px` (fisicamente livre, grid-sólida — a sonda da faixa e o
+    `_garantir_folga` olham as paredes FÍSICAS, o casco garante 88 px) → o
+    `LocalMap.misturar_carta` escreve custo 0,9 lá → o DWA rejeita todos os
+    arcos → o carro congela a 5-8 px/s com `df inf` → a escada cicla. O fix
+    é a lição #46 aplicada ao custo do Pilot: ler a folga do Chart pelo
+    CASCO, não pelo círculo circunscrito. Sessão dedicada, `gate_seeds` de
+    juiz — o estado atual: F9 seed 9001 é a única falha da matriz 54/55.
