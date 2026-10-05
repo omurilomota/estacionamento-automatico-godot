@@ -69,23 +69,67 @@
   perceptions. **Mutations run**: dropping the pedestrian yield → 1 FAIL;
   unclamping the stall → 2 FAIL.
 
-### T3 — Generated level "Fase11 · Trânsito" — PARTIAL (generator only)
-- DONE: `tools/gen_level.py` emits `pedestrians`/`tires`/`stalled_cars` from
-  the spec (`90c1326`) — node + script + params, the stalled car shares the
-  skin dedup list with the crossers, the collision boxes are built by the
-  scripts in `_ready()`.
-- **NOT done — what remains**:
-  - `tools/specs/Fase11.json` (the level itself: rows/bays with `parked`,
-    sidewalks, the actors authored so the stall point sits ON the driving
-    line, pedestrians crossing the aisle, tires rolling across it);
-  - `python3 tools/gen_level.py` + `tools/render_lot.py` (the floor) + `godot
-    --headless --import` (a new PNG needs the import before any gate —
-    comanda §6);
-  - `LevelRegistry.LEVELS` + the key handling: keys 1–9 + 0 are taken
-    (`Mundo.gd:98`/`FaseBase.gd:125`), so Fase11 needs a NEW key (keyboard
-    digits are exhausted — suggest **P**, mnemonic "pedestre/transito", or
-    the HUD level list) in BOTH `Mundo.gd` and `FaseBase.gd`;
-  - `tools/verify_scenes.gd` after regenerating.
+### T3 — Generated level "Fase11 · Trânsito" — RESOLVED, then PROMOTED (2026-10-03)
+- `tools/gen_level.py` emits `pedestrians`/`tires`/`stalled_cars` from the
+  spec; `vaga_prioritaria` forces the long route; **tecla P** opens it in
+  `Mundo.gd`/`FaseBase.gd`; the HUD legend lists `1-9/0/P`.
+- **The gauntlet (measured, canonical boot, farol_mode=2)**: Pedestre1 yield
+  (min_gap 173,7 px, the give-way glide), Tire1/Tire2 dodged (172/142 px),
+  the accident car met (163 px) — nobody touched, `NEG_FRAMES=0`,
+  `REC_FRAMES=0`, **PARKED 34,3s**.
+- **PROMOTED to `farol_mode=2`** (the A/B board, seed 9000):
+  | | legacy (0) | Pilot (2) |
+  |---|---|---|
+  | t | 48,7 s | **42,9 s** |
+  | cte_p95 | 107,4 | **82,7** |
+  | sat | 33,7 % | **2,5 %** |
+  | folga_min | **0,0 (touched!)** | **18,4** |
+  The legacy TOUCHED the accident car (folga 0,0); the Pilot keeps 18,4 px.
+- **THE ACCIDENT CAR IS PRE-STALED** (`pre_stalled`): a stalled car that
+  DRIVES IN is invisible to the A* grid (off-region at build), so every
+  route is born THROUGH it and the escape depends on the ladder — measured
+  fragile across random spawns (3/5, oscillating 26-41 s). With `pre_stalled`
+  the grid rasterises it from t=0 and the very first A* route goes around:
+  canonical 34,3 s with ZERO ladder frames. The generator gained the
+  invariant that would have caught it: the stall point must keep
+  `swept + hull half-diagonal + 40` px from every bay centre and prep point
+  (a stall 150 px from a prep makes the goal a SOLID cell after any replan —
+  the A* snaps it and the car oscillates forever; measured on seed 9001).
+
+### T2.1 — The yield suspension: measured in THREE variants, then REMOVED (2026-10-03)
+- The give-way originally returned `steering 0`, which drove the car straight
+  off its lane (255 px off-route after a yield at the spawn → the brain's
+  cte branch fired the reverse: NEG=107). The FIX AT THE ROOT: the yield is
+  now a THROTTLE CEILING (`give_way_ceiling`) applied after the drive path —
+  the steering keeps coming from the route (the Pilot applies it at the
+  return; the AutonomousDriver at `pursuit.speed`). With the ceiling, F11's
+  NEG fell 107 → 22 with NO suspension at all.
+- The `_cravou` suspension (freeze/reset during a yield latch) was then
+  measured in every variant — **and all of them broke the Fase7 seed-9002
+  escape cascade** (A/B against `3a7565b`: the old code parks in 62,3 s;
+  reset: wander, not parked; freeze: >100 s not parked). The cascade needs
+  the ladder firing at the ORIGINAL moments. The suspension was a workaround
+  for the dead steering-0 bug → **removed** (commit `dec4938`).
+- ModulesCheck re-pinned: the pedestrian label survives the drive step, the
+  route-less yield is a stop (nothing to steer along), `fails=0`.
+
+### OPEN (registered, measured, not blocking) — the F11 seed matrix 4/5
+- The accident car in the middle of the aisle creates a POCKET in its
+  inflated band for some random spawns: the car drives into the band (the
+  lane shift pushes it there; the folga check passes because the corridor is
+  PHYSICALLY drivable — 92 px vs the hull's 88), but the LocalMap mixes the
+  CHART's cost (0,84 — "tight"), the DWA rejects every arc and the car
+  freezes at ~5 px/s with `df inf`; the ladder cycles (parado_max 26-41 s).
+  Measured on seeds 9000 (stall @ x=150) and 9003 (stall @ x=-200); the
+  stall position moves the pocket, never removes it — the aisle's middle
+  always has one for SOME spawn.
+- **The right fix is the Pilot's**: the DWA freezing on chart-cost that
+  contradicts physical drivability is the same defect class as the earlier
+  "stuck at 0,6 px/s with df inf" (NOT_PARKED 130 s). The LocalMap's
+  `misturar_carta` uses the chart's circle-based clearance; the #46 lesson
+  (guarantee by the HULL, not the circumscribed circle) was applied to
+  `_garantir_folga` but not to the Pilot's cost. That is the registered
+  follow-up — a dedicated session, `gate_seeds` as the judge.
 
 ### T4 — Traffic gates — OPEN
 - `tools/gate_trafego.gd` (or gate_drive extension): `PARKED` + `desvios > 0`
