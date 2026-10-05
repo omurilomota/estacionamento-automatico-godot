@@ -9,7 +9,7 @@
   "escala_mapa": 1.0,
   "zoom_camera": 0.62,
   "car_scale": 1.4,
-  "keep_right_shift": 300.0,
+  "keep_right_shift": 120.0,
   "farol_mode": 2,
   "lane_cost_mode": 1,
   "posicao_aleatoria": true,
@@ -229,6 +229,91 @@
         250
       ],
       "direcao": 3.1416
+    }
+  ],
+  "stalled_cars": [
+    {
+      "name": "CarroAcidentado",
+      "pos": [
+        2200,
+        0
+      ],
+      "point_a": [
+        2200,
+        0
+      ],
+      "point_b": [
+        -1200,
+        0
+      ],
+      "drive_speed": 250.0,
+      "stall_after_px": 2200.0,
+      "spawn_distance": 700.0,
+      "initial_delay": 0.0,
+      "pre_stalled": true,
+      "texture": "res://assets/kenney/cars/car_red_5.png"
+    }
+  ],
+  "pedestrians": [
+    {
+      "name": "Pedestre1",
+      "pos": [
+        -300,
+        -275
+      ],
+      "point_a": [
+        -300,
+        -900
+      ],
+      "point_b": [
+        -300,
+        900
+      ],
+      "walk_speed": 55.0,
+      "pause_time": 3.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 0.0,
+      "head_start_px": 625.0
+    }
+  ],
+  "tires": [
+    {
+      "pos": [
+        -600,
+        -182
+      ],
+      "point_a": [
+        -600,
+        -900
+      ],
+      "point_b": [
+        -600,
+        900
+      ],
+      "roll_speed": 70.0,
+      "pause_time": 4.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 0.0,
+      "head_start_px": 718.0
+    },
+    {
+      "pos": [
+        600,
+        -840
+      ],
+      "point_a": [
+        600,
+        -900
+      ],
+      "point_b": [
+        600,
+        900
+      ],
+      "roll_speed": 70.0,
+      "pause_time": 4.0,
+      "spawn_distance": 500.0,
+      "initial_delay": 0.0,
+      "head_start_px": 60.0
     }
   ]
 }

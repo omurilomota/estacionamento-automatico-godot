@@ -10,8 +10,12 @@
 [ext_resource type="PackedScene" path="res://scenes/Seta.tscn" id="8_seta"]
 [ext_resource type="PackedScene" path="res://scenes/Cone.tscn" id="9_cone"]
 [ext_resource type="Script" path="res://src/world/Crosser.gd" id="10_crosser"]
+[ext_resource type="Script" path="res://src/world/Pedestrian.gd" id="12_pede"]
+[ext_resource type="Script" path="res://src/world/Tire.gd" id="13_tire"]
+[ext_resource type="Script" path="res://src/world/StalledCar.gd" id="14_stalled"]
 [ext_resource type="Texture2D" path="res://assets/kenney/cars/car_blue_5.png" id="11_tex0"]
 [ext_resource type="Texture2D" path="res://assets/kenney/cars/car_yellow_5.png" id="11_tex1"]
+[ext_resource type="Texture2D" path="res://assets/kenney/cars/car_red_5.png" id="11_tex2"]
 
 [sub_resource type="RectangleShape2D" id="Rect_CalcadaNorte"]
 size = Vector2(2200, 70)
@@ -181,7 +185,7 @@ scale = Vector2(1.4, 1.4)
 auto_navegacao = true
 modo_trilha = false
 brain_enabled = true
-keep_right_shift = 300.0
+keep_right_shift = 120.0
 farol_mode = 2
 lane_cost_mode = 1
 
@@ -217,6 +221,55 @@ trigger_distancia = 550.0
 rotation = 1.5708
 scale = Vector2(1.62, 1.62)
 texture = ExtResource("11_tex1")
+
+[node name="Pedestre1" type="Node2D" parent="."]
+position = Vector2(-300, -275)
+script = ExtResource("12_pede")
+point_a = Vector2(-300, -900)
+point_b = Vector2(-300, 900)
+walk_speed = 55.0
+pause_time = 3.0
+spawn_distance = 500.0
+initial_delay = 0.0
+head_start_px = 625.0
+
+[node name="Tire1" type="StaticBody2D" parent="."]
+position = Vector2(-600, -182)
+script = ExtResource("13_tire")
+point_a = Vector2(-600, -900)
+point_b = Vector2(-600, 900)
+roll_speed = 70.0
+pause_time = 4.0
+spawn_distance = 500.0
+initial_delay = 0.0
+head_start_px = 718.0
+
+[node name="Tire2" type="StaticBody2D" parent="."]
+position = Vector2(600, -840)
+script = ExtResource("13_tire")
+point_a = Vector2(600, -900)
+point_b = Vector2(600, 900)
+roll_speed = 70.0
+pause_time = 4.0
+spawn_distance = 500.0
+initial_delay = 0.0
+head_start_px = 60.0
+
+[node name="CarroAcidentado" type="StaticBody2D" parent="."]
+position = Vector2(2200, 0)
+script = ExtResource("14_stalled")
+point_a = Vector2(2200, 0)
+point_b = Vector2(-1200, 0)
+drive_speed = 250.0
+stall_after_px = 2200.0
+spawn_distance = 700.0
+initial_delay = 0.0
+pre_stalled = true
+
+[node name="Sprite" type="Sprite2D" parent="CarroAcidentado"]
+rotation = 1.5708
+scale = Vector2(1.62, 1.62)
+texture = ExtResource("11_tex2")
 
 [node name="Camera" type="Camera2D" parent="."]
 
